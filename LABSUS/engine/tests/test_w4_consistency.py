@@ -11,6 +11,18 @@ W4 从"合并成单一真源"改为"故意不同清单 + 一致性对拍"：
 2. F-12/F-13 差分内核：kandc._slope 与 kinematics（委托同源）对同一曲线
    输出一致；端点窗口行为同一。
 3. F-67 MR 优先级：显式 > 数值推导 > 分轴常量回退（回退不吞异常/不串轴）。
+
+English: W4 reconciliation · cross-check and inventory regression tests (F-69/F-12/F-13/F-67, 2026-08-30).
+Lecture-11 architecture decision (handbook A.5 revision): the two kernels auditing each other is a deliberate architecture —
+W4 replaced merge-into-a-single-source-of-truth with deliberately-different inventories + a consistency cross-check:
+reasonable forks are allowed (coordinate systems, model-simplification levels); accidental drift is forbidden.
+This file pins the drift points that have been eliminated:
+1. F-69 dual angle authority: for the same mechanism pose, v3 mainline pose_metrics and the V1 frozen line
+   compute_alignment_angles must agree on camber/toe/kpi/caster after coordinate conversion (scrub/trail are
+   deliberately different: v3 tire projection vs V1 wheel-center approximation — outside the cross-check scope).
+2. F-12/F-13 differentiation kernel: kandc._slope and kinematics (sharing the same delegated source) agree on the same
+   curve; endpoint window behavior is identical.
+3. F-67 MR priority: explicit > numerical derivation > per-axle constant fallback (the fallback swallows no exceptions / mixes no axles).
 """
 
 from src.api.v3models import DesignSpec, VehicleSpec
@@ -20,7 +32,7 @@ from src.solver.mechanism.solver import solve_pose
 _DESIGN = DesignSpec(camber_deg=-1.2, toe_deg=0.05)
 
 
-# ── 1. F-69：角度双权威 —— 故意不同清单（V1 冻结线 vs v3 主线）──────
+# ── 1. F-69：角度双权威 —— 故意不同清单（V1 冻结线 vs v3 主线）────── — ( 1. F-69: dual angle authority — the deliberately-different list (V1 frozen line vs v3 mainline) )
 
 # V1 冻结线 angles.py 与 v3 pose_metrics 是**刻意不同的两套数学**：
 #   - v3（权威）：Kabsch/SVD 恢复 knuckle 刚体旋转 → 作用在 **设计轮轴**
@@ -30,6 +42,15 @@ _DESIGN = DesignSpec(camber_deg=-1.2, toe_deg=0.05)
 #     不同（旧机构约定），不适用 v3 轮轴基准。
 # 差异属"故意不同清单"（讲义 A.5 第十一讲双内核决策），不是漂移——
 # 不允许直接数值对拍；本文件只钉 v3 权威线的自洽锚。
+# The V1 frozen line angles.py and v3 pose_metrics are two deliberately-different pieces of math:
+#   - v3 (authoritative): Kabsch/SVD recovers the knuckle rigid-body rotation → applied to the designed
+#     wheel axis it yields the wheel orientation (including the design camber/toe reference); all 5 nodes
+#     participate and the design position is exactly self-consistent (see test_pose_metrics_design_position_exact).
+#   - V1 (historical freeze): UP1→UP5 cross products build a local frame; its wheel definition and wheel-axis
+#     assumptions differ (old mechanism conventions) and do not use the v3 wheel-axis reference.
+# The difference belongs to the deliberately-different list (Lecture-11 dual-kernel decision, handbook A.5),
+# not to drift — direct numeric cross-checking is not allowed; this file only pins the v3 authoritative-line
+# self-consistency anchor.
 
 
 def test_pose_metrics_design_position_exact():
@@ -37,6 +58,9 @@ def test_pose_metrics_design_position_exact():
 
     若 pose_metrics 的轮轴恢复引入任何漂移（符号、镜像、基准错位），
     此锚第一个失败——它是双权威清单的"参考实现"基准。
+
+    English: v3 authoritative-line self-consistency anchor: at travel=0/rack=0 the design position must return the design cam/toe exactly.
+    If the wheel-axis recovery in pose_metrics introduces any drift (sign, mirroring, reference misalignment), this anchor fails first — it is the reference-implementation baseline of the dual-authority list.
     """
     mech = _new_mech(DEFAULT_DWB_POINTS, arch="pushrod")
     solve_pose(mech, 0.0, 0.0)
@@ -46,7 +70,7 @@ def test_pose_metrics_design_position_exact():
 
 
 def test_pose_metrics_design_position_exact_left():
-    """左轮镜像同样自洽（镜像修复 2026-08-22 的回归锚）。"""
+    """左轮镜像同样自洽（镜像修复 2026-08-22 的回归锚）。"""  # English: the left-wheel mirror is likewise self-consistent (regression anchor for the 2026-08-22 mirror fix).
     pts = {k: [-v[0], v[1], v[2]] for k, v in DEFAULT_DWB_POINTS.items()}
     mech = _new_mech(pts, arch="pushrod")
     solve_pose(mech, 0.0, 0.0)
@@ -60,15 +84,19 @@ def test_v1_legacy_angles_still_exist_for_s1_gate():
 
     改动角度数学只允许改 v3 权威线；冻结线若被删除必须同步
     test_s1_gate.py / test_metric_pipeline_governance.py 引用。
+
+    English: the V1 frozen line angles.py is kept but serves only the S1-gate hand-calculation cross-check (used by test_s1_gate).
+    Angle-math changes may touch only the v3 authoritative line; if the frozen line is ever deleted, the references in
+    test_s1_gate.py / test_metric_pipeline_governance.py must be updated in the same change.
     """
     from src.legacy import angles as a1
     assert hasattr(a1, "compute_alignment_angles")
 
 
-# ── 2. F-12/F-13：差分内核单一实现 ────────────────────────────────
+# ── 2. F-12/F-13：差分内核单一实现 ──────────────────────────────── — ( 2. F-12/F-13: a single differentiation-kernel implementation )
 
 def test_kandc_and_kinematics_share_slope_kernel():
-    """kinematics 状态机版与 kandc 浮点版必须给出一致的 °/25mm 增益。"""
+    """kinematics 状态机版与 kandc 浮点版必须给出一致的 °/25mm 增益。"""  # English: the kinematics state-machine version and the kandc float version must give identical deg/25mm gains.
     import src.legacy.kinematics as kin
     from src.legacy.kinematics import bump_steer_deg_per_25 as k_bump
     from src.legacy.kinematics import camber_gain_deg_per_25 as k_cam
@@ -91,7 +119,7 @@ def test_kandc_and_kinematics_share_slope_kernel():
                - k_mr(damper_tr, tr, 0.0).value) < 1e-9
 
 
-# ── 2b. M5：侧偏刚度 Cα 单一实现（此前三份拷贝）─────────────────────
+# ── 2b. M5：侧偏刚度 Cα 单一实现（此前三份拷贝）───────────────────── — ( 2b. M5: single implementation of the cornering stiffness Cα (previously three copies) )
 
 def test_cornering_stiffness_single_source():
     """Cα 与峰值尺度 D(Fz) 在 engine 内只能各有一份实现。
@@ -100,6 +128,11 @@ def test_cornering_stiffness_single_source():
     `tire_mf.evaluate_magic_formula_fy`、`MagicFormulaSub._d`、
     `api/chassis.py::_ca_mf` 三处；改一处忘另两处会静默改变不足转向梯度。
     现全部收敛到 `tire_mf.load_d` / `tire_mf.cornering_stiffness`。
+
+    English: Cα and the peak scale D(Fz) may each have exactly one implementation inside engine.
+    Background: before M5, `D = Fy0·r·max(0.1, 1−LS·(r−1))` was written in three places (`tire_mf.evaluate_magic_formula_fy`,
+    `MagicFormulaSub._d`, `api/chassis.py::_ca_mf`); changing one while forgetting the other two silently altered the understeer
+    gradient. Everything now converges on `tire_mf.load_d` / `tire_mf.cornering_stiffness`.
     """
     import re
     from pathlib import Path
@@ -110,13 +143,15 @@ def test_cornering_stiffness_single_source():
     src_files = [p for p in (engine / "src").rglob("*.py") if "__pycache__" not in p.parts]
     # M8（2026-09-20）：正则放宽到"载荷敏感性算式"的通用形态（参考载荷可以是
     # 变量 `r` 也可以是 `fz / ref`）——守卫目的是"只有一份实现"，不是锁定字面量。
+    # M8 (2026-09-20): the regex was relaxed to the generic shape of the load-sensitivity formula (the reference load
+    # may be the variable `r` or `fz / ref`) — the guard exists to enforce a single implementation, not to lock literals.
     hits = [(p.name, m.start()) for p in src_files
             for m in re.finditer(r"max\(0\.1,\s*1\.0\s*-\s*\w+\s*\*\s*\([^()]*-\s*1\.0\)\)",
                                  p.read_text(encoding="utf-8"))]
     assert len(hits) == 1, f"D(Fz) 载荷敏感性算式有 {len(hits)} 份（应为 1）: {hits}"
     assert hits[0][0] == "tire_mf.py", hits
 
-    # M8：参考载荷语义守卫——FzRef 处敏感度因子为 1，"载荷翻倍 μ 降 LS"成立。
+    # M8：参考载荷语义守卫——FzRef 处敏感度因子为 1，"载荷翻倍 μ 降 LS"成立。 — M8: reference-load semantics guard — the sensitivity factor at FzRef is 1, and doubling the load lowers μ by exactly LS.
     from src.tire_mf import load_d
     ref = 600.0
     d_at_ref = load_d(ref, Fy0=5250.0, FzNom=3500.0, LS=0.10, FzRef=ref)
@@ -124,7 +159,7 @@ def test_cornering_stiffness_single_source():
     mu_ref = d_at_ref / ref
     mu_2x = load_d(2 * ref, Fy0=5250.0, FzNom=3500.0, LS=0.10, FzRef=ref) / (2 * ref)
     assert mu_2x / mu_ref == pytest.approx(1.0 - 0.10), "载荷翻倍应降 μ 恰为 LS"
-    # 缺省 None ⇒ 退化为 FzNom 旧口径（历史调用逐位不变）
+    # 缺省 None ⇒ 退化为 FzNom 旧口径（历史调用逐位不变） — default None ⇒ falls back to the old FzNom convention (historical calls bit-identical)
     assert load_d(700.0, Fy0=5250.0, FzNom=3500.0, LS=0.10) == \
         load_d(700.0, Fy0=5250.0, FzNom=3500.0, LS=0.10, FzRef=None)
     assert load_d(700.0, Fy0=5250.0, FzNom=3500.0, LS=0.10, FzRef=3500.0) == \
@@ -138,6 +173,8 @@ def test_cornering_stiffness_single_source():
                                    FzNom=3500.0, LS=0.1) == mf.cornering_stiffness(fz)
         # 胎宽轴系数只做线性放大（不动峰值 D）；k≡1 时逐位相同，一般 k 允许
         # 乘法结合序带来的最后一位差异（(k·B)·C·D vs k·(B·C·D)）。
+        # The tire-width axle factor only scales linearly (peak D untouched); at k≡1 the result is bit-identical, and for
+        # general k a last-digit difference from multiplication association order is allowed ((k·B)·C·D vs k·(B·C·D)).
         base = mf.cornering_stiffness(fz)
         assert mf.cornering_stiffness(fz, axle_scale=1.0) == base
         assert abs(mf.cornering_stiffness(fz, axle_scale=1.25) - 1.25 * base) <= 1e-12 * abs(base)
@@ -145,7 +182,7 @@ def test_cornering_stiffness_single_source():
 
 
 def test_compliance_forwards_tire_radius():
-    """验证 v3service._solve_point 将 tire_radius 准确传递给 solve_compliance_full。"""
+    """验证 v3service._solve_point 将 tire_radius 准确传递给 solve_compliance_full。"""  # English: verify that v3service._solve_point forwards tire_radius accurately to solve_compliance_full.
     from unittest.mock import patch
 
     import src.api.v3service as v3s
@@ -162,17 +199,17 @@ def test_compliance_forwards_tire_radius():
 
 
 def test_slope_endpoint_uses_single_side():
-    """端点不再虚高一倍：单侧差分（无 at 右侧点时不放大）。"""
+    """端点不再虚高一倍：单侧差分（无 at 右侧点时不放大）。"""  # English: endpoints no longer inflate to double: one-sided differencing (no amplification when the at point has no right neighbor).
     from src.metrics.kandc import _slope
     x = [0.0, 1.0, 2.0]
     y = [0.0, 1.0, 2.0]
-    assert abs(_slope(y, x, at=0.0) - 1.0) < 1e-9   # 端点：单侧 → 1.0
-    assert abs(_slope(y, x, at=2.0) - 1.0) < 1e-9   # 右端点单侧 → 1.0
-    # None 点跳过：只有两个有效点时仍可差分
+    assert abs(_slope(y, x, at=0.0) - 1.0) < 1e-9   # 端点：单侧 → 1.0 — endpoint: one-sided → 1.0
+    assert abs(_slope(y, x, at=2.0) - 1.0) < 1e-9   # 右端点单侧 → 1.0 — right endpoint one-sided → 1.0
+    # None 点跳过：只有两个有效点时仍可差分 — None points skipped: differencing still works with only two valid points
     assert abs(_slope([0.0, None, 2.0], x, at=1.0) - 1.0) < 1e-9
 
 
-# ── 3. F-67：MR 优先级与分轴回退 ──────────────────────────────────
+# ── 3. F-67：MR 优先级与分轴回退 ────────────────────────────────── — ( 3. F-67: MR priority and per-axle fallback )
 
 def _vehicle(mr_front, mr_rear):
     f = {
@@ -202,7 +239,7 @@ def _vehicle(mr_front, mr_rear):
 
 
 def test_mr_explicit_wins_over_derivation():
-    """显式 motion_ratio 优先于 mr_at_zero 数值推导（MR 三路优先级第一条）。"""
+    """显式 motion_ratio 优先于 mr_at_zero 数值推导（MR 三路优先级第一条）。"""  # English: explicit motion_ratio wins over the mr_at_zero numerical derivation (first of the three-way MR priority).
     from src.api.chassis import solve_chassis
     from src.api.v3models import ChassisRequest
     req = ChassisRequest(vehicle=VehicleSpec(**_vehicle(0.6, 0.7)))
@@ -212,7 +249,7 @@ def test_mr_explicit_wins_over_derivation():
 
 
 def test_mr_fallback_is_axis_aware():
-    """回退常量分轴：后轴 0.78 而非恒 0.75（F-67），且带 warning 说明原因。"""
+    """回退常量分轴：后轴 0.78 而非恒 0.75（F-67），且带 warning 说明原因。"""  # English: fallback constants are per-axle: rear 0.78 rather than a constant 0.75 (F-67), with a warning explaining why.
     from src.api.chassis import _resolve_mr_fb
     v = VehicleSpec(**_vehicle(None, None))
     warns: list[str] = []
@@ -222,6 +259,8 @@ def test_mr_fallback_is_axis_aware():
                                warnings=warns)
     # 合法几何不会触发回退（数值推导成功）——回退分支只验证常量分轴正确：
     # 用非法 points 强制走异常路径。
+    # Legal geometry does not trigger the fallback (numerical derivation succeeds) — the fallback branch only checks
+    # that the per-axle constants are correct: force the exception path with illegal points.
     c_f2, fb_f2 = _resolve_mr_fb(v.front, {"LCA_F": [1.0]}, is_front=True,
                                  warnings=warns)
     c_r2, fb_r2 = _resolve_mr_fb(v.rear, {"LCA_R": [1.0]}, is_front=False,
@@ -229,7 +268,7 @@ def test_mr_fallback_is_axis_aware():
     assert fb_f2 is True and c_f2 == 0.75
     assert fb_r2 is True and c_r2 == 0.78
     assert any("MR compute failed" in w for w in warns), warns
-    # 正常路径（第一组）不触发回退
+    # 正常路径（第一组）不触发回退 — the normal path (first group) does not trigger the fallback
     assert fb_f is False and fb_r is False
 
 
@@ -240,6 +279,12 @@ def test_mr_explicit_divergence_is_surfaced():
     显式分支永远命中 ⇒ 引擎 `mr_at_zero` 推导在生产链路从未被执行，
     两口径分叉（OpenItem-B 摇臂双根分支）永久静默。本测试把它钉成
     可观测项：数值仍取显式值（优先级 1 不变），但差异必须出现在 warnings。
+
+    English: M5: even when the explicit MR branch hits, the engine-derived value is still compared, and a >15% gap must surface a warning.
+    Background: the frontend always sends down its own swept MR (`motion_ratio: SIM.mrRefF||0.75`) so the explicit branch always
+    hits ⇒ the engine `mr_at_zero` derivation never runs in the production chain, and the two-convention fork (OpenItem-B rocker
+    dual-root branch) stays silent forever. This test pins it as an observable: the value still comes from the explicit MR
+    (priority 1 unchanged), but the divergence must appear in warnings.
     """
     from src.api.chassis import _resolve_mr_fb, mr_at_zero
     from src.api.v3models import AxleSpec
@@ -247,17 +292,17 @@ def test_mr_explicit_divergence_is_surfaced():
     warns: list[str] = []
     mr, fb = _resolve_mr_fb(ax, DEFAULT_DWB_POINTS, is_front=True, warnings=warns)
     derived = round(mr_at_zero(ax, DEFAULT_DWB_POINTS, False), 4)
-    assert mr == 0.75 and fb is False                  # 显式值仍是权威
-    assert derived < 0.6, derived                      # 引擎推导确实显著不同
-    assert any("MR 口径分歧" in w for w in warns), warns
+    assert mr == 0.75 and fb is False                  # 显式值仍是权威 — the explicit value remains authoritative
+    assert derived < 0.6, derived                      # 引擎推导确实显著不同 — the engine derivation is indeed significantly different
+    assert any("MR discrepancy" in w for w in warns), warns  # 引擎告警原文: MR discrepancy... — engine warning text: MR discrepancy...
 
 
 def test_mr_derivation_matches_when_no_explicit():
-    """无显式值时走推导路径，且不产生分歧告警（推导=自身，非分叉）。"""
+    """无显式值时走推导路径，且不产生分歧告警（推导=自身，非分叉）。"""  # English: with no explicit value the derivation path runs and no divergence warning is raised (derivation = itself, not a fork).
     from src.api.chassis import _resolve_mr_fb
     from src.api.v3models import AxleSpec
     ax = AxleSpec(points=DEFAULT_DWB_POINTS)           # motion_ratio=None
     warns: list[str] = []
     mr, fb = _resolve_mr_fb(ax, DEFAULT_DWB_POINTS, is_front=True, warnings=warns)
     assert fb is False and 0.02 <= mr <= 1.5
-    assert not any("MR 口径分歧" in w for w in warns), warns
+    assert not any("MR discrepancy" in w for w in warns), warns

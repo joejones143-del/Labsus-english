@@ -3,6 +3,12 @@
 覆盖：硬点 3 分量/有限性、SweepSpec 有限性/方向、TireParams 正数约束、
 TrackPoint target_speed 非负。这些都是 pydantic 服务边界防线——
 非法 JSON 直达求解器将被 422 拒绝（F-60 测试盲区① 补全）。
+
+English: F-45 request-validation gap regression tests (2026-08-30, R-0830-3 wave).
+Covers: hardpoint 3 components/finiteness, SweepSpec finiteness/direction, TireParams
+positive constraints, TrackPoint target_speed non-negativity. These are pydantic
+service-boundary guardrails — invalid JSON reaching the solver will be rejected with 422
+(fills test blind spot  of F-60).
 """
 from fastapi.testclient import TestClient
 from server import app  # noqa: E402
@@ -29,6 +35,12 @@ def test_pose_rejects_nan_hardpoint():
     注意：TestClient json 参数用严格编码（拒绝 NaN 字面量本身），改用字符串
     "NaN" —— pydantic v2 在 allow_inf_nan 下会解析为 float('nan')，恰好能
     打到 _check_points_values 的 isfinite 卫哨（旧代码会放行进求解器）。
+
+    English: F-45: NaN hardpoints must 422 (the pydantic allow_inf_nan default-True gap is sealed).
+    Note: TestClient's json parameter uses strict encoding (rejecting the NaN literal itself),
+    so the string "NaN" is used instead — pydantic v2 parses it as float('nan') under
+    allow_inf_nan, which hits the isfinite sentinel of _check_points_values (old code let it
+    straight through to the solver).
     """
     pts = _base_points()
     pts["LBJ"] = [640.0, "NaN", 150.0]
@@ -37,7 +49,7 @@ def test_pose_rejects_nan_hardpoint():
 
 
 def test_pose_rejects_wrong_length_point():
-    """F-45：长度 != 3 的硬点列表必须 422。"""
+    """F-45：长度 != 3 的硬点列表必须 422。"""  # English: F-45: hardpoint lists of length != 3 must 422.
     pts = _base_points()
     pts["WC"] = [710.0, 0.0]
     r = client.post("/api/v3/solve/pose", json={"points": pts})
@@ -45,7 +57,7 @@ def test_pose_rejects_wrong_length_point():
 
 
 def test_bump_rejects_reversed_sweep():
-    """F-45：min > max 的反向扫掠必须 422（旧版静默产出空/反向曲线）。"""
+    """F-45：min > max 的反向扫掠必须 422（旧版静默产出空/反向曲线）。"""  # English: F-45: reversed sweeps with min > max must 422 (old versions silently produced empty/reversed curves).
     r = client.post("/api/v3/kandc/bump", json={"sweep": {"min": 50.0, "max": -50.0}})
     assert r.status_code == 422
 
@@ -57,7 +69,7 @@ def test_bump_rejects_nonfinite_sweep():
 
 
 def test_track_rejects_bad_tire_params():
-    """F-45：FzNom<=0 / By<=0 必须 422（tire_mf._d 除零、MF 形状退化防线）。"""
+    """F-45：FzNom<=0 / By<=0 必须 422（tire_mf._d 除零、MF 形状退化防线）。"""  # English: F-45: FzNom<=0 / By<=0 must 422 (tire_mf._d divide-by-zero, MF shape-degeneration guardrail).
     body = {
         "vehicle": {
             "wheelbase_mm": 1620.0, "mass_kg": 480.0, "sprung_mass_kg": 420.0,
@@ -83,7 +95,7 @@ def test_track_rejects_bad_tire_params():
 
 
 def test_track_rejects_negative_target_speed():
-    """F-45：target_speed < 0 必须 422（负速度使松弛/漂移模型无意义）。"""
+    """F-45：target_speed < 0 必须 422（负速度使松弛/漂移模型无意义）。"""  # English: F-45: target_speed < 0 must 422 (negative speed makes the relaxation/drift model meaningless).
     body = {
         "vehicle": {
             "wheelbase_mm": 1620.0, "mass_kg": 480.0, "sprung_mass_kg": 420.0,
@@ -104,7 +116,7 @@ def test_track_rejects_negative_target_speed():
 
 
 def test_chassis_rejects_nonfinite_axle_point():
-    """F-45：整车 axle points 非有限同样 422（ChassisRequest 校验）。"""
+    """F-45：整车 axle points 非有限同样 422（ChassisRequest 校验）。"""  # English: F-45: non-finite full-vehicle axle points also 422 (ChassisRequest validation).
     pts = _base_points()
     pts["WC"] = ["NaN", 0.0, 280.0]
     body = {

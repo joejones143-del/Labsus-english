@@ -6,6 +6,13 @@ STRUT_OUT / RCK_AX_A / RCK_AX_B / STRUT_IN / RCK_DMP / DMP_BODY），
 由 v3service 在内部映射为引擎机构点（CH*/UP*/FL1/RK_*）。
 
 坐标系（与前端一致）：X = 外侧（右轮 +X）/ Y = 向前 / Z = 向上。
+
+English: /api/v3 request/response models (S2 service layer). Naming convention: all
+hardpoints in requests use the frontend `dwb-pro-fullchassis.html` DWB names
+(LCA_F / LCA_R / LBJ / UCA_F / UCA_R / UBJ / WC / TRO / RACK / STRUT_OUT / RCK_AX_A /
+RCK_AX_B / STRUT_IN / RCK_DMP / DMP_BODY), mapped internally by v3service to engine
+mechanism points (CH*/UP*/FL1/RK_*). Coordinate system (same as the frontend):
+X = outboard (right wheel +X) / Y = forward / Z = up.
 """
 from __future__ import annotations
 
@@ -13,7 +20,7 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# ── 前端 DWB 硬点键（同 HP_META） ────────────────────────────────────
+# ── 前端 DWB 硬点键（同 HP_META） ──────────────────────────────────── ( frontend DWB hardpoint keys, same as HP_META )
 DWB_KEYS = frozenset({
     "LCA_F", "LCA_R", "LBJ", "UCA_F", "UCA_R", "UBJ", "WC", "TRO",
     "RACK", "STRUT_OUT", "RCK_AX_A", "RCK_AX_B", "STRUT_IN",
@@ -27,6 +34,13 @@ def _check_points_values(points: dict) -> None:
     pydantic 默认 allow_inf_nan=True，NaN/Inf 硬点可直达求解器（引擎天然
     免疫 NaN 但会报 SOLVER_FAILED；前端 F-01/F-02 防线已补）。这里在
     服务边界统一拒绝非法几何，同时避免超长列表（长度 != 3 直接拒绝）。
+
+    English: F-45 (2026-08-30) fallback validation of hardpoint values — 3 components +
+    all finite. By default pydantic allows allow_inf_nan=True, so NaN/Inf hardpoints could
+    reach the solver directly (the engine is naturally NaN-immune but reports
+    SOLVER_FAILED; the frontend F-01/F-02 defenses are in place). This rejects illegal
+    geometry uniformly at the service boundary and blocks over-long lists (length != 3 is
+    rejected outright).
     """
     for k, v in points.items():
         if not isinstance(v, (list, tuple)) or len(v) != 3:
@@ -35,14 +49,21 @@ def _check_points_values(points: dict) -> None:
             raise ValueError(f"hardpoint {k!r} contains non-finite value: {v!r}")
 
 # 衬套可挂节点：引擎摇臂模型为单枢轴（RCK_AX_A->RK_PIVOT），RCK_AX_B
-# 未建模（OpenItem：精确轴方向），挂它的衬套无法解析 -> 明确拒绝。
+# 未建模（OpenItem：精确轴方向），挂它的衬套无法解析 -> 明确拒绝。 — bushing-capable
+# nodes: the engine rocker is modeled as a single pivot (RCK_AX_A->RK_PIVOT); RCK_AX_B is
+# not modeled (OpenItem: exact axis direction), so bushings on it cannot resolve -> reject
+# explicitly.
 BUSHING_NODES = frozenset(DWB_KEYS - {"RCK_AX_B"})
 
 
 class BushingSpec(BaseModel):
-    """衬套定义（S2）：挂在某个前端命名节点上的 6DOF 线性衬套。"""
+    """衬套定义（S2）：挂在某个前端命名节点上的 6DOF 线性衬套。
+
+    English: bushing definition (S2) — a 6-DOF linear bushing attached to a
+    frontend-named node.
+    """
     name: str
-    node: str                                # 前端 DWB 命名节点（如 "LCA_F"）
+    node: str                                # 前端 DWB 命名节点（如 "LCA_F"） — frontend DWB-named node (e.g. "LCA_F")
     kT: list[float] = Field(default_factory=lambda: [500.0] * 3)
     kR: list[float] = Field(default_factory=lambda: [8e4] * 3)
     preload: list[float] = Field(default_factory=lambda: [0.0] * 6)
@@ -59,7 +80,10 @@ class BushingSpec(BaseModel):
 
 
 class SweepSpec(BaseModel):
-    """扫掠范围（mm 或 N，随工况语义变化）。"""
+    """扫掠范围（mm 或 N，随工况语义变化）。
+
+    English: sweep range (mm or N depending on the case semantics).
+    """
     min: float = -50.0
     max: float = 50.0
     n: int = Field(default=21, ge=3, le=201)
@@ -68,7 +92,10 @@ class SweepSpec(BaseModel):
     def _check_range(self):
         # F-45（2026-08-30）：min/max 有限性 + 方向校验（允许 min==max 的单点
         # 扫掠——test_bump_no_bushing_matches_pose_consistency 即用 7..7；仅
-        # 拒绝 min>max 的反向扫掠）
+        # 拒绝 min>max 的反向扫掠） — F-45 (2026-08-30): min/max finiteness + direction check
+        # (a min==max single-point sweep is allowed —
+        # test_bump_no_bushing_matches_pose_consistency uses 7..7; only a reversed
+        # min>max sweep is rejected)
         if not (math.isfinite(self.min) and math.isfinite(self.max)):
             raise ValueError(f"sweep min/max must be finite: {self.min}/{self.max}")
         if self.min > self.max:
@@ -77,13 +104,20 @@ class SweepSpec(BaseModel):
 
 
 class DesignSpec(BaseModel):
-    """设计位轮轴参数（前端 PRESETS cam0/toe0；决定 camber/toe 的绝对基准）。"""
+    """设计位轮轴参数（前端 PRESETS cam0/toe0；决定 camber/toe 的绝对基准）。
+
+    English: design-position wheel axis parameters (frontend PRESETS cam0/toe0; defines
+    the absolute camber/toe reference).
+    """
     camber_deg: float = -1.2
     toe_deg: float = 0.05
 
 
 class CaseLoad(BaseModel):
-    """接地点准静态载荷（N / N·mm，全局坐标）。"""
+    """接地点准静态载荷（N / N·mm，全局坐标）。
+
+    English: contact-patch quasi-static load (N / N·mm, global coordinates).
+    """
     fx: float = 0.0
     fy: float = 0.0
     fz: float = 3000.0
@@ -93,16 +127,19 @@ class CaseLoad(BaseModel):
 
 
 class KandcRequest(BaseModel):
-    """K&C 工况请求（bump / roll / steer / compliance 共用）。"""
-    points: dict[str, list[float]] | None = None   # 缺省 → PRO 基线
-    arch: str = "pushrod"                          # pushrod | pullrod（记录用，机构同构）
+    """K&C 工况请求（bump / roll / steer / compliance 共用）。
+
+    English: K&C case request (shared by bump / roll / steer / compliance).
+    """
+    points: dict[str, list[float]] | None = None   # 缺省 → PRO 基线 — default -> PRO baseline
+    arch: str = "pushrod"                          # pushrod | pullrod（记录用，机构同构） — pushrod | pullrod (recording only, mechanisms are isomorphic)
     bushings: list[BushingSpec] = Field(default_factory=list)
     sweep: SweepSpec = Field(default_factory=SweepSpec)
     case: CaseLoad = Field(default_factory=CaseLoad)
     design: DesignSpec = Field(default_factory=DesignSpec)
-    compliance_axis: str = "fy"                    # compliance 工况扫掠力轴：fx|fy|mz
-    tire_radius: float = 325.0                     # 接地点计算
-    track_width: float = 1580.0                    # roll 工况两侧轮距（mm）
+    compliance_axis: str = "fy"                    # compliance 工况扫掠力轴：fx|fy|mz — compliance-case swept force axis: fx|fy|mz
+    tire_radius: float = 325.0                     # 接地点计算 — contact-patch calculation
+    track_width: float = 1580.0                    # roll 工况两侧轮距（mm） — full track width for roll cases (mm)
 
     @model_validator(mode="after")
     def _check(self):
@@ -113,14 +150,17 @@ class KandcRequest(BaseModel):
             missing = DWB_KEYS - set(self.points)
             if missing:
                 raise ValueError(f"missing hardpoint keys: {sorted(missing)}")
-            _check_points_values(self.points)   # F-45：3 分量 + 有限性
+            _check_points_values(self.points)   # F-45：3 分量 + 有限性 — F-45: 3 components + finiteness
         if self.compliance_axis not in ("fx", "fy", "mz"):
             raise ValueError("compliance_axis must be fx|fy|mz")
         return self
 
 
 class KandcResponse(BaseModel):
-    """K&C 工况响应：曲线 + 增益表 + 可信度状态。"""
+    """K&C 工况响应：曲线 + 增益表 + 可信度状态。
+
+    English: K&C case response — curves + gain table + confidence status.
+    """
     case: str                                    # bump | roll | steer | compliance
     status: str                                  # VALID | APPROXIMATE | SOLVER_FAILED | ...
     ms: float = 0.0
@@ -131,7 +171,10 @@ class KandcResponse(BaseModel):
 
 
 class PoseRequest(BaseModel):
-    """单点机制求解请求。"""
+    """单点机制求解请求。
+
+    English: single-point mechanism solve request.
+    """
     points: dict[str, list[float]] | None = None
     arch: str = "pushrod"
     travel: float = 0.0
@@ -148,32 +191,38 @@ class PoseRequest(BaseModel):
             missing = DWB_KEYS - set(self.points)
             if missing:
                 raise ValueError(f"missing hardpoint keys: {sorted(missing)}")
-            _check_points_values(self.points)   # F-45：3 分量 + 有限性
+            _check_points_values(self.points)   # F-45：3 分量 + 有限性 — F-45: 3 components + finiteness
         return self
 
 
 class PoseResponse(BaseModel):
-    """单点求解响应：姿态 + 定位角。"""
+    """单点求解响应：姿态 + 定位角。
+
+    English: single-point solve response — attitude + alignment angles.
+    """
     status: str
     ms: float = 0.0
     residual_mm: float = 0.0
     travel: float = 0.0
     rack: float = 0.0
-    pose: dict[str, list[float]] = Field(default_factory=dict)   # {引擎点: [x,y,z]}
+    pose: dict[str, list[float]] = Field(default_factory=dict)   # {引擎点: [x,y,z]} — {engine point: [x,y,z]}
     metrics: dict[str, float] = Field(default_factory=dict)      # cam/toe/kpi/cast/scrub/trail/...
     rocker: dict | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
-# ── 整车分析（S2-5：四角装配 + 准静态载荷转移，镜像单文件版 solveQuasiStatic） ──
+# ── 整车分析（S2-5：四角装配 + 准静态载荷转移，镜像单文件版 solveQuasiStatic） ── ( full-vehicle analysis: S2-5 four-corner assembly + quasi-static load transfer, mirrors the single-file solveQuasiStatic )
 
 class ArbSpec(BaseModel):
-    """横向稳定杆（每轴）。d<=0.5 视为拆除。"""
-    d: float = 18.0              # 直径 mm
-    t: float = 0.55              # 连杆位置比（LCA_F→LBJ 插值）
-    dy: float = 50.0             # 纵向偏置 mm
-    dz: float = 120.0            # 高度偏置 mm
-    G: float = 79000.0           # 剪切模量 MPa
+    """横向稳定杆（每轴）。d<=0.5 视为拆除。
+
+    English: anti-roll bar (per axle). d<=0.5 counts as removed.
+    """
+    d: float = 18.0              # 直径 mm — diameter (mm)
+    t: float = 0.55              # 连杆位置比（LCA_F→LBJ 插值） — droplink position ratio (interpolated LCA_F→LBJ)
+    dy: float = 50.0             # 纵向偏置 mm — longitudinal offset (mm)
+    dz: float = 120.0            # 高度偏置 mm — height offset (mm)
+    G: float = 79000.0           # 剪切模量 MPa — shear modulus (MPa)
 
 
 class KwCurve(BaseModel):
@@ -184,6 +233,15 @@ class KwCurve(BaseModel):
     strut_attach 按 arch 对齐前端），引擎已可用 mr_at_zero 权威推导 MR 与
     常数 kw；kw_curve 通道保留为**可选细化**（真实 mr(tr)² 曲率），缺省
     回退常数 kS·(engine_mr)²，不再依赖前端曲线才能工作。
+
+    English: wheel-corner stiffness-vs-travel characteristic (for the quasi roll-coupled
+    iteration). travel in mm / kw in N/mm; delivered by the frontend with the payload
+    (frontend sweep kw = kS·mr(tr)²). P2 (2026-08-22): the STRUT_OUT OpenItem is closed
+    (rocker real 3D axis RCK_AX_A→B + strut_attach aligned to the frontend per arch), so
+    the engine can derive MR and a constant kw authoritatively from mr_at_zero; the
+    kw_curve channel is kept as an **optional refinement** (the true mr(tr)² curvature);
+    the default falls back to constant kS·(engine_mr)² so it no longer depends on the
+    frontend curve to work.
     """
     travel: list[float]
     kw: list[float]
@@ -203,25 +261,39 @@ class AxleSpec(BaseModel):
     arch（P2，2026-08-22 起为功能参数）：pushrod → STRUT_OUT 挂下臂（前端
     FRONT strutOutAttach:"lca"）；pullrod → 挂上臂（REAR:"uca"）；其余 → knuckle
     （up4 固定转向节，历史行为）。
+
+    English: one axle (right wheel) definition; the left wheel is generated by mirroring.
+    arch (a functional parameter since P2, 2026-08-22): pushrod -> STRUT_OUT attaches to
+    the lower arm (frontend FRONT strutOutAttach:"lca"); pullrod -> attaches to the upper
+    arm (REAR:"uca"); anything else -> knuckle (up4 fixed to the upright, historical
+    behavior).
     """
-    points: dict[str, list[float]]          # 15 键 DWB 命名
-    arch: str = "pushrod"                   # pushrod|pullrod（→ strut 附着拓扑）
+    points: dict[str, list[float]]          # 15 键 DWB 命名 — 15-key DWB naming
+    arch: str = "pushrod"                   # pushrod|pullrod（→ strut 附着拓扑） — pushrod|pullrod (-> strut attach topology)
     camber_deg: float = -1.2
     toe_deg: float = 0.05
     # M11（2026-09-20）· P12：悬架外倾增益（°外倾变化 / 25mm 轮跳，生产方向负号）。
     # 侧倾 → 轮跳差 → 外倾差 → 外倾推力差 = 真车上 ARB 影响平衡的主杠杆。
     # 缺省 0 ⇒ 耦合项恒 0、历史行为逐位不变（直接调 API 的调用方不受影响）；
-    # 前端把自身扫掠得到的 cg（sampleSweep(sw,tr,"cg")）随 payload 下发。
+    # 前端把自身扫掠得到的 cg（sampleSweep(sw,tr,"cg")）随 payload 下发。 — suspension
+    # camber gain (° camber change / 25mm wheel travel, production-direction negative sign).
+    # Roll -> travel difference -> camber difference -> camber-thrust difference = the main
+    # lever by which the ARB affects balance on a real car. Default 0 => the coupling term
+    # is always 0 and historical behavior is bit-for-bit unchanged (direct API callers are
+    # unaffected); the frontend sends its own swept cg (sampleSweep(sw,tr,"cg")) with the
+    # payload.
     camber_gain_deg_per_25mm: float = 0.0
     tire_radius: float = 325.0
     spring_rate: float = 110.0              # kS N/mm
-    spring_mass_kg: float = 330.0           # 本轴簧载质量（CG 分配用）
-    unsprung_kg: float = 38.0               # mU 单侧
-    motion_ratio: float | None = None       # 缺省 → 引擎 mr_at_zero 数值推导
-    kw_curve: KwCurve | None = None         # 缺省 → 常数 kw = kS·mr²（见 KwCurve）
-    tire_width: float | None = None         # M5 胎宽 mm：参与前后轴侧偏刚度配平（见下）
-    tire_rim_w: float | None = None         # G29 轮胎工坊：轮毂宽度 mm（可选，缺省不参与计算）
-    tire_et: float | None = None            # G29 轮胎工坊：偏距 mm（可选）
+    spring_mass_kg: float = 330.0           # 本轴簧载质量（CG 分配用） — this axle's sprung mass (for CG distribution)
+    unsprung_kg: float = 38.0               # mU 单侧 — mU per side
+    motion_ratio: float | None = None       # 缺省 → 引擎 mr_at_zero 数值推导 — default -> numerical mr_at_zero derivation by the engine
+    kw_curve: KwCurve | None = None         # 缺省 → 常数 kw = kS·mr²（见 KwCurve） — default -> constant kw = kS·mr² (see KwCurve)
+    tire_width: float | None = None         # M5 胎宽 mm：参与前后轴侧偏刚度配平（见下） — M5 tire width (mm): participates in the
+    # front/rear cornering-stiffness balancing (see below)
+    tire_rim_w: float | None = None         # G29 轮胎工坊：轮毂宽度 mm（可选，缺省不参与计算） — G29 tire workshop: rim width (mm,
+    # optional, excluded from computation by default)
+    tire_et: float | None = None            # G29 轮胎工坊：偏距 mm（可选） — G29 tire workshop: wheel offset/ET (mm, optional)
     arb: ArbSpec = Field(default_factory=ArbSpec)
 
     def tire_width_scale(self, other: "AxleSpec | None") -> float:
@@ -235,6 +307,20 @@ class AxleSpec(BaseModel):
 
         归一化用两轴均值：等宽时 k≡1（旧行为逐位不变）；不等宽时只在两轴之间
         重新分配刚度，整车平均拓地力不变。任一轴缺 tire_width ⇒ 返回 1（不参与）。
+
+        English: M5 (2026-09-20): per-axle factor k = W_axle / mean(W_f, W_r) used to
+        balance the cornering-stiffness factor by tire width. Physics: cornering stiffness
+        grows roughly linearly with tire width (contact-patch scale), while peak friction
+        μ·Fz is essentially width-independent for the same compound/pressure => only the
+        stiffness factor (MF B) is scaled, the peak D is untouched. The G24 tire-magnitude
+        calibration (μ=1.50 / peak slip angle 8.27°) stays put; only the front/rear balance
+        shifts — capturing the real-car balancing mechanism "wider rear tires => rear axle
+        grips more => understeer" (previously tire.W only reached the render layer; the
+        model was blind to tire width).
+        Normalization uses the two-axle mean: equal widths => k≡1 (old behavior
+        bit-for-bit); unequal widths only redistribute stiffness between the two axles and
+        keep the vehicle-average grip unchanged. Either axle missing tire_width => returns
+        1 (not participating).
         """
         w_a = self.tire_width
         w_b = other.tire_width if other is not None else None
@@ -252,16 +338,16 @@ class VehicleSpec(BaseModel):
     mass_kg: float = 1420.0                 # mTotal
     sprung_mass_kg: float = 1260.0          # mS
     hcg_mm: float = 350.0
-    hs_mm: float = 370.0                    # 簧载质心高
+    hs_mm: float = 370.0                    # 簧载质心高 — sprung CG height
     front: AxleSpec
     rear: AxleSpec
 
 
 class QuasiInputs(BaseModel):
-    gy: float = 0.0                         # 侧向加速度 g
-    gx: float = 0.0                         # 纵向加速度 g（+ 加速）
+    gy: float = 0.0                         # 侧向加速度 g — lateral acceleration (g)
+    gx: float = 0.0                         # 纵向加速度 g（+ 加速） — longitudinal acceleration (g; + = accelerating)
     aero_force_n: float = 0.0
-    aero_bias: float = 0.5                  # 前轴气动分配
+    aero_bias: float = 0.5                  # 前轴气动分配 — front-axle aero distribution
 
 
 class CornerTravel(BaseModel):
@@ -272,13 +358,18 @@ class CornerTravel(BaseModel):
 
 
 class ChassisRequest(BaseModel):
-    """整车分析请求（solve 单点 / kandc 扫掠共用）。"""
+    """整车分析请求（solve 单点 / kandc 扫掠共用）。
+
+    English: full-vehicle analysis request (shared by solve single-point and kandc sweeps).
+    """
     vehicle: VehicleSpec
     quasi: QuasiInputs = Field(default_factory=QuasiInputs)
     travel: CornerTravel = Field(default_factory=CornerTravel)
     rack: float = 0.0
     sweep: SweepSpec = Field(default_factory=lambda: SweepSpec(min=-50, max=50, n=21))
-    # 轮胎 MF 参数：稳态不足转向梯度（US Gradient）用（前向引用，文件末尾 rebuild）
+    # 轮胎 MF 参数：稳态不足转向梯度（US Gradient）用（前向引用，文件末尾 rebuild） — tire MF
+    # params used for the steady-state understeer gradient (US Gradient) (forward reference,
+    # model_rebuild at file end)
     tire: "TireParams" = Field(default_factory=lambda: TireParams())
 
     @model_validator(mode="after")
@@ -290,12 +381,15 @@ class ChassisRequest(BaseModel):
             missing = DWB_KEYS - set(ax.points)
             if missing:
                 raise ValueError(f"missing axle hardpoint keys: {sorted(missing)}")
-            _check_points_values(ax.points)   # F-45：3 分量 + 有限性
+            _check_points_values(ax.points)   # F-45：3 分量 + 有限性 — F-45: 3 components + finiteness
         return self
 
 
 class ChassisLoads(BaseModel):
-    """准静态载荷转移输出（镜像 solveQuasiStatic）。"""
+    """准静态载荷转移输出（镜像 solveQuasiStatic）。
+
+    English: quasi-static load-transfer output (mirrors solveQuasiStatic).
+    """
     roll_deg: float = 0.0
     roll_grad_deg_per_g: float = 0.0
     kphi_f: float = 0.0                      # N·m/°
@@ -303,22 +397,26 @@ class ChassisLoads(BaseModel):
     kphi_tot: float = 0.0
     arb_share_f: float = 0.0                 # %
     arb_share_r: float = 0.0
-    dFz_u_f: float = 0.0                     # 非簧载直接转移
-    dFz_geo_f: float = 0.0                   # RC 几何力矩
-    dFz_elas_f: float = 0.0                  # 弹性力矩
+    dFz_u_f: float = 0.0                     # 非簧载直接转移 — direct unsprung transfer
+    dFz_geo_f: float = 0.0                   # RC 几何力矩 — RC (roll center) geometric moment
+    dFz_elas_f: float = 0.0                  # 弹性力矩 — elastic moment
     dFz_f_tot: float = 0.0
     dFz_u_r: float = 0.0
     dFz_geo_r: float = 0.0
     dFz_elas_r: float = 0.0
     dFz_r_tot: float = 0.0
-    dFz_long: float = 0.0                    # 纵向转移
+    dFz_long: float = 0.0                    # 纵向转移 — longitudinal transfer
     tlltd_pct: float = 50.0
     fz: dict[str, float] = Field(default_factory=dict)   # FL/FR/RL/RR
-    # 稳态不足转向梯度（线性区，含载荷敏感性：真实四轮载荷下的侧偏刚度）
-    us_grad_deg_per_g: float = 0.0           # (αf−αr)/ay；|gy|<0.02 时不可信，置 0
-    alpha_f_deg: float = 0.0                 # 前轴侧偏角 @当前工况（线性近似）
+    # 稳态不足转向梯度（线性区，含载荷敏感性：真实四轮载荷下的侧偏刚度） — steady-state
+    # understeer gradient (linear region, with load sensitivity: cornering stiffness at the
+    # real four-wheel loads)
+    us_grad_deg_per_g: float = 0.0           # (αf−αr)/ay；|gy|<0.02 时不可信，置 0 — (αf−αr)/ay; unreliable when |gy|<0.02, set to 0
+    alpha_f_deg: float = 0.0                 # 前轴侧偏角 @当前工况（线性近似） — front-axle slip angle @ current case (linear approximation)
     alpha_r_deg: float = 0.0
-    # Jacking 效应：侧向力经 RC 传递的垂向分量（正 = 抬升簧载）
+    # Jacking 效应：侧向力经 RC 传递的垂向分量（正 = 抬升簧载） — jacking effect: the vertical
+    # component of lateral force transmitted through the RC (positive = lifts the sprung
+    # mass)
     jacking_f_n: float = 0.0
     jacking_heave_mm: float = 0.0
 
@@ -326,11 +424,13 @@ class ChassisLoads(BaseModel):
 class ChassisPoseResponse(BaseModel):
     status: str
     ms: float = 0.0
-    pose: dict[str, dict] = Field(default_factory=dict)     # FL/FR/RL/RR → 定位角
+    pose: dict[str, dict] = Field(default_factory=dict)     # FL/FR/RL/RR → 定位角 — FL/FR/RL/RR -> alignment angles
     attitude: dict[str, float] = Field(default_factory=dict)  # heave/roll/pitch
     loads: ChassisLoads = Field(default_factory=ChassisLoads)
     mr: dict[str, float] = Field(default_factory=dict)
-    # 不足转向特性 δ-ay 扫掠（gy 0→2g 均匀 21 点；与 loads.us_grad 同口径）
+    # 不足转向特性 δ-ay 扫掠（gy 0→2g 均匀 21 点；与 loads.us_grad 同口径） — understeer
+    # characteristic δ-ay sweep (uniform 21 points over gy 0→2g; same accounting as
+    # loads.us_grad)
     us_curve: dict[str, list] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
@@ -344,17 +444,22 @@ class ChassisSweepResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-# ── 整车瞬态赛道仿真（S3-1：平面 3-DOF + 四轮 MF + 准静态载荷转移） ──
+# ── 整车瞬态赛道仿真（S3-1：平面 3-DOF + 四轮 MF + 准静态载荷转移） ── ( full-vehicle transient track simulation: S3-1 planar 3-DOF + four-wheel MF + quasi-static load transfer )
 
 class TrackPoint(BaseModel):
-    """赛道中心线点（世界坐标 m，target_speed m/s）。"""
+    """赛道中心线点（世界坐标 m，target_speed m/s）。
+
+    English: track centerline point (world coordinates m, target_speed m/s).
+    """
     x: float
     y: float
     target_speed: float = 15.0
 
     @model_validator(mode="after")
     def _check(self):
-        # F-45：target_speed 必须有限且 >= 0（负速度会使松弛/漂移模型无意义）
+        # F-45：target_speed 必须有限且 >= 0（负速度会使松弛/漂移模型无意义） — F-45: target_speed
+        # must be finite and >= 0 (negative speed makes the relaxation/drift model
+        # meaningless)
         if not math.isfinite(self.x) or not math.isfinite(self.y):
             raise ValueError(f"track point must be finite: ({self.x}, {self.y})")
         if not math.isfinite(self.target_speed) or self.target_speed < 0:
@@ -376,7 +481,23 @@ class TireParams(BaseModel):
     峰值滑移率 2.901/(20×1.2) = 12.1%（真实胎 8~15%）。
     Cy/Ey/LS/FzNom 保留：LS=0.10 即“载荷翻倍 μ 降 10%”，已在真实量级。
     注：s_peak=2.901 仅由 Cy/Ey 定（解 1.5s−0.5·atan s = tan(π/(2Cy))），
-    故调 By 就是线性地调峰值侧偏角。"""
+    故调 By 就是线性地调峰值侧偏角。
+
+    English: MF parameters shared by the four wheels (defaults = tire_mf defaults); μ is
+    derived from Fy0/FzNom for the friction circle. G24 (2026-09-02): defaults switched to
+    realistic GT3 slick-tire magnitudes. The old defaults Fy0=8000 / By=9 were placeholder
+    values ("just put numbers in so it runs"), unrealistic in two ways: μ = 8000/3500 =
+    2.29 — real race-tire peak friction is 1.5~1.6, and 2.29 would let a dry, wingless car
+    pull 2.29g, which physics forbids. By = 9 — with Cy=1.2/Ey=-0.5 the peak lands at
+    17.87° slip angle while real slicks peak at 6~10°; the car had to slide to 18° for full
+    grip, with the front axle already saturated past its peak (20.5°) and the rear at only
+    23% (4.2°) => deep understeer, the autopilot crawling through corners at 47km/h.
+    New defaults: μ = 5250/3500 = 1.50; By = 20 => peak slip angle atan(2.901/20) = 8.27°,
+    peak slip ratio 2.901/(20×1.2) = 12.1% (real tires 8~15%). Cy/Ey/LS/FzNom kept:
+    LS=0.10 means "load doubles -> μ drops 10%", already realistic. Note: s_peak=2.901 is
+    fixed by Cy/Ey alone (solving 1.5s−0.5·atan s = tan(π/(2Cy))), so tuning By linearly
+    tunes the peak slip angle.
+    """
     Fy0: float = 5250.0
     By: float = 20.0
     Cy: float = 1.2
@@ -384,7 +505,8 @@ class TireParams(BaseModel):
     Sh: float = 0.0
     Sv: float = 0.0
     FzNom: float = 3500.0
-    LS: float = 0.10               # 载荷敏感性（重载 μ 递减；0 = 线性基线）
+    LS: float = 0.10               # 载荷敏感性（重载 μ 递减；0 = 线性基线） — load sensitivity (μ decreases under load; 0 =
+                                   # linear baseline)
     FzRef: float | None = None     # M8（2026-09-20）：载荷敏感性的**参考载荷**（N）。
                                    # 与 FzNom 分离：FzNom 定 μ 量级（μ=Fy0/FzNom），
                                    # FzRef 定"载荷翻倍 μ 降 LS"这句话相对哪个工作点。
@@ -392,31 +514,63 @@ class TireParams(BaseModel):
                                    # ~580 N ⇒ 敏感度稀释约 6 倍，载荷转移类杠杆
                                    # （ARB/弹簧/配重）对 US 梯度几乎失效（实测
                                    # ARB 0→30 只动 +0.016 °/g，而 TLLTD 45%→75%）。
-                                   # 缺省 None ⇒ 退化为 FzNom（历史调用逐位不变）。
-    Cg: float = 6.0                # 外倾推力系数 1/rad（Fy += -Cg·γ·Fz）
+                                   # 缺省 None ⇒ 退化为 FzNom（历史调用逐位不变）。 — M8 (2026-09-20): the **reference
+                                   # load** (N) for load sensitivity, split from FzNom:
+                                   # FzNom sets the μ magnitude (μ=Fy0/FzNom) while FzRef
+                                   # defines which operating point "load doubles -> μ drops
+                                   # by LS" refers to. The old implementation mixed them,
+                                   # using FzNom=3500 (GT3-class) while a real FSAE wheel
+                                   # carries ~580 N => sensitivity diluted ~6x and
+                                   # load-transfer levers (ARB/springs/ballast) barely moved
+                                   # the US gradient (measured: ARB 0→30 only +0.016 °/g
+                                   # while TLLTD went 45%→75%).
+    Cg: float = 6.0                # 外倾推力系数 1/rad（Fy += -Cg·γ·Fz） — camber thrust coefficient (1/rad; Fy += -Cg·γ·Fz)
                                    # G24-S3（2026-09-02）：0.5 → 6.0。0.5 只给 1750 N/rad
                                    # @ FzNom（真实 15~25 kN/rad），实测 camber 对总侧向力
                                    # 贡献 <3% ⇒ 调悬架几何改不动圈速（lap 回归 Δ=0.012%）。
                                    # 6.0 @ FzNom=3500 给 21 000 N/rad，入真实量级。
                                    # ⚠ 提级必须与摩擦圆钳位同来：线性外倾项在 MF 力之外
                                    #   叠加会顶破 μ·Fz（transient.wheel_force 用
-                                   #   lat_avail=sqrt(μfz²-fx²) 钳位，前端 11-stages.js 同式）。
-    Ls: float = 0.35               # 侧偏松弛长度 m（瞬态一阶滞后）
-    kappa_peak: float = 0.12       # M19：纵向峰值滑移率（无量纲）
+                                   #   lat_avail=sqrt(μfz²-fx²) 钳位，前端 11-stages.js 同式）。 — G24-S3 (2026-09-02):
+                                   # 0.5 → 6.0 — 0.5 gave only 1750 N/rad @ FzNom (real
+                                   # 15~25 kN/rad); measured camber contributed <3% of total
+                                   # lateral force => suspension-geometry changes could not
+                                   # move lap time (lap regression Δ=0.012%). 6.0 @
+                                   # FzNom=3500 gives 21 000 N/rad — real magnitude. ⚠
+                                   # Raising it must ship with the friction-circle clamp: the
+                                   # linear camber term stacks on top of the MF force and can
+                                   # breach μ·Fz (transient.wheel_force clamps with
+                                   # lat_avail=sqrt(μfz²-fx²); frontend 11-stages.js mirrors
+                                   # this).
+    Ls: float = 0.35               # 侧偏松弛长度 m（瞬态一阶滞后） — cornering relaxation length (m) (first-order transient lag)
+    kappa_peak: float = 0.12       # M19：纵向峰值滑移率（无量纲） — M19: longitudinal peak slip ratio (dimensionless)
     # 用途：轮自由度模型的**准稳态代数解**要把驱动需求折算成滑移率 κ，而引擎轮胎模型
     # 此前是纯侧向的（无纵向滑移刚度）。取 Cκ = μ·Fz/κ_peak：只引入一个物理含义清晰的
     # 峰值滑移率，Cκ 随附着自动缩放（与 LS 载荷敏感性天然一致）。
     # ⚠ **未标定**：0.12 取自赛车胎文献区间 0.10~0.15，需按实件（实测 μ-κ 曲线）校正。
-    # 该参数仅在求解器轮自由度开关打开时被消费；开关默认关 ⇒ 历史数值逐位不变。
+    # 该参数仅在求解器轮自由度开关打开时被消费；开关默认关 ⇒ 历史数值逐位不变。 — Purpose:
+    # the wheel-DOF model's quasi-steady algebraic solution must convert drive demand into
+    # slip ratio κ, and the engine tire model was purely lateral before (no longitudinal
+    # slip stiffness). Take Cκ = μ·Fz/κ_peak: one physically meaningful peak slip ratio,
+    # with Cκ scaling automatically with grip (consistent with LS load sensitivity).
+    # ⚠ **Uncalibrated**: 0.12 taken from the race-tire literature range 0.10~0.15; must
+    # be corrected against measured μ-κ curves. Consumed only when the solver wheel-DOF
+    # switch is on; the switch defaults off => historical numbers bit-for-bit unchanged.
     p: float | None = Field(default=None, exclude=True)
     # ↑ G29 轮胎工坊：胎压 kPa（信息字段，引擎不改缺省行为）。exclude=True：
     #   请求验证仍接受 p，但 model_dump() 不输出——transient.py 把 TireParams
     #   dump 后逐键 float 化（tire_mf.load_tir_params），None 会炸，且引擎内部
-    #   不消费 p，序列化排除即可保持参数表与未自定义时逐键一致。
+    #   不消费 p，序列化排除即可保持参数表与未自定义时逐键一致。 — G29 tire workshop: pressure
+    # kPa (informational field, the engine does not change default behavior). exclude=True:
+    # request validation still accepts p, but model_dump() does not emit it — transient.py
+    # dumps TireParams and floats every key (tire_mf.load_tir_params), where None would
+    # crash; the engine never consumes p, so excluding it keeps the parameter table
+    # key-for-key identical to the non-customized case.
 
     @model_validator(mode="after")
     def _check(self):
-        # F-45：FzNom=0 → tire_mf._d 除零；By<=0 → MF 形状退化；Cg/Ls 需有限
+        # F-45：FzNom=0 → tire_mf._d 除零；By<=0 → MF 形状退化；Cg/Ls 需有限 — F-45: FzNom=0 ->
+        # divide-by-zero in tire_mf._d; By<=0 -> degenerate MF shape; Cg/Ls must be finite
         if not math.isfinite(self.FzNom) or self.FzNom <= 0:
             raise ValueError(f"FzNom must be finite > 0, got {self.FzNom}")
         if not math.isfinite(self.By) or self.By <= 0:
@@ -441,6 +595,20 @@ class DifferentialSpec(BaseModel):
     bias        ：扭矩偏置比 TBR ≥ 1（1.0 = 无偏置）
     lockNm      ：锁紧扭矩 N·m（0 = 无锁紧能力，LSD 等同 open；也是转移量上限）
     slipRefRadS ：满锁滑差 rad/s（缺省 8）；滑差越大锁紧越接近上限
+
+    English: differential spec (M19 / T2: field names aligned to the true source
+    `web/js/16-powertrain.js::distributeAxle`).
+    ⚠ Field-name pitfall: the M16 first draft used force-domain keys (kind/preload_nm/
+    bias_ratio) while the true source uses torque-domain keys (type/bias/lockNm/
+    slipRefRadS). The name mismatch meant pydantic silently ignored the spec sent by the
+    frontend and degraded it to open (equal left/right drive torque) — looked fine,
+    physics was wrong. Now using the true-source key names, so the frontend spec passes
+    through unchanged.
+    type: open (equal left/right torque) / lsd (locking torque determined jointly by
+    lockNm and the bias) / locked (both wheels same speed). bias: torque-bias ratio TBR ≥
+    1 (1.0 = no bias). lockNm: locking torque N·m (0 = no locking ability, LSD equals
+    open; also the transfer cap). slipRefRadS: slip rate at full lock rad/s (default 8);
+    larger slip => locking approaches its cap.
     """
 
     type: str = "open"
@@ -451,25 +619,31 @@ class DifferentialSpec(BaseModel):
     @model_validator(mode="after")
     def _check(self):
         if self.type not in ("open", "lsd", "locked"):
-            raise ValueError(f"差速器 type 非法：{self.type}（应为 open/lsd/locked）")
+            raise ValueError(f"invalid differential type: {self.type} (must be open/lsd/locked)")
         if not math.isfinite(self.bias) or self.bias < 1.0:
-            raise ValueError(f"bias(TBR) 必须 ≥ 1，got {self.bias}")
+            raise ValueError(f"bias (TBR) must be >= 1, got {self.bias}")
         if not math.isfinite(self.lockNm) or self.lockNm < 0.0:
-            raise ValueError(f"lockNm 必须 ≥ 0，got {self.lockNm}")
+            raise ValueError(f"lockNm must be >= 0, got {self.lockNm}")
         if not math.isfinite(self.slipRefRadS) or self.slipRefRadS <= 0.0:
-            raise ValueError(f"slipRefRadS 必须 > 0，got {self.slipRefRadS}")
+            raise ValueError(f"slipRefRadS must be > 0, got {self.slipRefRadS}")
         return self
 
 
 class PowertrainParams(BaseModel):
-    """动力总成（S3-1 升级）：恒扭矩-恒功率包络 + 制动分配。"""
-    T_max: float = 250.0           # 峰值扭矩 N·m
-    P_kw: float = 80.0             # 峰值功率 kW
-    drive_split_f: float = 0.0     # 前轴驱动比例（0=纯后驱）
-    # M16：差速器（None = 不使用，保持历史分配路径；显式给定才启用轴级分配）
+    """动力总成（S3-1 升级）：恒扭矩-恒功率包络 + 制动分配。
+
+    English: powertrain (S3-1 upgrade): constant-torque/constant-power envelope + brake
+    distribution.
+    """
+    T_max: float = 250.0           # 峰值扭矩 N·m — peak torque (N·m)
+    P_kw: float = 80.0             # 峰值功率 kW — peak power (kW)
+    drive_split_f: float = 0.0     # 前轴驱动比例（0=纯后驱） — front-axle drive fraction (0 = pure RWD)
+    # M16：差速器（None = 不使用，保持历史分配路径；显式给定才启用轴级分配） — M16: differentials
+    # (None = not used, keeps the historical distribution path; an explicit value enables
+    # axle-level distribution)
     front_diff: DifferentialSpec | None = None
     rear_diff: DifferentialSpec | None = None
-    brake_split_f: float = 0.6     # 前轴制动分配（剩余给后轴）
+    brake_split_f: float = 0.6     # 前轴制动分配（剩余给后轴） — front brake bias (remainder to the rear axle)
 
 
 # ── G31-P7 动力工坊：详细动力链规格（可选，前端 16-powertrain.js POWERTRAIN.spec 同构）──
@@ -480,13 +654,28 @@ class PowertrainParams(BaseModel):
 #   • TrackSimRequest.powertrain 缺省 = None（非 default_factory）：未下发时
 #     model_dump()["powertrain"] is None，不引入新键；transient 侧 `if req.powertrain
 #     is not None` 门控，缺省走旧 .get(key, default) 路径（默认值 == 旧 PowertrainParams
-#     缺省，数值逐位一致）。
+#     缺省，数值逐位一致）。 — G31-P7 power workshop: detailed powertrain spec (optional;
+# frontend 16-powertrain.js POWERTRAIN.spec is isomorphic). Design principles (the G29
+# lesson, parity anchors unchanged): • PowertrainSpec **inherits** PowertrainParams —
+# the old scalar keys T_max/P_kw/drive_split_f/brake_split_f are still recognized;
+# historical requests (test_transient with T_max=320, drive_split_f=1.0, the tphys_parity
+# anchor payload) stay bit-for-bit; the new nested fields coexist without conflict.
+# • TrackSimRequest.powertrain defaults to None (not default_factory): when not sent,
+# model_dump()["powertrain"] is None and no new key appears; transient gates on
+# `if req.powertrain is not None` gates it; the default path takes the old .get(key, default)
+# route (defaults == the old PowertrainParams defaults, numerically identical).
 
 class IceSpec(BaseModel):
     """内燃机：扭矩 map [[rpm, N·m], ...] + 转速/惯量。
 
     G31-P10-4：前端会下发 fricA/fricB/fricC/throttleTau（JS 侧摩擦/泵气模型），
-    Python 瞬态不消费——显式 extra=ignore 吸收，防全局 strict 化后 422。"""
+    Python 瞬态不消费——显式 extra=ignore 吸收，防全局 strict 化后 422。
+
+    English: internal-combustion engine: torque map [[rpm, N·m], ...] + speed/inertia.
+    G31-P10-4: the frontend also sends fricA/fricB/fricC/throttleTau (the JS-side
+    friction/pumping model); Python transient does not consume them — explicit
+    extra=ignore absorbs them, guarding against a global strict-mode switch causing 422.
+    """
     model_config = ConfigDict(extra="ignore")
     cyl: int = 8
     layout: str = "V8"
@@ -503,7 +692,13 @@ class IceSpec(BaseModel):
         # transient.run_track_sim 的 `p[1] for p in ice.map` / `p[0]*p[1]` ——
         # 每项长度 != 2 触发 IndexError（500），NaN/非递增则静默污染扭矩推导。
         # 语义对齐前端 16-powertrain.js validate 的 ice.map / ice.map(ascending)：
-        #   非空 + 每项 [rpm, N·m] 长度 2 + 全部分量有限 + rpm 严格单调递增。
+        #   非空 + 每项 [rpm, N·m] 长度 2 + 全部分量有限 + rpm 严格单调递增。 — G31-P7 review
+        # fix: map boundary validation. Without blocking here, a malformed map would reach
+        # transient.run_track_sim's `p[1] for p in ice.map` / `p[0]*p[1]` — an item length
+        # != 2 raises IndexError (500), and NaN/non-ascending rpm silently poisons torque
+        # derivation. Semantics match the frontend 16-powertrain.js validate (ice.map /
+        # ice.map(ascending)): non-empty + every item is an [rpm, N·m] pair of length 2 +
+        # all components finite + rpm strictly ascending.
         if not self.map:
             raise ValueError("ice.map must be non-empty")
         for p in self.map:
@@ -521,7 +716,10 @@ class IceSpec(BaseModel):
 
 
 class MotorSpec(BaseModel):
-    """驱动电机：峰值扭矩/功率 + 基速/最高转 + 回馈制动。"""
+    """驱动电机：峰值扭矩/功率 + 基速/最高转 + 回馈制动。
+
+    English: drive motor: peak torque/power + base/max speed + regenerative braking.
+    """
     peakTorqueNm: float = 300.0
     peakPowerKw: float = 150.0
     baseRpm: float = 4775.0
@@ -533,7 +731,12 @@ class MotorSpec(BaseModel):
 class GearboxSpec(BaseModel):
     """变速箱：挡位比列表 + 主减速 + 换挡时间 + 效率。
 
-    G31-P10-4：autoUpFrac/autoDownFrac（JS 自动换挡策略）Python 不消费，extra=ignore。"""
+    G31-P10-4：autoUpFrac/autoDownFrac（JS 自动换挡策略）Python 不消费，extra=ignore。
+
+    English: gearbox: gear-ratio list + final drive + shift time + efficiency.
+    G31-P10-4: autoUpFrac/autoDownFrac (JS auto-shift strategy) are not consumed by
+    Python, extra=ignore.
+    """
     model_config = ConfigDict(extra="ignore")
     type: str = "manual"
     ratios: list[float] = Field(default_factory=lambda: [1.0])
@@ -543,7 +746,10 @@ class GearboxSpec(BaseModel):
 
 
 class BatterySpec(BaseModel):
-    """动力电池：容量 + 初始 SOC + 充放电功率上限。"""
+    """动力电池：容量 + 初始 SOC + 充放电功率上限。
+
+    English: battery: capacity + initial SOC + charge/discharge power caps.
+    """
     capacityKwh: float = 60.0
     soc0: float = 0.8
     maxDischargeKw: float = 400.0
@@ -558,11 +764,20 @@ class PowertrainSpec(PowertrainParams):
     仅在 `ice is not None` 时用 map×传动比推导等效轮上扭矩覆盖 T_max（见 run_track_sim）。
     G31-P10-4：diff/centerDiff/slipRefRadS 等 JS 差速器字段 Python 不消费，
     extra=ignore 吸收（payload 同键共存不 422）。
+
+    English: G31 detailed powertrain spec (optional). Inherits PowertrainParams
+    (T_max/P_kw/drive_split_f/brake_split_f) for backward compatibility; adds
+    architecture/drive/ice/motor/gearbox/battery describing the real powertrain. transient
+    uses map×gear ratios to derive equivalent wheel torque overriding T_max only when
+    `ice is not None` (see run_track_sim). G31-P10-4: JS differential fields such as
+    diff/centerDiff/slipRefRadS are not consumed by Python — extra=ignore absorbs them
+    (coexisting same-name payload keys do not 422).
     """
     model_config = ConfigDict(extra="ignore")
     architecture: str = "ice"       # ice | ev | hybrid
     drive: str = "awd_fixed"        # fwd | rwd | awd_fixed | ...
-    splitFront: float = 0.2         # 前轴扭矩分配（awd 用；与 drive_split_f 语义分离）
+    splitFront: float = 0.2         # 前轴扭矩分配（awd 用；与 drive_split_f 语义分离） — front-axle torque split (for awd;
+    # semantically separate from drive_split_f)
     ice: IceSpec | None = None
     motorF: MotorSpec | None = None
     motorR: MotorSpec | None = None
@@ -580,21 +795,35 @@ class AeroParams(BaseModel):
     - DRS：开翼削总阻力 ×drs_cd_scale、后轴 cl ×drs_cl_scale（尾翼襟翼物理），
       直道（局部曲率半径 > drs_curve_radius_m）且 vx > drs_v_ms 自动触发。
     向后兼容：缺省 ge_gain=0（h 无效应）⇒ 未显式配置新字段的旧请求行为不变。
+
+    English: aero (S3-1 upgrade + P2a unified two-end calibration, 2026-09-02).
+    Basics: downforce/drag scale with v², k in N/(m/s)². P2a adds two chains (isomorphic
+    to the frontend qs ge*/drs*): - cl(h): ge(h) =
+    clamp(1 + ge_gain·(href/max(h,hmin) − 1), floor, 1+ge_gain·(href/hmin−1)), where h is
+    the axle under-body clearance in m (the planar model has no heave state, so h is
+    estimated from the nominal ge_h0_mm ± attitude pitch); - DRS: opening the wing cuts
+    total drag ×drs_cd_scale and rear-axle cl ×drs_cl_scale (rear-wing flap physics),
+    auto-triggered on straights (local curvature radius > drs_curve_radius_m) with
+    vx > drs_v_ms. Backward compatible: default ge_gain=0 (no h effect) => old requests
+    that do not configure the new fields behave unchanged.
     """
-    k_down_f: float = 0.55         # 前轴下压力系数
-    k_down_r: float = 0.45         # 后轴下压力系数
-    k_drag: float = 0.35           # 纵向阻力系数
-    # ── P2a cl(h) 地面效应（高度敏感）──
-    ge_gain: float = 0.0           # 高度敏感强度；0 = 关闭（向后兼容缺省）
-    ge_h0_mm: float = 100.0        # 名义车底净高 mm（h_f/h_r 姿态基准）
-    ge_href_mm: float = 100.0      # ge=1 参考高 mm（h=href 时无增强）
-    ge_hmin_mm: float = 30.0       # 车底净高下限 mm（触底防护，增强在此饱和）
-    ge_floor: float = 0.80         # 高 h 下压衰减下限（cl 不归零）
-    # ── P2a DRS 尾翼 ──
-    drs_v_ms: float = 40.0         # 开翼速度阈值 m/s（前端预设同构，~144 km/h）
-    drs_cd_scale: float = 0.72     # 开翼总阻力缩放（−28%）
-    drs_cl_scale: float = 0.90     # 开翼后轴 cl 缩放（−10%）
-    drs_curve_radius_m: float = 300.0   # 直道判定：局部曲率半径下限 m
+    k_down_f: float = 0.55         # 前轴下压力系数 — front-axle downforce coefficient
+    k_down_r: float = 0.45         # 后轴下压力系数 — rear-axle downforce coefficient
+    k_drag: float = 0.35           # 纵向阻力系数 — longitudinal drag coefficient
+    # ── P2a cl(h) 地面效应（高度敏感）── ( P2a cl(h) ground effect, height-sensitive )
+    ge_gain: float = 0.0           # 高度敏感强度；0 = 关闭（向后兼容缺省） — ride-height sensitivity strength; 0 = off
+                                   # (backward-compatible default)
+    ge_h0_mm: float = 100.0        # 名义车底净高 mm（h_f/h_r 姿态基准） — nominal under-body clearance (mm; h_f/h_r attitude reference)
+    ge_href_mm: float = 100.0      # ge=1 参考高 mm（h=href 时无增强） — reference height at ge=1 (mm; no enhancement at h=href)
+    ge_hmin_mm: float = 30.0       # 车底净高下限 mm（触底防护，增强在此饱和） — minimum under-body clearance (mm — bottoming
+                                   # protection; enhancement saturates here)
+    ge_floor: float = 0.80         # 高 h 下压衰减下限（cl 不归零） — floor for downforce decay at high h (cl never reaching zero)
+    # ── P2a DRS 尾翼 ── ( P2a DRS rear wing )
+    drs_v_ms: float = 40.0         # 开翼速度阈值 m/s（前端预设同构，~144 km/h） — wing-open speed threshold (m/s; frontend
+                                   # preset isomorphic, ~144 km/h)
+    drs_cd_scale: float = 0.72     # 开翼总阻力缩放（−28%） — total-drag scale with wing open (−28%)
+    drs_cl_scale: float = 0.90     # 开翼后轴 cl 缩放（−10%） — rear-axle cl scale with wing open (−10%)
+    drs_curve_radius_m: float = 300.0   # 直道判定：局部曲率半径下限 m — straight test: minimum local curvature radius (m)
 
 
 class TrackSimRequest(BaseModel):
@@ -603,6 +832,12 @@ class TrackSimRequest(BaseModel):
     kc_luts：前端下发的 K&C 查表（与 KwCurve 同源思路）：
       {"front": {"travel": [mm...], "toe": [deg...], "cam": [deg...]}, "rear": {...}}
       缺省 toe/cam = 0（LUT 影响关闭）；travel 索引由准静态侧倾角×半轮距给出。
+
+    English: track transient simulation request. kc_luts: K&C look-up tables delivered by
+    the frontend (same idea as KwCurve):
+    {"front": {"travel": [mm...], "toe": [deg...], "cam": [deg...]}, "rear": {...}};
+    default toe/cam = 0 (LUT influence off); the travel index comes from the quasi-static
+    roll angle × half track.
     """
     vehicle: VehicleSpec
     track: list[TrackPoint] = Field(min_length=2)
@@ -612,15 +847,22 @@ class TrackSimRequest(BaseModel):
     tire: TireParams = Field(default_factory=TireParams)
     # M19：轮自由度开关（**默认关**）。开启后纵向力受 μFz 限制（历史用 0.75μFz 余量）、
     # 并输出准稳态滑移率 kappa_qs 与轮速 omega_qs（供差速器 Δω 使用）。
-    # 关闭时状态仍为平面 6 状态、数值逐位不变。
+    # 关闭时状态仍为平面 6 状态、数值逐位不变。 — M19: wheel-DOF switch (**default off**).
+    # When on, longitudinal force is limited by μFz (history used a 0.75μFz margin) and the
+    # outputs include the quasi-steady slip ratio kappa_qs and wheel speed omega_qs (feeding
+    # the differential Δω). When off, the state remains the planar 6-state and numbers are
+    # bit-for-bit unchanged.
     wheel_dof: bool = False
     # G31-P7：缺省 None（不污染对拍锚）；下发时可为旧标量（T_max/P_kw，继承）或
-    # 详细动力链（ice/gearbox/...）。transient 用 `if req.powertrain is not None` 门控。
+    # 详细动力链（ice/gearbox/...）。transient 用 `if req.powertrain is not None` 门控。 —
+    # G31-P7: default None (does not pollute parity anchors); when sent, it may be either
+    # the legacy scalars (T_max/P_kw, inherited) or the detailed powertrain (ice/gearbox/...);
+    # transient gates on `if req.powertrain is not None`.
     powertrain: PowertrainSpec | None = None
     aero: AeroParams = Field(default_factory=AeroParams)
-    iz_kg_m2: float | None = None          # 缺省 ≈ m(L²+t̄²)/12
-    lookahead_gain: float = 0.9            # 纯追踪预视距离 = 3 + gain·vx（m）
-    start_speed: float = 5.0               # 初始车速 m/s
+    iz_kg_m2: float | None = None          # 缺省 ≈ m(L²+t̄²)/12 — default ≈ m(L²+t̄²)/12
+    lookahead_gain: float = 0.9            # 纯追踪预视距离 = 3 + gain·vx（m） — pure-pursuit lookahead = 3 + gain·vx (m)
+    start_speed: float = 5.0               # 初始车速 m/s — initial speed (m/s)
 
     @model_validator(mode="after")
     def _check_luts(self):
@@ -643,6 +885,15 @@ class TrackSimResponse(BaseModel):
     （发散工况）会被洗成 null 以保证 RFC8259 严格合法 JSON（F-25）。若此处收紧
     为 `float`，发散工况会从"诚实的 SOLVER_FAILED 响应"退化成 500。
     键名本身仍被钉死——前端按 key 取值（web/js/09-track.js），改名即红。
+
+    English: full-vehicle transient track simulation response (M5: bound as the
+    response_model in server.py, so the contract is no longer a bare dict).
+    summary values may be None: the run_track_sim exit washes everything through
+    `_wash_json`, where non-finite values (divergent cases) become null to guarantee
+    strictly RFC8259-valid JSON (F-25). Tightening this to `float` would degrade divergent
+    cases from an honest SOLVER_FAILED response to a 500. The key names themselves stay
+    pinned — the frontend reads them by key (web/js/09-track.js) and a rename goes red
+    immediately.
     """
     status: str
     ms: float = 0.0
@@ -654,11 +905,15 @@ class TrackSimResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-# ── 轮胎实测数据 → MF 参数辨识（真实开发数据链，讲义 EP08）──
+# ── 轮胎实测数据 → MF 参数辨识（真实开发数据链，讲义 EP08）── ( measured tire data -> MF parameter identification: the real dev data chain, lecture EP08 )
 
 class TireCurve(BaseModel):
-    """单一载荷层级的侧偏扫掠实测曲线：α[°] 与 |Fy|[N]（对称，取绝对值拟合）。"""
-    fz: float = Field(gt=0)                      # 该层级法向载荷 N
+    """单一载荷层级的侧偏扫掠实测曲线：α[°] 与 |Fy|[N]（对称，取绝对值拟合）。
+
+    English: measured cornering sweep curve for a single load level: α[°] and |Fy|[N]
+    (symmetric; fitted on absolute values).
+    """
+    fz: float = Field(gt=0)                      # 该层级法向载荷 N — normal load of this level (N)
     alpha_deg: list[float] = Field(min_length=5)
     fy: list[float] = Field(min_length=5)
 
@@ -674,7 +929,11 @@ class TireCurve(BaseModel):
 
 
 class TireFitRequest(BaseModel):
-    """MF 辨识请求：≥1 个载荷层级；LS 辨识需 ≥2 个不同层级。"""
+    """MF 辨识请求：≥1 个载荷层级；LS 辨识需 ≥2 个不同层级。
+
+    English: MF identification request — needs ≥1 load level; LS identification needs ≥2
+    distinct levels.
+    """
     curves: list[TireCurve] = Field(min_length=1)
     fit_ls: bool = True
 
@@ -682,13 +941,14 @@ class TireFitRequest(BaseModel):
 class TireFitResponse(BaseModel):
     status: str                                   # VALID / SOLVER_FAILED / NOT_APPLICABLE
     ms: float = 0.0
-    params: TireParams | None = None              # 辨识出的 MF 子集参数（可直接回传仿真）
-    rms_pct: float | None = None                  # 归一残差 RMS（% of 各层级峰值）
+    params: TireParams | None = None              # 辨识出的 MF 子集参数（可直接回传仿真） — identified MF subset params (can be fed straight back to simulation)
+    rms_pct: float | None = None                  # 归一残差 RMS（% of 各层级峰值） — normalized residual RMS (% of each level's peak)
     per_load_rms_pct: dict[str, float] = Field(default_factory=dict)
     n_points: int = 0
     n_loads: int = 0
     note: str = ""
 
 
-# ChassisRequest.tire 前向引用解析（TireParams 定义在本文件后部）
+# ChassisRequest.tire 前向引用解析（TireParams 定义在本文件后部） — forward-reference
+# resolution for ChassisRequest.tire (TireParams is defined later in this file)
 ChassisRequest.model_rebuild()

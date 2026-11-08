@@ -6,6 +6,17 @@ gate 测试覆盖四维度：
 3. 全链路性能预算：10 次 K&C 单点求解 < 3s（均值 <300ms/点）。
 4. 静态定位角手算对照：用与 compute_alignment_angles 相同的解析公式验证
    solve_to_angles 的 kpi / caster 输出。
+
+English: S1 stage gates: regression consistency / K&C physical plausibility / performance
+budget / static alignment-angle hand-calc cross-check.
+Gate tests cover four dimensions:
+1. No-bushing regression: solve_compliance(bushings={}) agrees with the pure-kinematics
+   solve_pose residuals.
+2. Physical plausibility: a single anchor directly carrying an external load -> deflection
+   matches the linear expectation and the force-balance residual stays small.
+3. Full-chain performance budget: 10 K&C single-point solves < 3s (mean <300ms/point).
+4. Static alignment-angle hand-calc cross-check: verify solve_to_angles' kpi / caster output
+   using the same analytic formulas as compute_alignment_angles.
 """
 import time
 
@@ -17,7 +28,7 @@ from src.solver.forces import QSLoad
 from src.solver.mechanism.models import build_mechanism
 from src.solver.mechanism.solver import solve_pose
 
-# ── PRO 前轴推杆侧硬点（与 test_compliance.py 一致）──
+# ── PRO 前轴推杆侧硬点（与 test_compliance.py 一致）── ( PRO front-axle pushrod-side hardpoints (same as test_compliance.py) )
 PRO_POINTS = {
     "CH1": np.array([240.0, 180.0, 145.0]),  "CH2": np.array([240.0, -160.0, 155.0]),
     "CH3": np.array([360.0, 140.0, 380.0]),  "CH4": np.array([360.0, -130.0, 390.0]),
@@ -41,6 +52,10 @@ def _bush(bushing_name, node_name, anchor, k):
 
     bushing_name: 衬套标识（用于 dict key，如 "bCH1"）。
     node_name: 机构节点名（如 "CH1"），member_nodes / member_p0 用此键。
+
+    English: create a standard test bushing (linear stiffness k N/mm).
+    bushing_name: bushing identifier (used as the dict key, e.g. "bCH1").
+    node_name: mechanism node name (e.g. "CH1"); member_nodes / member_p0 use this key.
     """
     b = Bushing6DOF(name=bushing_name, anchor=np.asarray(anchor, float).copy(),
                      kT=[Curve("linear", k=k)] * 3,
@@ -52,11 +67,11 @@ def _bush(bushing_name, node_name, anchor, k):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# GATE 1: 无衬套回归 — solve_compliance(bushings={}) 与纯运动学一致
+# GATE 1: 无衬套回归 — solve_compliance(bushings={}) 与纯运动学一致 — GATE 1: no-bushing regression — solve_compliance(bushings={}) agrees with pure kinematics
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_gate_no_bushing_regression():
-    """G1: 无衬套 → K&C 回退到纯运动学，kin_residual 与 solve_pose 精确一致。"""
+    """G1: 无衬套 → K&C 回退到纯运动学，kin_residual 与 solve_pose 精确一致。"""  # English: G1: no bushing -> K&C falls back to pure kinematics; kin_residual must exactly match solve_pose.
     for tr in [-60.0, 0.0, 60.0]:
         m_plain = _mech()
         plain = solve_pose(m_plain, tr, 0.0)
@@ -67,11 +82,11 @@ def test_gate_no_bushing_regression():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# GATE 2: 物理合理性 — 单锚点直承外载，形变与力平衡验证
+# GATE 2: 物理合理性 — 单锚点直承外载，形变与力平衡验证 — GATE 2: physical plausibility — a single anchor directly carries the external load; deflection and force-balance checks
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_gate_compliance_physical():
-    """G2: 单锚点直承：900N 垂向 → 形变 2~4mm（k=300），力平衡残差 < 20N。"""
+    """G2: 单锚点直承：900N 垂向 → 形变 2~4mm（k=300），力平衡残差 < 20N。"""  # English: G2: single anchor direct: 900N vertical -> deflection 2~4mm (k=300), force-balance residual < 20N.
     b = _bush("bCH1", "CH1", PRO_POINTS["CH1"], 300.0)
     res = solve_compliance(_mech(), bushings={"bCH1": b},
                            load=np.array([0.0, 0.0, 900.0]),
@@ -87,11 +102,11 @@ def test_gate_compliance_physical():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# GATE 3: 全链路性能预算 — 10 次 K&C 单点 < 3s
+# GATE 3: 全链路性能预算 — 10 次 K&C 单点 < 3s — GATE 3: full-chain performance budget — 10 K&C single points < 3s
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_gate_full_chain_and_perf():
-    """G3: 全链路（接地点外载→锚点→衬套）性能预算：10 次 K&C 单点 < 3s。"""
+    """G3: 全链路（接地点外载→锚点→衬套）性能预算：10 次 K&C 单点 < 3s。"""  # English: G3: full-chain (contact-patch external load -> anchor -> bushing) performance budget: 10 K&C single-point solves < 3s.
     b = _bush("bCH1", "CH1", PRO_POINTS["CH1"], 500.0)
     t0 = time.perf_counter()
     for _ in range(10):
@@ -99,7 +114,7 @@ def test_gate_full_chain_and_perf():
                                     case=QSLoad(fz=3000.0),
                                     travel=0.0, rack=0.0)
     elapsed_s = time.perf_counter() - t0
-    avg_ms = elapsed_s * 100.0  # 10 次均值（ms/点）
+    avg_ms = elapsed_s * 100.0  # 10 次均值（ms/点） — mean of 10 runs (ms/point)
     assert avg_ms < 300.0, \
         f"K&C 单点解超预算: avg={avg_ms:.1f}ms（预算 <300ms/点 全链路）"
     assert res.status in ("VALID", "APPROXIMATE"), \
@@ -116,13 +131,19 @@ def test_gate_static_alignment_handcheck():
     验证逻辑：用与 compute_alignment_angles 完全相同的 atan2 公式，
     从硬点直接计算 kpi / caster，与 solve_to_angles 输出比对。
     容差 0.5°（机构求解器姿态误差 + 数值精度）。
+
+    English: G4: hand-calc static alignment-angle cross-check (same analytic formulas as
+    solve_to_angles). Logic: compute kpi / caster directly from the hardpoints using exactly
+    the same atan2 formulas as compute_alignment_angles, and compare against the
+    solve_to_angles output. Tolerance 0.5 deg (mechanism-solver pose error + numerical
+    precision).
     """
     from src.legacy.pose import solve_to_angles
 
     m = _mech()
     ang = solve_to_angles(m, 0.0, 0.0)
 
-    # 手算：使用与 compute_alignment_angles 相同的公式
+    # 手算：使用与 compute_alignment_angles 相同的公式 — hand calc: using the same formulas as compute_alignment_angles
     UP1 = PRO_POINTS["UP1"]
     UP2 = PRO_POINTS["UP2"]
     UP5 = PRO_POINTS["UP5"]

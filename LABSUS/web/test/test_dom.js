@@ -140,10 +140,12 @@ ok(fc.includes('const TPHYS'), 'fullchassis: TPHYS 闭包存在');
     failures.push('fullchassis: TPHYS 闭包求值失败：' + e.message);
   }
 })();
-ok(/autocross:\{zh:"FSAE 官方 Autocross/.test(fc), 'fullchassis: FSAE Autocross 预设在位');
-ok(/skidpad8:\{zh:"FSAE 官方 8字定圆/.test(fc), 'fullchassis: FSAE 8字定圆 预设在位');
-ok(/accel:\{zh:"FSAE 官方 75m 加速/.test(fc), 'fullchassis: FSAE 75m加速 预设在位');
-ok(/shanghai:\{zh:"上海国际赛车场/.test(fc), 'fullchassis: Shanghai 5.45km 全赛道预设在位');
+/* (b) 波1翻译：预设 zh 显示名已改为英文；js/09-track.js 与 allinone 的译文措辞/大小写略有差异，按各自实文匹配 —
+   wave-1 translated the zh preset display names to English; js/09-track.js and allinone wording/case differ slightly, matched to each file's actual text */
+ok(/autocross:\{zh:"FSAE official Autocross/.test(fc), 'fullchassis: FSAE Autocross 预设在位');
+ok(/skidpad8:\{zh:"FSAE official figure-8/.test(fc), 'fullchassis: FSAE 8字定圆 预设在位');
+ok(/accel:\{zh:"FSAE official 75m/.test(fc), 'fullchassis: FSAE 75m加速 预设在位');
+ok(/shanghai:\{zh:"Shanghai International Circuit/.test(fc), 'fullchassis: Shanghai 5.45km 全赛道预设在位');
 ok(/respawnCircuitVehicle/.test(fc), 'fullchassis: 脱轨保险函数 respawnCircuitVehicle 在位');
 ok(/nx:\s*pt\.nx,\s*ny:\s*pt\.ny/.test(fc), 'fullchassis: CircuitPath.getLookahead 导出 nx/ny 法向矢');
 ok(/gt3_sport:/.test(fc), 'fullchassis: GT3 日常运动型 (gt3_sport) 预设在位');
@@ -188,12 +190,15 @@ ok(ai.includes('const TPHYS'), 'allinone: TPHYS 闭包存在');
 ok(/冻结快照/.test(ai), 'allinone: 冻结快照定位声明在位（防被误当 js/ 的功能镜像）');
 /* M5：内联 TPHYS 的缺省轮胎常数必须与 js/09-track.js 同构。
    这是唯一允许的"同步"——全部其它模块增量都不得搬进 allinone（对拍锚红线）。 */
+/* 波1在 allinone 的 mfSetup 内追加了英文注释，使 D0=p.Fy0|| 与函数起点的距离 >600 字符 → 窗宽 600 放宽到 900；
+   守卫语义不变（仍锚定同一 mfSetup，仍核对 By/Fy0 缺省与 09-track.js 同构）
+   — wave-1 appended EN comments inside allinone's mfSetup, pushing D0=p.Fy0|| past the old 600-char window; widened to 900, guard semantics unchanged */
 (function () {
   const num = (src, re, tag) => { const m = src.match(re); if (!m) { failures.push(tag); return null; } return m[1]; };
-  const aiB = num(ai, /function mfSetup\(p\)\{[\s\S]{0,600}?p\.By!==undefined\?p\.By:(\d+)/, 'allinone: mfSetup By 缺省未找到');
-  const jsB = num(fc, /function mfSetup\(p\)\{[\s\S]{0,600}?p\.By!==undefined\?p\.By:(\d+)/, 'fullchassis: mfSetup By 缺省未找到');
-  const aiD = num(ai, /function mfSetup\(p\)\{[\s\S]{0,600}?D0=p\.Fy0\|\|(\d+)/, 'allinone: mfSetup Fy0 缺省未找到');
-  const jsD = num(fc, /function mfSetup\(p\)\{[\s\S]{0,600}?D0=p\.Fy0\|\|(\d+)/, 'fullchassis: mfSetup Fy0 缺省未找到');
+  const aiB = num(ai, /function mfSetup\(p\)\{[\s\S]{0,900}?p\.By!==undefined\?p\.By:(\d+)/, 'allinone: mfSetup By 缺省未找到');
+  const jsB = num(fc, /function mfSetup\(p\)\{[\s\S]{0,900}?p\.By!==undefined\?p\.By:(\d+)/, 'fullchassis: mfSetup By 缺省未找到');
+  const aiD = num(ai, /function mfSetup\(p\)\{[\s\S]{0,900}?D0=p\.Fy0\|\|(\d+)/, 'allinone: mfSetup Fy0 缺省未找到');
+  const jsD = num(fc, /function mfSetup\(p\)\{[\s\S]{0,900}?D0=p\.Fy0\|\|(\d+)/, 'fullchassis: mfSetup Fy0 缺省未找到');
   ok(aiB !== null && aiB === jsB, 'allinone: mfSetup By 缺省与 09-track.js 同构 (' + aiB + ' vs ' + jsB + ')');
   ok(aiD !== null && aiD === jsD, 'allinone: mfSetup Fy0 缺省与 09-track.js 同构 (' + aiD + ' vs ' + jsD + ')');
 })();
@@ -232,10 +237,10 @@ ok(/F-20|simulate\(S\.play\?dt:0\)/.test(ai), 'allinone: F-20 暂停真正冻结
 ok(/F-21|cosCam/.test(ai), 'allinone: F-21 stepDyn 轻量接地点 z');
 ok(/F-04|rck\.lastTheta/.test(ai), 'allinone: F-04 摇臂分支最近根连续性');
 /* Milestone 1 / FSAE 赛道升级新增断言 */
-ok(/autocross:\{zh:"FSAE 官方 Autocross/.test(ai), 'allinone: FSAE Autocross 预设在位');
-ok(/skidpad8:\{zh:"FSAE 官方 8字定圆/.test(ai), 'allinone: FSAE 8字定圆 预设在位');
-ok(/accel:\{zh:"FSAE 官方 75m 加速/.test(ai), 'allinone: FSAE 75m加速 预设在位');
-ok(/shanghai:\{zh:"上海国际赛车场/.test(ai), 'allinone: Shanghai 5.45km 全赛道预设在位');
+ok(/autocross:\{zh:"FSAE Official Autocross/.test(ai), 'allinone: FSAE Autocross 预设在位');
+ok(/skidpad8:\{zh:"FSAE Official Figure-8/.test(ai), 'allinone: FSAE 8字定圆 预设在位');
+ok(/accel:\{zh:"FSAE Official 75m/.test(ai), 'allinone: FSAE 75m加速 预设在位');
+ok(/shanghai:\{zh:"Shanghai International Circuit/.test(ai), 'allinone: Shanghai 5.45km 全赛道预设在位');
 
 /* ══════════════════════════════════════════════════════════════════
  * G14（2026-08-31）F-61：模块加载顺序 / 跨模块前向引用 / 舞台可启动检查
@@ -250,7 +255,9 @@ ok(/shanghai:\{zh:"上海国际赛车场/.test(ai), 'allinone: Shanghai 5.45km �
  * US Gradient / 前后侧偏角 / Jacking 抬升：前端 solveQuasiStatic 与引擎
  * chassis.quasi_loads 逐字同构；TIRE_MF_QS 与引擎 TireParams 缺省值同源，
  * 改一侧必须同步另一侧，否则双内核对拍漂移。 */
-ok(/usGradient:\s*\{\s*name: "稳态不足转向梯度/.test(fc), 'fullchassis: US Gradient 评价基准在位');
+/* (b) 波1翻译：基准名已由「稳态不足转向梯度」改为实文 "Steady-state understeer gradient"（10-eval.js） —
+   wave-1 translated the benchmark name; matched to actual 10-eval.js text */
+ok(/usGradient:\s*\{\s*name: "Steady-state understeer gradient/.test(fc), 'fullchassis: US Gradient 评价基准在位');
 ok(/let TIRE_MF_QS = \{ Fy0: 5250, FzNom: 3500, By: 20, Cy: 1\.2, LS: 0\.10, Cg: 6\.0 \}/.test(fc),
   'fullchassis: 准静态 MF 参数集与引擎 TireParams 缺省同源（模块级可变，标定可覆写）');
 ok(/usGrad: usGrad, alphaF: alphaFDeg/.test(fc) && /jackingN: jackingN/.test(fc),
@@ -392,7 +399,9 @@ require('./test_tire_wiring')(webDir, ok, failures.push.bind(failures), { log(){
      'M9: 捕获画布前必须强制重绘（打开模态触发 resize 会清空画布 → 拍到空白帧）');
   ok(/kv\("rcHeightF"\)|kpi\.\w+\.formatted|o\.formatted/.test(evSrc),
      'M9: 报告 KPI 必须读 metrics 的 {val,formatted} 结构（直接 num() 会全变 "—"）');
-  ok(/模型边界与免责说明/.test(evSrc), 'M9: 报告含模型边界免责说明');
+  /* (b) 波1翻译：报告的免责说明标题现为 <b>Model boundaries & disclaimers</b>（10-eval.js） —
+     wave-1 translated the disclaimer heading; matched to actual text */
+  ok(/Model boundaries & disclaimers/.test(evSrc), 'M9: 报告含模型边界免责说明');
 }
 
 /* ── M10（2026-09-20）· 方案库与对比（T1-2）结构守卫 ─────────────────── */
@@ -435,8 +444,10 @@ require('./test_tire_wiring')(webDir, ok, failures.push.bind(failures), { log(){
      'M12: 交互强度判定单一真源（面板与报告共用，避免阈值漂移）');
   ok(/P\.key === Q\.key/.test(uiSrc), 'M12: X/Y 同参数时必须拒绝（否则只得到对角线）');
   ok(/双参数交互/.test(arrSrc), 'M12: 分栏正则含"双参数交互"');
-  ok(/<h2>七、双参数交互扫描<\/h2>/.test(evSrc) && /<h2>八、多方案对比<\/h2>/.test(evSrc),
-     'M12: 设计报告含"七、双参数交互扫描"与"八、多方案对比"两节');
+  /* (b) 波1翻译：报告第 7/8 节标题现为 "7. Two-parameter interaction sweep" / "8. Multi-setup comparison"（10-eval.js） —
+     wave-1 translated report section headings; matched to actual text */
+  ok(/<h2>7\. Two-parameter interaction sweep<\/h2>/.test(evSrc) && /<h2>8\. Multi-setup comparison<\/h2>/.test(evSrc),
+     'M12: 设计报告含"7. Two-parameter interaction sweep"与"8. Multi-setup comparison"两节');
   ok(/typeof setupCompareRows === "function"/.test(evSrc),
      'M12: 报告复用方案库对比行（不另算一套）');
 }

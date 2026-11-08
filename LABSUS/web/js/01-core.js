@@ -1,6 +1,6 @@
 "use strict";
 
-/* ================================ 0. 基础数学库 ================================ */
+/* ================================ 0. 基础数学库 — EN: basic math library ================================ */
 const abs=Math.abs, sqrt=Math.sqrt, sin=Math.sin, cos=Math.cos, atan2=Math.atan2, acos=Math.acos, PI=Math.PI;
 const D2R=PI/180, R2D=180/PI;
 const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];

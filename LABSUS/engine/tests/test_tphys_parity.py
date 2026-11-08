@@ -7,6 +7,16 @@ axle_rc_sweep 产出）分别喂给：
 断言物理概要指标一致（路径/极速相对差 <=5%，峰值侧向绝对差 <=0.06g），
 这是 README "JS 直译、数值对标" 承诺的第一个可执行 harness。
 若 node 缺失则整组 skip。
+
+English: TPHYS(JS) <-> transient.py (Python) two-implementation numeric parity (audit D1 /
+P0-3). The same payload (FSAE 1620/480kg baseline) plus the same rc/kw context (ctx produced
+by the engine-side axle_rc_sweep) is fed to both:
+  - engine: run_track_sim(TrackSimRequest)
+  - built-in JS physics: the TPHYS closure inside dwb-pro-allinone.html (extracted and called
+    directly via node vm)
+Asserts the physical summary metrics agree (path / top speed relative diff <=5%, peak lateral
+absolute diff <=0.06g) — the first executable harness for the README's "JS direct-translation,
+numerically benchmarked" promise. The whole group skips if node is missing.
 """
 import json
 import math
@@ -24,7 +34,7 @@ from src.solver.transient import run_track_sim
 
 _LABSUS = Path(__file__).resolve().parents[2]
 _HTML = _LABSUS / "web" / "dwb-pro-allinone.html"
-_MJS = _LABSUS / "web" / "test" / "tphys_parity.cjs"   # G10 迁入 web/test/
+_MJS = _LABSUS / "web" / "test" / "tphys_parity.cjs"   # G10 迁入 web/test/ — moved into web/test/ by G10
 
 _FRONT = {
     "LCA_F": [260, 140, 130], "LCA_R": [260, -120, 140], "UCA_F": [350, 110, 340],
@@ -119,6 +129,11 @@ def _run_node(body, ctx, case, html_file="dwb-pro-allinone.html"):
     # G10 健壮性（2026-08-31）：cjs 参考端默认用 PATH 上的裸 `python`，在托管
     # Python 环境下会缺 pydantic/numpy 而炸（与迁移无关的环境问题）。强制继承
     # pytest 自身解释器，保证对拍两端跑在同一依赖环境。
+
+    # English: G10 robustness (2026-08-31): the cjs reference side uses the bare `python` from PATH by
+    # default, which breaks on managed Python environments lacking pydantic/numpy (an environment
+    # issue unrelated to the migration). Force-inherit pytest's own interpreter so both parity
+    # sides run in the same dependency environment.
     env["LABSUS_PY"] = sys.executable
     try:
         r = subprocess.run([node, str(_MJS), str(inp), str(out)],
@@ -126,7 +141,7 @@ def _run_node(body, ctx, case, html_file="dwb-pro-allinone.html"):
                            # M15（2026-09-20）：必须显式 utf-8。此前用平台默认编码
                            # （Windows=GBK），子进程 stderr 一旦含中文，reader 线程就抛
                            # UnicodeDecodeError，**真实报错被吞掉**，只剩 "returncode==1"
-                           # 这种无法定位的失败（本轮就卡在这里）。
+                           # 这种无法定位的失败（本轮就卡在这里）。 — M15 (2026-09-20): utf-8 must be explicit. Previously the platform default encoding (Windows=GBK) was used: as soon as the child stderr contained Chinese, the reader thread threw UnicodeDecodeError, swallowing the real error and leaving only an unlocatable "returncode==1" failure (this round got stuck exactly there).
                            encoding="utf-8", errors="replace",
                            cwd=str(_LABSUS / "web"), env=env)
         assert r.returncode == 0, f"node failed: {r.stderr}"
@@ -137,7 +152,7 @@ def _run_node(body, ctx, case, html_file="dwb-pro-allinone.html"):
 
 
 def _ctx(vehicle):
-    """与引擎 VehiclePlanar 同源的 rc/kw 上下文（axle_rc_sweep 21 点）。"""
+    """与引擎 VehiclePlanar 同源的 rc/kw 上下文（axle_rc_sweep 21 点）。"""  # English: rc/kw context of the same origin as the engine's VehiclePlanar (axle_rc_sweep 21 points).
     fv, rv = vehicle.front, vehicle.rear
     swf = axle_rc_sweep(fv)
     swr = axle_rc_sweep(rv)
@@ -185,25 +200,25 @@ def _assert_parity(case, py, js):
 
 
 def test_tphys_parity_skidpad():
-    """定圆 R=30 稳态：allinone 路径/极速/峰值侧向一致。"""
+    """定圆 R=30 稳态：allinone 路径/极速/峰值侧向一致。"""  # English: steady-state circle R=30: allinone path / top speed / peak lateral agree.
     py, js = _parity("skidpad", _skidpad())
     _assert_parity("skidpad", py, js)
 
 
 def test_tphys_parity_straight_line():
-    """直线 60m：allinone 加速与速度控制一致。"""
+    """直线 60m：allinone 加速与速度控制一致。"""  # English: straight line 60m: allinone acceleration and speed control agree.
     py, js = _parity("straight", _straight(), sim_time=12.0)
     _assert_parity("straight", py, js)
 
 
 def test_tphys_parity_fullchassis_skidpad():
-    """定圆 R=30 稳态：fullchassis 内置 TPHYS 与 Python 引擎对拍。"""
+    """定圆 R=30 稳态：fullchassis 内置 TPHYS 与 Python 引擎对拍。"""  # English: steady-state circle R=30: allinone's built-in TPHYS vs the Python engine parity.
     py, js = _parity("fc_skidpad", _skidpad(), html_file="dwb-pro-fullchassis.html")
     _assert_parity("fc_skidpad", py, js)
 
 
 def test_tphys_parity_fsae_autocross():
-    """FSAE Autocross 800m 综合赛道：allinone 与 Python 引擎对拍。"""
+    """FSAE Autocross 800m 综合赛道：allinone 与 Python 引擎对拍。"""  # English: FSAE Autocross 800m combined track: allinone vs the Python engine parity.
     py, js = _parity("autocross", _autocross(), sim_time=60.0, start_speed=10.0)
     _assert_parity("autocross", py, js)
 

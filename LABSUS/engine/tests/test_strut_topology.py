@@ -8,6 +8,18 @@
 4. rocker 三维轴（RCK_AX_A→B）下，压缩侧摇臂可解（旧固定 X 轴下
    PRO 几何 +10mm 不可达 → rocker_ok=False / MR 垃圾化 3.98）；
 5. MR@0 为正且有物理量级（下游只用 mr²，abs 语义）。
+
+English: P2 topology regression: STRUT_OUT attach modes + real 3D rocker axis (r2 fix guard).
+Covers:
+1. invalid strut_attach values are rejected;
+2. in lca/uca modes UP4 moves as a rigid body with its corresponding arm (constant distance
+   to the arm ball joint), while its distance to the knuckle (WC) is no longer constant —
+   consistent with the frontend strutOutAttach semantics;
+3. knuckle mode preserves historical behavior (constant UP4-WC distance);
+4. with a real 3D rocker axis (RCK_AX_A -> B), the compression-side rocker is solvable
+   (under the old fixed X axis, PRO geometry +10mm was unreachable -> rocker_ok=False /
+   MR garbled to 3.98);
+5. MR@0 is positive and of physical magnitude (downstream only uses mr**, abs semantics).
 """
 import numpy as np
 import pytest
@@ -38,19 +50,19 @@ def test_invalid_strut_attach_rejected():
 
 
 def test_lca_attaches_strut_to_lower_arm():
-    """lca：UP4 与 LBJ(UP1) 距离恒定（臂刚体），与 WC(UP5) 距离随行程变化。"""
+    """lca：UP4 与 LBJ(UP1) 距离恒定（臂刚体），与 WC(UP5) 距离随行程变化。"""  # English: lca: UP4's distance to LBJ(UP1) is constant (rigid arm); its distance to WC(UP5) varies with travel.
     m = _new_mech(DEFAULT_DWB_POINTS, arch="pushrod")     # pushrod → lca
     solve_pose(m, 20.0, 0.0)
     d_up4_up1 = float(np.linalg.norm(m.node("UP4").pos - m.node("UP1").pos))
     d0_up4_up1 = float(np.linalg.norm(m.node("UP4").p0 - m.node("UP1").p0))
     d_up4_wc = float(np.linalg.norm(m.node("UP4").pos - m.node("UP5").pos))
     d0_up4_wc = float(np.linalg.norm(m.node("UP4").p0 - m.node("UP5").p0))
-    assert abs(d_up4_up1 - d0_up4_up1) < 1e-6          # 随臂刚体
-    assert abs(d_up4_wc - d0_up4_wc) > 0.5             # 相对转向节张弛
+    assert abs(d_up4_up1 - d0_up4_up1) < 1e-6          # 随臂刚体 — moves rigidly with the arm
+    assert abs(d_up4_wc - d0_up4_wc) > 0.5             # 相对转向节张弛 — relaxes/tightens relative to the knuckle
 
 
 def test_uca_attaches_strut_to_upper_arm():
-    """uca（pullrod 后轴）：UP4 与 UBJ(UP2) 恒定、与 WC 张弛。"""
+    """uca（pullrod 后轴）：UP4 与 UBJ(UP2) 恒定、与 WC 张弛。"""  # English: uca (pullrod rear axle): UP4 constant to UBJ(UP2), relaxes/tightens vs WC.
     m = _new_mech(REAR, arch="pullrod")
     d0 = float(np.linalg.norm(m.node("UP4").p0 - m.node("UP2").p0))
     solve_pose(m, 20.0, 0.0)
@@ -59,7 +71,7 @@ def test_uca_attaches_strut_to_upper_arm():
 
 
 def test_knuckle_mode_legacy_behavior():
-    """knuckle（arch 未知）：UP4 与 WC 距离恒定（历史行为）。"""
+    """knuckle（arch 未知）：UP4 与 WC 距离恒定（历史行为）。"""  # English: knuckle (arch unknown): UP4-WC distance constant (historical behavior).
     m = _new_mech(DEFAULT_DWB_POINTS, arch="x")
     d0 = float(np.linalg.norm(m.node("UP4").p0 - m.node("UP5").p0))
     solve_pose(m, 20.0, 0.0)
@@ -68,7 +80,7 @@ def test_knuckle_mode_legacy_behavior():
 
 
 def test_rocker_solvable_in_compression_with_3d_axis():
-    """P2 核心：真实三维轴下 +10mm 压缩侧摇臂可解（旧固定 X 轴不可达）。"""
+    """P2 核心：真实三维轴下 +10mm 压缩侧摇臂可解（旧固定 X 轴不可达）。"""  # English: P2 core: with the real 3D axis, the +10mm compression-side rocker is solvable (unreachable under the old fixed X axis).
     m = _new_mech(DEFAULT_DWB_POINTS, arch="pushrod")
     rep = solve_pose(m, 10.0, 0.0)
     assert rep.rocker_ok
@@ -79,7 +91,7 @@ def test_rocker_solvable_in_compression_with_3d_axis():
 
 
 def test_mr_at_zero_positive_and_physical():
-    """MR@0 正且有量级（abs 语义，下游只用 mr²）。"""
+    """MR@0 正且有量级（abs 语义，下游只用 mr²）。"""  # English: MR@0 positive and of physical magnitude (abs semantics; downstream only uses mr**).
     fr = AxleSpec(points=DEFAULT_DWB_POINTS, arch="pushrod")
     rr = AxleSpec(points=REAR, arch="pullrod")
     assert 0.1 < mr_at_zero(fr, DEFAULT_DWB_POINTS, False) < 1.5

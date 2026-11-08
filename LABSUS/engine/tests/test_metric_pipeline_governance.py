@@ -21,6 +21,31 @@
 两节 + 本文件 + tests/test_w4_consistency.py 的 `_v3_to_v1` 层间换算 +
 src/core/convention.py 的 x_axis/y_axis 字段」，而不是直接删掉这两行断言。
 登记真源见仓库根 INTENTIONAL_DIFFERENCES.md。
+
+English: P3 metric-pipeline governance guard (landing r2 finding D).
+Measured (2026-08-22): solver/angles.py and api/v3service.pose_metrics belong to two
+different coordinate-system generations:
+- angles.py: V1 vehicle-global frame (X=forward / Y=right / Z=up), P2-0 sign convention;
+  feeding v3 DWB-frame (X=outboard / Y=forward) mechanism coordinates into it yields garbage
+  values (measured cam -10.8 deg / toe +88.2 deg / kpi plus-minus 175 deg).
+- pose_metrics: the same math as v3/frontend (Kabsch pose estimation + side generalization);
+  the single metric source for ALL /api/v3 endpoints.
+Governance rule: v3-frame metrics may only go through pose_metrics; angles.py serves only
+the legacy / S1-gate old-coordinate pipeline (whose KEY names camber_deg/toe_deg/kpi_deg/
+caster_deg differ).
+This file guards:
+1. v3 metrics and legacy-pipeline output MUST differ significantly (prevents quietly
+   switching v3 back to angles.py — if they unexpectedly become equal, a coordinate-system
+   merge has happened and must be re-reviewed);
+2. v3-pipeline golden values hold (cross-owned with test_mirror_symmetry).
+WARNING: the "88.24 deg / 175.07 deg" at lines 47-48 is NOT a correctness assertion but the
+fingerprint of the coordinate-system generation gap — exactly the garbage shape produced by
+feeding v3 coordinates into the V1 freeze-line pipeline. If the coordinate systems are ever
+truly unified, the correct action is to sync the "coordinate-system dual lineage" + "dual
+authority for alignment angles" sections of INTENTIONAL_DIFFERENCES.md plus this file plus
+the _v3_to_v1 inter-layer conversion in tests/test_w4_consistency.py plus the x_axis/y_axis
+fields in src/core/convention.py — not to simply delete those two assertions.
+Registry source of truth: INTENTIONAL_DIFFERENCES.md at the repo root.
 """
 import numpy as np
 
@@ -51,20 +76,20 @@ def _legacy_and_v3(travel: float):
 def test_legacy_pipeline_not_equal_v3_markers():
     """坐标系代差的显式守卫：legacy 输出必须是'废值形态'（≠ v3）。
 
-    若某次重构把 v3 切回 angles.py，此测试会立即失败并暴露坐标系回归。
+    若某次重构把 v3 切回 angles.py，此测试会立即失败并暴露坐标系回归。  # English: explicit guard for the coordinate-system generation gap: legacy output must be "garbage-shaped" (!= v3). If a refactor switches v3 back to angles.py, this test fails immediately and exposes the regression.
     """
     a, mm = _legacy_and_v3(0.0)
-    # legacy 废值特征：toe≈±88°（X/Y 交换产物）、kpi≈±175°。
-    # 这是坐标系代差的指纹，不是正确性断言——见模块 docstring 的 ⚠️ 段。
+    # legacy 废值特征：toe≈±88°（X/Y 交换产物）、kpi≈±175°。 — legacy garbage signature: toe approx plus-minus 88 deg (product of the X/Y swap), kpi approx plus-minus 175 deg.
+    # 这是坐标系代差的指纹，不是正确性断言——见模块 docstring 的 ⚠️ 段。 — a fingerprint of the coordinate-system generation gap, not a correctness assertion — see the WARNING section of the module docstring.
     assert abs(abs(a["toe_deg"]) - 88.24) < 0.5
     assert abs(abs(a["kpi_deg"]) - 175.07) < 0.5
-    # v3 正常值
+    # v3 正常值 — v3 normal values
     assert abs(mm["toe"] - 0.05) < 0.02
     assert abs(mm["kpi"] - 10.7389) < 0.02
 
 
 def test_v3_pipeline_golden_under_travel():
-    """v3 管线黄金值（与 mirror 测试交叉钉住）。"""
+    """v3 管线黄金值（与 mirror 测试交叉钉住）。"""  # English: v3-pipeline golden values (cross-pinned with the mirror test).
     for t, cam_exp, toe_exp in ((-20.0, -0.5272, -0.2382),
                                 (20.0, -1.9407, 0.3180)):
         a, mm = _legacy_and_v3(t)
@@ -74,7 +99,7 @@ def test_v3_pipeline_golden_under_travel():
 
 def test_legacy_frame_documented_incompatibility():
     """legacy 管线对 v3 机构输入的废值是'特性'（坐标系不同），非 bug：
-    断言其 camber 与 v3 显著不同，避免未来有人'好心'改成一致而误伤框架。
+    断言其 camber 与 v3 显著不同，避免未来有人'好心'改成一致而误伤框架。  # English: the legacy pipeline's garbage on v3 mechanical input is a FEATURE (different coordinate systems), not a bug: assert its camber differs significantly from v3 so a future "well-meaning" unification does not damage the framework.
     """
     a, mm = _legacy_and_v3(0.0)
     assert abs(a["camber_deg"] - mm["cam"]) > 5.0

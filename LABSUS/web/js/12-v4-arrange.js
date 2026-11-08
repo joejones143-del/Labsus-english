@@ -4,17 +4,21 @@
    在 01–11 模块全部加载并完成启动（buildLeft/buildRight/initViews）
    之后执行，零侵入地把旧产物重排为「舞台 + 坞站」新版布局，
    并提供三套预设配色 + 自由配色方案（CSS 变量 + 画布 PAL 双通道）。
+   (LABSUS v4 theme manager + layout re-arrange adapter, script No.12: runs after modules
+   01-11 are fully loaded and booted (buildLeft/buildRight/initViews), and re-arranges the
+   legacy output into the new "stage + dock" layout with zero intrusion. Also provides
+   three preset palettes + a free color mixer over a dual channel: CSS variables + canvas PAL.)
    ============================================================ */
 const V4={theme:"classic",mode:"dark",custom:{},vcur:3,quad:false,runMode:"geo"};
 
-/* ---------- 工具 ---------- */
+/* ---------- 工具 Utilities ---------- */
 function v4Rgba(hex,a){
   const h=hex.replace("#","");
   const n=parseInt(h.length===3?h.split("").map(c=>c+c).join(""):h,16);
   return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")";
 }
 
-/* ---------- 主题令牌键（clearOverrides 用） ---------- */
+/* ---------- 主题令牌键（clearOverrides 用） — Theme token keys (consumed by clearOverrides) ---------- */
 const V4_TOKEN_KEYS=["bg-base","glass","glass-2","glass-3","glass-hov","sh-bg",
   "glass-bd","glass-bd-2","hairline","ink-1","ink-2","ink-3","cream",
   "pri","pri-strong","pri-fill","pri-bd","ok","warn","err","ok-fill","warn-fill","err-fill",
@@ -23,10 +27,12 @@ const V4_TOKEN_KEYS=["bg-base","glass","glass-2","glass-3","glass-hov","sh-bg",
 /* ============================================================
    预设 1/2：玫瑰紫韵（配色卡 No.44 + No.48）· 落日靛蓝（配色卡 No.64）
    css = CSS 变量覆盖；pal = 画布调色板对 PAL[模式] 的替换映射
+   (Presets: Rose Violet (palette cards No.44 + No.48), Sunset Indigo (palette card No.64).
+   css = CSS variable overrides; pal = key-replacement palette merged over PAL[mode].)
    ============================================================ */
 const V4THEMES={
 rose:{
-  name:"玫瑰紫韵",desc:"No.44 · 48",
+  name:"Rose Violet",desc:"No.44 · 48",
   dots:["#f25d9c","#b61aae","#9e579d","#574b90"],
   css:{
   dark:{"bg-base":"#141127","glass":"rgba(27,23,53,0.82)","glass-2":"rgba(27,23,53,0.65)","glass-3":"rgba(38,32,72,0.70)",
@@ -74,7 +80,7 @@ rose:{
     arb:"#8a6bb0",frc:"#a0139a",txt:"#2a2440",txt2:"#675f85",txt3:"#9d95b5",base:"#a9a6b5"}}
 },
 sunset:{
-  name:"落日靛蓝",desc:"No.64",
+  name:"Sunset Indigo",desc:"No.64",
   dots:["#ffbd39","#e61c5d","#930077","#3a0088"],
   css:{
   dark:{"bg-base":"#130b2e","glass":"rgba(26,17,69,0.82)","glass-2":"rgba(26,17,69,0.65)","glass-3":"rgba(38,26,94,0.70)",
@@ -122,14 +128,14 @@ sunset:{
     arb:"#93538f",frc:"#d91257",txt:"#221a3a",txt2:"#5d5480",txt3:"#9790b5",base:"#aba9b2"}}
 }};
 
-/* ---------- 画布调色板：基于经典 PAL 做键替换 ---------- */
+/* ---------- 画布调色板：基于经典 PAL 做键替换 — Canvas palette: key overrides on top of the classic PAL ---------- */
 function v4TintPal(mode,map){
   const o={};for(const k in PAL[mode])o[k]=(map&&map[k]!==undefined)?map[k]:PAL[mode][k];return o;
 }
 
-/* ---------- 自定义配色 ---------- */
+/* ---------- 自定义配色 — Custom colors ---------- */
 const V4_CUSTOM_DEF={bg:"#130b2e",panel:"#1a1145",pri:"#9f7fe8",acc:"#ffbd39",ok:"#ffbd39",warn:"#e61c5d",err:"#e61c5d",ink:"#efecf7"};
-const V4_CUSTOM_LB={bg:"背景",panel:"面板",pri:"主色",acc:"强调",ok:"成功",warn:"警告",err:"危险",ink:"文字"};
+const V4_CUSTOM_LB={bg:"Background",panel:"Panel",pri:"Primary",acc:"Accent",ok:"Success",warn:"Warning",err:"Danger",ink:"Text"};
 function v4CustomCss(mode){
   const k=V4.custom,dk=mode==="dark";
   return {"bg-base":k.bg,
@@ -152,7 +158,7 @@ function v4CustomPal(mode){
     knu:k.acc,knuF:v4Rgba(k.acc,0.08),txt:k.ink,txt2:v4Rgba(k.ink,0.68),txt3:v4Rgba(k.ink,0.42)};
 }
 
-/* ---------- 应用主题（双通道：CSS 变量 + 画布 C） ---------- */
+/* ---------- 应用主题（双通道：CSS 变量 + 画布 C） — Apply theme (dual channel: CSS variables + canvas C) ---------- */
 function v4Apply(theme,mode,save){
   V4.theme=theme;V4.mode=mode;
   document.documentElement.setAttribute("data-theme",mode);
@@ -168,15 +174,15 @@ function v4Apply(theme,mode,save){
   v4RenderThemePop();
 }
 
-/* ---------- 主题选择浮层 ---------- */
+/* ---------- 主题选择浮层 — Theme picker popover ---------- */
 function v4BuildThemePop(){
   const pop=document.getElementById("v4ThemePop");if(!pop)return;
   pop.innerHTML="";
-  const h=document.createElement("div");h.className="tp-h";h.textContent="配色方案 THEME";pop.appendChild(h);
-  const presets=[["classic","墨蓝经典","原版 · 普鲁士蓝",["#8AB4D8","#E8D4BF","#943948","#7A8C7E"]],
+  const h=document.createElement("div");h.className="tp-h";h.textContent="Color Scheme";pop.appendChild(h);
+  const presets=[["classic","Classic Ink Blue","Original · Prussian Blue",["#8AB4D8","#E8D4BF","#943948","#7A8C7E"]],
     ["rose",V4THEMES.rose.name,V4THEMES.rose.desc,V4THEMES.rose.dots],
     ["sunset",V4THEMES.sunset.name,V4THEMES.sunset.desc,V4THEMES.sunset.dots],
-    ["custom","自由配色","自定义 8 令牌",null]];
+    ["custom","Custom Palette","8 custom tokens",null]];
   presets.forEach(([key,nm,ds,dots])=>{
     const b=document.createElement("button");b.className="tp-preset";b.dataset.th=key;
     const d=document.createElement("span");d.className="tp-dots";
@@ -187,13 +193,13 @@ function v4BuildThemePop(){
     b.onclick=()=>{v4Apply(key,V4.mode,true);};
     pop.appendChild(b);
   });
-  const sub=document.createElement("div");sub.className="tp-sub";sub.textContent="明暗模式 MODE";pop.appendChild(sub);
+  const sub=document.createElement("div");sub.className="tp-sub";sub.textContent="Light/Dark Mode";pop.appendChild(sub);
   const seg=document.createElement("div");seg.className="v4-seg";seg.id="v4ModeSeg2";
-  [["dark","深色"],["light","浅色"]].forEach(([m,lb])=>{
+  [["dark","Dark"],["light","Light"]].forEach(([m,lb])=>{
     const b=document.createElement("button");b.dataset.m=m;b.textContent=lb;
     b.onclick=()=>{v4Apply(V4.theme,m,true);};seg.appendChild(b);});
   pop.appendChild(seg);
-  const sub2=document.createElement("div");sub2.className="tp-sub";sub2.textContent="自定义令牌 CUSTOM TOKENS";pop.appendChild(sub2);
+  const sub2=document.createElement("div");sub2.className="tp-sub";sub2.textContent="Custom Tokens";pop.appendChild(sub2);
   const grid=document.createElement("div");grid.className="tp-custom";
   Object.keys(V4_CUSTOM_DEF).forEach(k=>{
     const lb=document.createElement("label");
@@ -204,9 +210,9 @@ function v4BuildThemePop(){
   });
   pop.appendChild(grid);
   const act=document.createElement("div");act.className="tp-actions";
-  const apply=document.createElement("button");apply.className="main";apply.textContent="应用自定义";
+  const apply=document.createElement("button");apply.className="main";apply.textContent="Apply Custom";
   apply.onclick=()=>{v4Apply("custom",V4.mode,true);};
-  const reset=document.createElement("button");reset.textContent="恢复预设默认";
+  const reset=document.createElement("button");reset.textContent="Restore Defaults";
   reset.onclick=()=>{V4.custom=Object.assign({},V4_CUSTOM_DEF);
     grid.querySelectorAll("input").forEach(i=>i.value=V4.custom[i.dataset.tk]);
     v4Apply("classic",V4.mode,true);};
@@ -232,18 +238,24 @@ function v4InitThemePicker(){
 }
 
 /* ============================================================
-   布局重组：左坞站三 Tab
+   布局重组：左坞站三 Tab — Left dock rearrangement: three tabs (tune / analyze / setup)
    ============================================================ */
 /* tune 是 v4ArrangeLeft 的默认分支（见 :259 的三元），无需单独正则 —— M5 删除了
-   全仓零引用的 V4_TUNE_T（同族 V4_ANA_T / V4_SET_T 在用，保留）。 */
-const V4_ANA_T=/引擎连接|整车底盘分析|动态驾驶测试|赛道动态遥测|4-Post|Baseline|轮胎实测标定|台架对拍|衬套刚度标定|灵敏度扫描|双参数交互|方案库/;
-const V4_SET_T=/硬点永久保存|系统显示|实体着色|3D 空间硬点表|显示图层控制/;
+   全仓零引用的 V4_TUNE_T（同族 V4_ANA_T / V4_SET_T 在用，保留）。
+   (tune is the default branch of v4ArrangeLeft (see the ternary at :259) and needs no regex
+   of its own - M5 removed V4_TUNE_T, which had zero references repo-wide (its siblings
+   V4_ANA_T / V4_SET_T are still in use and kept). R6 KEY NOTE: V4_ANA_T / V4_SET_T and the
+   snapshot-baseline / neutral-bias matchers test Chinese panel and button labels; that
+   Chinese is kept as a comparison key (this bilingual note documents it), with the panels
+   English title alternatives appended so classification keeps working after translation.) */
+const V4_ANA_T=/引擎连接|整车底盘分析|动态驾驶测试|赛道动态遥测|4-Post|Baseline|轮胎实测标定|台架对拍|衬套刚度标定|灵敏度扫描|双参数交互|方案库|ENGINE \/api\/v3|FULL-CHASSIS ENGINE|TIRE CALIBRATION|RIG CORRELATION|BUSHING CALIBRATION|SENSITIVITY SWEEP|2-PARAMETER INTERACTION|SETUP LIBRARY|DYNAMIC TESTS|TRACK TELEMETRY|[Ee]ngine [Cc]onnect|[Ff]ull-?[Cc]hassis|[Ff]ull [Vv]ehicle|[Tt]ire [Cc]alibr|[Rr]ig [Cc]orrelat|[Bb]ushing [Cc]alibr|[Ss]ensitivity [Ss]weep|2-?[Pp]arameter [Ii]nteraction|[Ss]etup [Ll]ibrary|[Dd]ynamic [Dd]riving|[Dd]ynamic [Tt]ests|[Tt]rack [Tt]elemetry|[Cc]ircuit [Dd]ynamic/;
+const V4_SET_T=/硬点永久保存|系统显示|实体着色|3D 空间硬点表|显示图层控制|HARDPOINT PERSISTENCE|SYSTEM LAYERS|ENTITY COLOR|HARDPOINTS \[mm\]|DISPLAY LAYERS|[Hh]ardpoint [Pp]ersist|[Ss]ystem [Dd]isp|[Ss]ystem [Ll]ayers|[Ee]ntity [Cc]olor|[Hh]ardpoints \[mm\]|[Dd]isplay [Ll]ayers/;
 function v4ArrangeLeft(){
   const lp=document.getElementById("lp");if(!lp||lp.dataset.v4)return;lp.dataset.v4="1";
   const kids=[...lp.children];
   const bar=document.createElement("div");bar.className="v4-ltabs";
   const panes={};
-  [["tune","调校"],["analyze","分析"],["setup","配置"]].forEach(([k,lb])=>{
+  [["tune","Tune"],["analyze","Analyze"],["setup","Setup"]].forEach(([k,lb])=>{
     const b=document.createElement("button");b.className="v4-ltab";b.dataset.pane=k;b.textContent=lb;
     b.onclick=()=>{V4.lpane=k;
       bar.querySelectorAll(".v4-ltab").forEach(x=>x.classList.toggle("on",x===b));
@@ -262,7 +274,12 @@ function v4ArrangeLeft(){
     }else{
       /* M7（2026-09-20）：旧注释说"groupDiv 分隔符丢弃"，但代码只是跳过它们、
          从未从 DOM 移除 ⇒ 三个 CORE/TUNING/ADVANCED 分隔行滞留在 Tab 栏上方，
-         成为左栏最显眼的杂乱源（三行英文小字，无任何语义）。这里真正移除。 */
+         成为左栏最显眼的杂乱源（三行英文小字，无任何语义）。这里真正移除。
+         (The old comment claimed the groupDiv separators were dropped, but the code merely
+         skipped them without ever removing them from the DOM, so the three CORE/TUNING/
+         ADVANCED divider rows stayed above the tab bar - the most visible clutter in the
+         left column (three small English lines with no meaning). They are truly removed
+         here.) */
       el.remove();
     }
   });
@@ -280,10 +297,10 @@ function v4ArrangeLeft(){
       localStorage.setItem("labsus-v4-acc",JSON.stringify(acc));
     }catch(err){}},0);
   });
-  /* Baseline 快照后 buildRight 重建 DOM，补一次读数刷新消除 Delta 首帧 "--" */
+  /* Baseline 快照后 buildRight 重建 DOM，补一次读数刷新消除 Delta 首帧 "--" — after a Baseline snapshot buildRight rebuilds the DOM, so run one extra readout refresh to stop the Delta rows flashing "--" on their first frame */
   lp.addEventListener("click",e=>{
     const bt=e.target.closest("button");
-    if(bt&&/快照基准线/.test(bt.textContent))setTimeout(()=>{if(typeof updateReadouts==="function")updateReadouts();},60);
+    if(bt&&/快照基准线|Baseline Snapshot|Snapshot Baseline/.test(bt.textContent))setTimeout(()=>{if(typeof updateReadouts==="function")updateReadouts();},60);
   });
 }
 function v4RestoreAccordions(lp){
@@ -294,7 +311,7 @@ function v4RestoreAccordions(lp){
     else if(acc[zh.textContent]===false)s.classList.remove("col");
   });
 }
-/* 折叠头摘要数字：折叠态也能扫到首条参数当前值（定时镜像，不依赖 UI.sync 以免被 buildRight 截断） */
+/* 折叠头摘要数字：折叠态也能扫到首条参数当前值（定时镜像，不依赖 UI.sync 以免被 buildRight 截断） — Collapsed-header summary numbers: keeps the current value of the first parameter of a section visible even while collapsed (mirrored on a timer, deliberately not via UI.sync so a buildRight rebuild cannot cut it off) */
 function v4AccSummaries(){
   const secs=document.querySelectorAll("#lp .sec");
   secs.forEach(s=>{
@@ -308,35 +325,35 @@ function v4AccSummaries(){
     const sp=document.createElement("span");sp.className="v4-sum";
     const tg=sh.querySelector(".tg");
     if(tg)sh.insertBefore(sp,tg);else sh.appendChild(sp);
-    s._v4sum=()=>{sp.textContent=(inp&&inp.value!=="")?(inp.value+unit):(nCtl+" 项");};
+    s._v4sum=()=>{sp.textContent=(inp&&inp.value!=="")?(inp.value+unit):(nCtl+" items");};
     s._v4sum();
   });
   setInterval(()=>{secs.forEach(s=>{if(s._v4sum)s._v4sum();});},500);
 }
 
 /* ============================================================
-   右坞站：核心结论卡 + 诊断卡（镜像 #rp 内的实时读数）
+   右坞站：核心结论卡 + 诊断卡（镜像 #rp 内的实时读数） — Right dock: key-results hero card + diagnostics card (mirrors the live readouts inside #rp)
    ============================================================ */
-const V4_WIN={roCam:[-1.6,-0.6,"目标 −1.2°±0.4"],roToe:[-0.9,0.3,"目标窗口 −0.9~+0.3"],
-  roRC:[30,75,"目标 30–75 mm"],roQsRollGrad:[0.1,0.8,"理想 ≤0.8 °/g"],
-  roUsGrad:[0.2,2.0,"目标 0.2–2.0 °/g"]};
+const V4_WIN={roCam:[-1.6,-0.6,"Target −1.2°±0.4"],roToe:[-0.9,0.3,"Target window −0.9~+0.3"],
+  roRC:[30,75,"Target 30–75 mm"],roQsRollGrad:[0.1,0.8,"Ideal ≤0.8 °/g"],
+  roUsGrad:[0.2,2.0,"Target 0.2–2.0 °/g"]};
 function v4BuildHero(){
   const host=document.getElementById("v4Hero");if(!host)return;
-  host.innerHTML='<div class="v4-hero-hd"><b>核心结论</b><i>Key Results</i><span class="v4-live">实时</span></div>'+
+  host.innerHTML='<div class="v4-hero-hd"><b>Key Results</b><i></i><span class="v4-live">Live</span></div>'+
   '<div class="v4-hero-grid">'+
-  '<div class="v4-hc" id="hcCam"><div class="en">Camber 外倾</div><div class="v">--</div><div class="hint">'+V4_WIN.roCam[2]+'</div></div>'+
-  '<div class="v4-hc" id="hcToe"><div class="en">Toe 前束</div><div class="v">--</div><div class="hint">'+V4_WIN.roToe[2]+'</div></div>'+
-  '<div class="v4-hc" id="hcRc"><div class="en">Roll Center 侧倾中心</div><div class="v">--</div><div class="hint">'+V4_WIN.roRC[2]+'</div></div>'+
-  '<div class="v4-hc" id="hcRg"><div class="en">Roll Gradient 侧倾梯度</div><div class="v">--</div><div class="hint">'+V4_WIN.roQsRollGrad[2]+'</div></div>'+
-  '<div class="v4-hc" id="hcUs"><div class="en">US Gradient 不足转向梯度</div><div class="v">--</div><div class="hint">'+V4_WIN.roUsGrad[2]+'</div></div>'+
-  '<div class="v4-hc" id="hcTl"><div class="en">TLLTD 前轴占比</div><div class="v">--</div><div class="v4-bar"><i id="hcTlBar"></i></div><div class="hint" id="hcTlHint">前 52% · 后 48%</div></div>'+
-  '<div class="v4-hc" id="hcBias"><div class="en">Handling Bias 操稳倾向</div><div class="v" style="font-size:13px">--</div><div class="hint">准静态载荷转移判定</div></div>'+
+  '<div class="v4-hc" id="hcCam"><div class="en">Camber</div><div class="v">--</div><div class="hint">'+V4_WIN.roCam[2]+'</div></div>'+
+  '<div class="v4-hc" id="hcToe"><div class="en">Toe</div><div class="v">--</div><div class="hint">'+V4_WIN.roToe[2]+'</div></div>'+
+  '<div class="v4-hc" id="hcRc"><div class="en">Roll Center</div><div class="v">--</div><div class="hint">'+V4_WIN.roRC[2]+'</div></div>'+
+  '<div class="v4-hc" id="hcRg"><div class="en">Roll Gradient</div><div class="v">--</div><div class="hint">'+V4_WIN.roQsRollGrad[2]+'</div></div>'+
+  '<div class="v4-hc" id="hcUs"><div class="en">US Gradient</div><div class="v">--</div><div class="hint">'+V4_WIN.roUsGrad[2]+'</div></div>'+
+  '<div class="v4-hc" id="hcTl"><div class="en">TLLTD Front-Axle Share</div><div class="v">--</div><div class="v4-bar"><i id="hcTlBar"></i></div><div class="hint" id="hcTlHint">Front 52% · Rear 48%</div></div>'+
+  '<div class="v4-hc" id="hcBias"><div class="en">Handling Bias</div><div class="v" style="font-size:13px">--</div><div class="hint">Quasi-static load-transfer verdict</div></div>'+
   '</div>';
   const dg=document.getElementById("v4Diag");
-  if(dg)dg.innerHTML='<div class="v4-hero-hd" style="margin-bottom:0"><b>诊断建议</b><i>Diagnostics</i>'+
+  if(dg)dg.innerHTML='<div class="v4-hero-hd" style="margin-bottom:0"><b>Diagnostics</b><i></i>'+
     '<span class="v4-live" id="v4Score">--</span></div>'+
-    '<p id="v4DiagTxt">运行分析后，此处给出综合评分与调校优先级建议；完整 24 项交通灯矩阵见评价报告。</p>'+
-    '<button class="v4-mini" style="margin-top:8px;width:100%;justify-content:center" id="v4OpenEval">打开完整评价报告 →</button>';
+    '<p id="v4DiagTxt">After an analysis run, this shows the overall score and tuning-priority suggestions; see the evaluation report for the full 24-item traffic-light matrix.</p>'+
+    '<button class="v4-mini" style="margin-top:8px;width:100%;justify-content:center" id="v4OpenEval">Open Full Evaluation Report →</button>';
   const oe=document.getElementById("v4OpenEval");
   if(oe)oe.onclick=()=>{if(typeof openSuspensionEvaluation==="function")openSuspensionEvaluation();};
   setInterval(v4MirrorHero,250);
@@ -368,27 +385,29 @@ function v4MirrorHero(){
   const hb=document.getElementById("hcBias");
   if(hb){hb.querySelector(".v").textContent=bias;
     hb.classList.remove("ok","warn","bad");
-    if(/中性|平衡/.test(bias))hb.classList.add("ok");
+    /* R6 key match: the zh fragments match the Chinese handling-bias text; zh kept as a
+       comparison key, "Neutral" added for the translated roHandling value (07-plots). */
+    if(/中性|平衡|Neutral/.test(bias))hb.classList.add("ok");
     else if(bias!=="--")hb.classList.add("warn");}
-  /* 诊断建议：基于 US Gradient 与操稳倾向给出调校优先级（底盘开发第一 KPI） */
+  /* 诊断建议：基于 US Gradient 与操稳倾向给出调校优先级（底盘开发第一 KPI） — Diagnostics: tuning priority from the US Gradient and the handling bias (the number-one chassis development KPI) */
   const dgTxt=document.getElementById("v4DiagTxt");
   if(dgTxt){const ku=num(txt("roUsGrad"));
-    if(ku===null)dgTxt.textContent="请施加侧向工况（准静态 gy ≥ 0.02g）后，此处给出不足转向梯度诊断。";
-    else if(ku<0)dgTxt.textContent="⚠ 梯度为负（过度转向）：建议软化后轴侧倾刚度（后 ARB/后弹簧）、或提高后轴负外倾增益，恢复稳定裕度。";
-    else if(ku<0.2)dgTxt.textContent="梯度偏低（近中性）：高速稳定性裕度小；可前移侧倾刚度分配（加粗前 ARB）或增大前轴载荷转移占比。";
-    else if(ku>2.0)dgTxt.textContent="梯度过大（强不足转向）：入弯迟钝；建议加粗后 ARB / 硬化后弹簧释放后轴，或核查前轴侧偏刚度是否过低。";
-    else dgTxt.textContent="✓ 梯度在目标窗口（0.2–2.0 °/g）：转向平衡健康；结合侧倾梯度与 TLLTD 微调前后侧倾刚度分配。";}
-  /* 引擎胶囊与评分同步 */
+    if(ku===null)dgTxt.textContent="Apply a lateral load case (quasi-static gy ≥ 0.02g); the understeer-gradient diagnosis will appear here.";
+    else if(ku<0)dgTxt.textContent="⚠ Negative gradient (oversteer): soften rear-axle roll stiffness (rear ARB / rear springs) or increase rear negative-camber gain to restore the stability margin.";
+    else if(ku<0.2)dgTxt.textContent="Gradient on the low side (near neutral): small high-speed stability margin; shift the roll-stiffness split forward (stiffer front ARB) or increase the front-axle load-transfer share.";
+    else if(ku>2.0)dgTxt.textContent="Gradient too large (strong understeer): sluggish turn-in; stiffen the rear ARB / firm up the rear springs to free up the rear axle, or check whether front-axle cornering stiffness is too low.";
+    else dgTxt.textContent="✓ Gradient within the target window (0.2–2.0 °/g): steering balance is healthy; fine-tune the front/rear roll-stiffness split using roll gradient and TLLTD.";}
+  /* 引擎胶囊与评分同步 — engine pill and score kept in sync */
   if(typeof ENG!=="undefined"){
     const pill=document.getElementById("engPillV4");
     if(pill){pill.classList.toggle("warn",!ENG.ok);pill.classList.toggle("ok",!!ENG.ok);}
   }
   const sc=document.getElementById("evalOverallScore"),out=document.getElementById("v4Score");
-  if(sc&&out)out.textContent=sc.textContent+" 分";
+  if(sc&&out)out.textContent=sc.textContent+" pts";
 }
 
 /* ============================================================
-   中央舞台：单视口 / 四宫格 / 全屏
+   中央舞台：单视口 / 四宫格 / 全屏 — Central stage: single viewport / quad view / fullscreen
    ============================================================ */
 function v4ShowView(i,silent){
   if(typeof VW==="undefined"||!VW.length)return;
@@ -408,9 +427,12 @@ function v4SetQuad(q){
   vp.classList.toggle("vp-single",!q);
   if(q)VW.forEach(v=>v.el.classList.remove("v4-cur"));else v4ShowView(V4.vcur,true);
   /* M7（2026-09-20）：四宫格时顶栏不再谎报"当前视图"（四口同显，无单一当前视图），
-     改为显式标注四宫格；单视口由 v4ShowView 写回视图名。 */
+     改为显式标注四宫格；单视口由 v4ShowView 写回视图名。
+     (In quad mode the top bar no longer fakes a "current view" (all four viewports show at
+     once, so there is no single current one) - it labels quad view explicitly instead; in
+     single-viewport mode v4ShowView writes the view name back.) */
   const tt=document.getElementById("v4VpTitle");
-  if(tt&&q)tt.textContent="四宫格 QUAD [4 视口]";
+  if(tt&&q)tt.textContent="Quad View [4 viewports]";
   const b=document.getElementById("v4QuadBtn");if(b)b.classList.toggle("on",q);
   setTimeout(()=>{VW.forEach(v=>{const had=v.w>60;sizeView(v);if(!had)fitView(v);});},80);
 }
@@ -426,7 +448,7 @@ function v4InitViewport(){
 }
 
 /* ============================================================
-   顶栏：运行路由 / 工作模式 / 轴切换 / 快捷键
+   顶栏：运行路由 / 工作模式 / 轴切换 / 快捷键 — Top bar: run routing / work mode / axle switch / keyboard shortcuts
    ============================================================ */
 function v4Run(){
   const m=V4.runMode;
@@ -459,10 +481,10 @@ function v4InitTopbar(){
 }
 
 /* ============================================================
-   启动（11 号脚本已同步完成 buildLeft/buildRight/initViews）
+   启动（11 号脚本已同步完成 buildLeft/buildRight/initViews） — Boot (script No.11 has by now finished buildLeft/buildRight/initViews)
    ============================================================ */
 (function v4Boot(){
-  if(typeof PAL==="undefined"||typeof C==="undefined")return; /* 兜底：旧模块未就绪 */
+  if(typeof PAL==="undefined"||typeof C==="undefined")return; /* 兜底：旧模块未就绪 — fallback: legacy modules not ready yet */
   V4.custom=Object.assign({},V4_CUSTOM_DEF);
   let cfg=null;try{cfg=JSON.parse(localStorage.getItem("labsus-theme-v4")||"null");}catch(e){}
   let mode=null;try{mode=localStorage.getItem("labsus-theme");}catch(e){}

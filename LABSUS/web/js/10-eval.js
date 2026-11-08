@@ -1,11 +1,11 @@
 "use strict";
-/* 液态玻璃双主题：自动跟随系统偏好，手动切换后持久化 */
+/* 液态玻璃双主题：自动跟随系统偏好，手动切换后持久化 — liquid-glass dual theme: follows the system preference automatically, persisted after manual toggle */
 function applyTheme(t){
   document.documentElement.setAttribute("data-theme",t);
   try{localStorage.setItem("labsus-theme",t);}catch(e){}
   Object.assign(C,PAL[t]);
   const tg=document.getElementById("themeTg");
-  if(tg)tg.title=t==="light"?"当前浅色 · 点击切换深色":"当前深色 · 点击切换浅色";
+  if(tg)tg.title=t==="light"?"Currently light · click to switch to dark":"Currently dark · click to switch to light";
 }
 (function initTheme(){
   let t=null;try{t=localStorage.getItem("labsus-theme");}catch(e){}
@@ -17,29 +17,30 @@ function applyTheme(t){
 
 /* =====================================================================
    LABSUS 综合性能评价与AI调校诊断引擎 (Evaluation Engine)
+   — LABSUS comprehensive performance-evaluation & AI tuning-diagnosis engine
    ===================================================================== */
 const EVAL_BENCHMARKS = {
-  camberGainF:     { name: "前外倾增益 (Camber Gain)", target: "0.04 ~ 0.08 °/mm", unit: "°/mm", eval: v => (v >= 0.04 && v <= 0.08 ? 'good' : (v >= 0.02 && v <= 0.11 ? 'warn' : 'bad')), desc: "过弯侧倾时补偿接地面积，过小易推头，过大影响制动" },
-  camberGainR:     { name: "后外倾增益 (Camber Gain)", target: "0.03 ~ 0.07 °/mm", unit: "°/mm", eval: v => (v >= 0.03 && v <= 0.07 ? 'good' : (v >= 0.015 && v <= 0.09 ? 'warn' : 'bad')), desc: "后轴侧倾附着力支撑，保障高速稳定性" },
-  bumpSteerF:      { name: "前跳动转向 (Bump Steer)", target: "< 0.02 °/mm", unit: "°/mm", eval: v => (Math.abs(v) <= 0.02 ? 'good' : (Math.abs(v) <= 0.05 ? 'warn' : 'bad')), desc: "路面颠簸时方向稳定性，过大会引起车头晃动" },
-  bumpSteerR:      { name: "后跳动转向 (Bump Steer)", target: "0.00 ~ +0.03 °/mm", unit: "°/mm", eval: v => (v >= 0.0 && v <= 0.03 ? 'good' : (v >= -0.01 && v <= 0.05 ? 'warn' : 'bad')), desc: "跳动后束角变化，轻微压下前束增加高速稳定性" },
-  rcHeightF:       { name: "前侧倾中心高度 (Roll Center)", target: "30 ~ 75 mm", unit: "mm", eval: v => (v >= 30 && v <= 75 ? 'good' : (v >= 10 && v <= 100 ? 'warn' : 'bad')), desc: "前轴侧向力几何传递高度，过高易千斤顶效应" },
-  rcHeightR:       { name: "后侧倾中心高度 (Roll Center)", target: "45 ~ 95 mm", unit: "mm", eval: v => (v >= 45 && v <= 95 ? 'good' : (v >= 20 && v <= 120 ? 'warn' : 'bad')), desc: "后轴侧倾中心应高于前轴，形成自然前倾侧倾轴线" },
-  antiDiveF:       { name: "前抗点头率 (Anti-Dive)", target: "20% ~ 40%", unit: "%", eval: v => (v >= 20 && v <= 40 ? 'good' : (v >= 10 && v <= 55 ? 'warn' : 'bad')), desc: "制动时前悬架抗压缩几何能力，抑制俯仰" },
-  antiSquatR:      { name: "后抗下蹲率 (Anti-Squat)", target: "30% ~ 60%", unit: "%", eval: v => (v >= 30 && v <= 60 ? 'good' : (v >= 15 && v <= 80 ? 'warn' : 'bad')), desc: "加速时后悬架抗压缩几何能力，防止重心塌陷" },
-  scrubRadiusF:    { name: "前磨地半径 (Scrub Radius)", target: "5 ~ 25 mm", unit: "mm", eval: v => (v >= 5 && v <= 25 ? 'good' : (v >= -5 && v <= 40 ? 'warn' : 'bad')), desc: "方向盘路感反馈与制动跑偏容限" },
-  casterTrailF:    { name: "前主销拖距 (Caster Trail)", target: "15 ~ 35 mm", unit: "mm", eval: v => (v >= 15 && v <= 35 ? 'good' : (v >= 5 && v <= 45 ? 'warn' : 'bad')), desc: "轮胎回正力矩杠杆，过大导致打方向沉重" },
-  motionRatioF:    { name: "前安装比 (Motion Ratio)", target: "0.65 ~ 0.85", unit: "", eval: v => (v >= 0.65 && v <= 0.85 ? 'good' : (v >= 0.5 && v <= 0.95 ? 'warn' : 'bad')), desc: "弹簧避震器杠杆效率，推荐接近线性" },
-  motionRatioR:    { name: "后安装比 (Motion Ratio)", target: "0.70 ~ 0.90", unit: "", eval: v => (v >= 0.70 && v <= 0.90 ? 'good' : (v >= 0.55 && v <= 1.0 ? 'warn' : 'bad')), desc: "后轴弹簧避震器杠杆效率" },
-  wheelRateF:      { name: "前轮端刚度 (Wheel Rate)", target: "30 ~ 70 N/mm", unit: "N/mm", eval: v => (v >= 30 && v <= 70 ? 'good' : (v >= 20 && v <= 90 ? 'warn' : 'bad')), desc: "前悬架对路面垂直支撑刚度" },
-  wheelRateR:      { name: "后轮端刚度 (Wheel Rate)", target: "35 ~ 75 N/mm", unit: "N/mm", eval: v => (v >= 35 && v <= 75 ? 'good' : (v >= 25 && v <= 95 ? 'warn' : 'bad')), desc: "后悬架对路面垂直支撑刚度" },
-  rideFreqF:       { name: "前偏频 (Ride Frequency)", target: "1.8 ~ 3.2 Hz", unit: "Hz", eval: v => (v >= 1.8 && v <= 3.2 ? 'good' : (v >= 1.4 && v <= 4.0 ? 'warn' : 'bad')), desc: "赛车前轴垂向固有振动频率" },
-  rideFreqR:       { name: "后偏频 (Ride Frequency)", target: "2.0 ~ 3.5 Hz", unit: "Hz", eval: v => (v >= 2.0 && v <= 3.5 ? 'good' : (v >= 1.5 && v <= 4.2 ? 'warn' : 'bad')), desc: "后偏频通常比前偏频高 10%~15% 消除平顺颠簸" },
-  dampingRatioF:   { name: "前阻尼比 (Damping Ratio)", target: "0.55 ~ 0.75", unit: "", eval: v => (v >= 0.55 && v <= 0.75 ? 'good' : (v >= 0.4 && v <= 0.85 ? 'warn' : 'bad')), desc: "前轴振动衰减能力，防止多余弹跳" },
-  dampingRatioR:   { name: "后阻尼比 (Damping Ratio)", target: "0.60 ~ 0.80", unit: "", eval: v => (v >= 0.60 && v <= 0.80 ? 'good' : (v >= 0.45 && v <= 0.90 ? 'warn' : 'bad')), desc: "后轴振动衰减能力" },
-  rollStiffnessPct:{ name: "前侧倾刚度占比 (F/T Roll)", target: "48% ~ 58%", unit: "%", eval: v => (v >= 48 && v <= 58 ? 'good' : (v >= 40 && v <= 65 ? 'warn' : 'bad')), desc: "决定稳态过弯平衡：>55% 趋向不足转向，<48% 趋向过度" },
-  ackermannPct:    { name: "阿克曼转向百分比 (Ackermann)", target: "30% ~ 80%", unit: "%", eval: v => (v == null ? 'warn' : (v >= 30 && v <= 80 ? 'good' : (v >= 10 && v <= 100 ? 'warn' : 'bad'))), desc: "高速赛车通常采用 40%~60% 减少外侧胎拖拽；未从转向扫掠计算时显示 —（不再给出假数据）" },
-  usGradient:      { name: "稳态不足转向梯度 (US Gradient)", target: "0.2 ~ 2.0 °/g", unit: "°/g", eval: v => (v == null ? 'warn' : (v >= 0.2 && v <= 2.0 ? 'good' : (v >= 0.05 && v <= 3.5 ? 'warn' : 'bad'))), desc: "底盘开发第一 KPI：前后轴侧偏角差随侧向加速度的斜率；正=不足转向，负=过度。含轮胎载荷敏感性；高 μ 胎组梯度天然偏小（可×μ归一比较）；|gy|<0.02g 时显示 —" }
+  camberGainF:     { name: "Front camber gain", target: "0.04 ~ 0.08 °/mm", unit: "°/mm", eval: v => (v >= 0.04 && v <= 0.08 ? 'good' : (v >= 0.02 && v <= 0.11 ? 'warn' : 'bad')), desc: "Compensates contact patch while the body rolls in corners; too small invites understeer, too large hurts braking" },
+  camberGainR:     { name: "Rear camber gain", target: "0.03 ~ 0.07 °/mm", unit: "°/mm", eval: v => (v >= 0.03 && v <= 0.07 ? 'good' : (v >= 0.015 && v <= 0.09 ? 'warn' : 'bad')), desc: "Rear-axle roll grip support for high-speed stability" },
+  bumpSteerF:      { name: "Front bump steer", target: "< 0.02 °/mm", unit: "°/mm", eval: v => (Math.abs(v) <= 0.02 ? 'good' : (Math.abs(v) <= 0.05 ? 'warn' : 'bad')), desc: "Directional stability over bumpy roads; too large makes the nose wander" },
+  bumpSteerR:      { name: "Rear bump steer", target: "0.00 ~ +0.03 °/mm", unit: "°/mm", eval: v => (v >= 0.0 && v <= 0.03 ? 'good' : (v >= -0.01 && v <= 0.05 ? 'warn' : 'bad')), desc: "Rear toe change through bump; a slight bump-toe-in aids high-speed stability" },
+  rcHeightF:       { name: "Front roll-center height", target: "30 ~ 75 mm", unit: "mm", eval: v => (v >= 30 && v <= 75 ? 'good' : (v >= 10 && v <= 100 ? 'warn' : 'bad')), desc: "Geometric transfer height of front-axle lateral force; too high risks the jacking effect" },
+  rcHeightR:       { name: "Rear roll-center height", target: "45 ~ 95 mm", unit: "mm", eval: v => (v >= 45 && v <= 95 ? 'good' : (v >= 20 && v <= 120 ? 'warn' : 'bad')), desc: "Rear roll center should sit above the front one, forming a natural forward-leaning roll axis" },
+  antiDiveF:       { name: "Front anti-dive ratio", target: "20% ~ 40%", unit: "%", eval: v => (v >= 20 && v <= 40 ? 'good' : (v >= 10 && v <= 55 ? 'warn' : 'bad')), desc: "Front suspension anti-compression geometry under braking; suppresses pitch" },
+  antiSquatR:      { name: "Rear anti-squat ratio", target: "30% ~ 60%", unit: "%", eval: v => (v >= 30 && v <= 60 ? 'good' : (v >= 15 && v <= 80 ? 'warn' : 'bad')), desc: "Rear suspension anti-compression geometry under acceleration; prevents CoG squat" },
+  scrubRadiusF:    { name: "Front scrub radius", target: "5 ~ 25 mm", unit: "mm", eval: v => (v >= 5 && v <= 25 ? 'good' : (v >= -5 && v <= 40 ? 'warn' : 'bad')), desc: "Steering-wheel feel feedback and tolerance to brake pull" },
+  casterTrailF:    { name: "Front caster trail", target: "15 ~ 35 mm", unit: "mm", eval: v => (v >= 15 && v <= 35 ? 'good' : (v >= 5 && v <= 45 ? 'warn' : 'bad')), desc: "Lever arm of the tire self-aligning torque; too large makes steering heavy" },
+  motionRatioF:    { name: "Front motion ratio", target: "0.65 ~ 0.85", unit: "", eval: v => (v >= 0.65 && v <= 0.85 ? 'good' : (v >= 0.5 && v <= 0.95 ? 'warn' : 'bad')), desc: "Spring/damper lever efficiency; near-linear is recommended" },
+  motionRatioR:    { name: "Rear motion ratio", target: "0.70 ~ 0.90", unit: "", eval: v => (v >= 0.70 && v <= 0.90 ? 'good' : (v >= 0.55 && v <= 1.0 ? 'warn' : 'bad')), desc: "Rear-axle spring/damper lever efficiency" },
+  wheelRateF:      { name: "Front wheel rate", target: "30 ~ 70 N/mm", unit: "N/mm", eval: v => (v >= 30 && v <= 70 ? 'good' : (v >= 20 && v <= 90 ? 'warn' : 'bad')), desc: "Front suspension vertical support stiffness at the wheel" },
+  wheelRateR:      { name: "Rear wheel rate", target: "35 ~ 75 N/mm", unit: "N/mm", eval: v => (v >= 35 && v <= 75 ? 'good' : (v >= 25 && v <= 95 ? 'warn' : 'bad')), desc: "Rear suspension vertical support stiffness at the wheel" },
+  rideFreqF:       { name: "Front ride frequency", target: "1.8 ~ 3.2 Hz", unit: "Hz", eval: v => (v >= 1.8 && v <= 3.2 ? 'good' : (v >= 1.4 && v <= 4.0 ? 'warn' : 'bad')), desc: "Front axle vertical natural vibration frequency" },
+  rideFreqR:       { name: "Rear ride frequency", target: "2.0 ~ 3.5 Hz", unit: "Hz", eval: v => (v >= 2.0 && v <= 3.5 ? 'good' : (v >= 1.5 && v <= 4.2 ? 'warn' : 'bad')), desc: "Rear ride frequency is usually 10-15% above the front to smooth out ride harshness" },
+  dampingRatioF:   { name: "Front damping ratio", target: "0.55 ~ 0.75", unit: "", eval: v => (v >= 0.55 && v <= 0.75 ? 'good' : (v >= 0.4 && v <= 0.85 ? 'warn' : 'bad')), desc: "Front axle vibration decay; prevents excess bouncing" },
+  dampingRatioR:   { name: "Rear damping ratio", target: "0.60 ~ 0.80", unit: "", eval: v => (v >= 0.60 && v <= 0.80 ? 'good' : (v >= 0.45 && v <= 0.90 ? 'warn' : 'bad')), desc: "Rear axle vibration decay" },
+  rollStiffnessPct:{ name: "Front roll-stiffness share (F/T)", target: "48% ~ 58%", unit: "%", eval: v => (v >= 48 && v <= 58 ? 'good' : (v >= 40 && v <= 65 ? 'warn' : 'bad')), desc: "Sets steady-state cornering balance: >55% trends understeer, <48% trends oversteer" },
+  ackermannPct:    { name: "Ackermann steering %", target: "30% ~ 80%", unit: "%", eval: v => (v == null ? 'warn' : (v >= 30 && v <= 80 ? 'good' : (v >= 10 && v <= 100 ? 'warn' : 'bad'))), desc: "Race cars usually run 40-60% to reduce outer-tire drag; shows — when not computed from the steer sweep (no more fake data)" },
+  usGradient:      { name: "Steady-state understeer gradient", target: "0.2 ~ 2.0 °/g", unit: "°/g", eval: v => (v == null ? 'warn' : (v >= 0.2 && v <= 2.0 ? 'good' : (v >= 0.05 && v <= 3.5 ? 'warn' : 'bad'))), desc: "The No.1 chassis-development KPI: slope of the front/rear slip-angle difference vs lateral acceleration; positive = understeer, negative = oversteer. Includes tire load sensitivity; high-mu tire sets naturally show smaller gradients (compare mu-normalized); shows — when |gy|<0.02g" }
 };
 
 function calculateEvaluationData(){
@@ -79,10 +80,11 @@ function calculateEvaluationData(){
 
   /* F-17（2026-08-30）：簧载质量前后分配不再硬编码 45/55 —— 用预设
      前后轴簧载质量比例（S.front.mS / S.rear.mS，与准静态内核同源），
-     换车型后偏频/阻尼比不再系统性偏差。 */
+     换车型后偏频/阻尼比不再系统性偏差。
+     — F-17: sprung-mass front/rear split is no longer hard-coded 45/55 — uses the preset front/rear sprung-mass ratios (S.front.mS / S.rear.mS, same source as the quasi-static core) so ride frequency / damping ratio no longer skew systematically after switching vehicles. */
   const msF = (S.front.mS || 55), msR = (S.rear.mS || 65);
   const mSprTot = (S.mSprung || 400);
-  const mSprungF = mSprTot * (msF / (msF + msR)) / 2;   /* 单侧簧载质量 */
+  const mSprungF = mSprTot * (msF / (msF + msR)) / 2;   /* 单侧簧载质量 — sprung mass per side */
   const mSprungR = mSprTot * (msR / (msF + msR)) / 2;
   const freqF = (1 / (2 * Math.PI)) * Math.sqrt((kwF * 1000) / mSprungF);
   const freqR = (1 / (2 * Math.PI)) * Math.sqrt((kwR * 1000) / mSprungR);
@@ -98,7 +100,8 @@ function calculateEvaluationData(){
   const rollSplitF = (kRollF / (kRollF + kRollR || 1)) * 100;
 
   /* F-15（2026-08-30）：`||` 会吞掉合法 0 值（RC 恰在地面=0mm、scrub=0 等）；
-     fin() 仅对 undefined/NaN 回退，0 值如实显示。 */
+     fin() 仅对 undefined/NaN 回退，0 值如实显示。
+     — F-15: `||` swallows legitimate 0 values (RC exactly at ground = 0mm, scrub = 0, etc.); fin() only falls back on undefined/NaN, 0 is displayed truthfully. */
   const fin=(v,d)=>Number.isFinite(v)?v:d;
   const metrics = {
     camberGainF: { val: camGainF, formatted: camGainF.toFixed(3) },
@@ -121,11 +124,13 @@ function calculateEvaluationData(){
     dampingRatioR:{ val: dampRatioR, formatted: dampRatioR.toFixed(2) },
     rollStiffnessPct: { val: rollSplitF, formatted: rollSplitF.toFixed(1) },
     /* F-11（2026-08-30）：`S.ackermann || 52` 是假数据——S.ackermann 全文无赋值点，
-       恒 52% 使红绿灯失真。未计算时如实显示 "—"（eval 侧同步处理 null）。 */
+       恒 52% 使红绿灯失真。未计算时如实显示 "—"（eval 侧同步处理 null）。
+       — F-11: `S.ackermann || 52` was fake data — S.ackermann has no assignment anywhere, so it was permanently 52% and skewed the traffic lights. When not computed, show "—" truthfully (eval side also handles null). */
     ackermannPct:{ val: Number.isFinite(S.ackermann) ? S.ackermann : null,
                    formatted: Number.isFinite(S.ackermann) ? S.ackermann.toFixed(0) : "—" },
     /* 稳态不足转向梯度：取当前准静态工况（需 |gy|≥0.02g）；镜像引擎
-       chassis.quasi_loads 的轮胎分量公式（含 LS 载荷敏感性）。 */
+       chassis.quasi_loads 的轮胎分量公式（含 LS 载荷敏感性）。
+       — Steady-state understeer gradient: taken from the current quasi-static load case (requires |gy| >= 0.02g); mirrors the engine chassis.quasi_loads tire-component formula (including LS load sensitivity). */
     usGradient:{ val: (SIM.qsRes && Math.abs(S.qs.gy) >= 0.02 && Number.isFinite(SIM.qsRes.usGrad)
                        && Math.abs(SIM.qsRes.usGrad) > 1e-9) ? SIM.qsRes.usGrad : null,
                  formatted: (SIM.qsRes && Math.abs(S.qs.gy) >= 0.02 && Number.isFinite(SIM.qsRes.usGrad)
@@ -135,17 +140,18 @@ function calculateEvaluationData(){
   /* F-18（2026-08-30）：dimScores 与 EVAL_BENCHMARKS 双轨制消除 —— 旧公式
      与右侧交通灯评级独立定义（雷达图可给 good 分数、交通灯同值却 warn）。
      改为复用 EVAL_BENCHMARKS 的 eval() 评级（good=90 / warn=62 / bad=30），
-     雷达图与交通灯永远同源、不可能矛盾。 */
+     雷达图与交通灯永远同源、不可能矛盾。
+     — F-18: the dimScores / EVAL_BENCHMARKS double-track system is removed — the old formula and the right-side traffic-light rating were defined independently (radar could score good while the same value rated warn on the traffic light). Now the eval() rating from EVAL_BENCHMARKS is reused (good=90 / warn=62 / bad=30), so the radar and traffic lights share one source and can never contradict. */
   const sc=(bm,val)=>{ if(val==null)return 30;
     const r=(bm&&bm.eval)?bm.eval(val):null;
     return r==="good"?90:(r==="warn"?62:30); };
   const dimScores = {
-    "外倾抓地 (Camber)": sc(EVAL_BENCHMARKS.camberGainF, camGainF),
-    "跳动转向 (BumpSteer)": sc(EVAL_BENCHMARKS.bumpSteerF, bumpSteerF),
-    "侧倾中心 (RollCenter)": sc(EVAL_BENCHMARKS.rcHeightF, nomF.rcH),
-    "抗点头俯仰 (AntiDive)": sc(EVAL_BENCHMARKS.antiDiveF, nomF.anti),
-    "平顺阻尼 (Damping)": sc(EVAL_BENCHMARKS.dampingRatioF, dampRatioF),
-    "转向手感 (Steering)": sc(EVAL_BENCHMARKS.scrubRadiusF, mF.scrub)
+    "Camber grip": sc(EVAL_BENCHMARKS.camberGainF, camGainF),
+    "Bump steer": sc(EVAL_BENCHMARKS.bumpSteerF, bumpSteerF),
+    "Roll center": sc(EVAL_BENCHMARKS.rcHeightF, nomF.rcH),
+    "Anti-dive pitch": sc(EVAL_BENCHMARKS.antiDiveF, nomF.anti),
+    "Ride damping": sc(EVAL_BENCHMARKS.dampingRatioF, dampRatioF),
+    "Steering feel": sc(EVAL_BENCHMARKS.scrubRadiusF, mF.scrub)
   };
 
   let totalScore = 0, count = 0;
@@ -162,7 +168,8 @@ window.openSuspensionEvaluation = openSuspensionEvaluation;
    下方的 class TrackPath / CirclePath / StraightPath / CircuitPath 停留在
    TDZ 未初始化 → openSlopeStage() 里 new StraightPath(...) 抛错 →
    requestAnimationFrame(slopeStageLoop) 永不执行 = 打开舞台即黑屏。
-   11-stages.js 末尾已有正确的导出，此处不得再重复导出。 */
+   11-stages.js 末尾已有正确的导出，此处不得再重复导出。
+   — G14 (2026-08-31) F-61: this spot used to hold a statement exporting openSlopeStage onto window. That function is defined in 11-stages.js (a script that loads AFTER this file); after G9 split the bundle into multiple <script src> tags, functions no longer hoist across files -> that line threw ReferenceError -> this file aborted here -> the TrackPath / CirclePath / StraightPath / CircuitPath classes below stayed uninitialized in TDZ -> new StraightPath(...) inside openSlopeStage() threw -> requestAnimationFrame(slopeStageLoop) never ran = black screen on opening the stage. The correct export already exists at the end of 11-stages.js; do not re-export here. */
 
 function openSuspensionEvaluation(){
   const modal = document.getElementById("suspEvalModal");
@@ -174,28 +181,28 @@ function openSuspensionEvaluation(){
   document.getElementById("evalOverallScore").textContent = data.overall;
   
   const badge = document.getElementById("evalGradeBadge");
-  if(data.overall >= 90){ badge.textContent = "GRADE S+ 极致竞赛"; badge.style.background = "#238636"; }
-  else if(data.overall >= 80){ badge.textContent = "GRADE A 优秀调校"; badge.style.background = "#1f6feb"; }
-  else if(data.overall >= 70){ badge.textContent = "GRADE B 良好平衡"; badge.style.background = "#d29922"; }
-  else { badge.textContent = "GRADE C 存在缺陷"; badge.style.background = "#da3633"; }
+  if(data.overall >= 90){ badge.textContent = "GRADE S+ Elite competition"; badge.style.background = "#238636"; }
+  else if(data.overall >= 80){ badge.textContent = "GRADE A Excellent tuning"; badge.style.background = "#1f6feb"; }
+  else if(data.overall >= 70){ badge.textContent = "GRADE B Good balance"; badge.style.background = "#d29922"; }
+  else { badge.textContent = "GRADE C Defects present"; badge.style.background = "#da3633"; }
 
   const scoreGrid = document.getElementById("evalDimensionScores");
   scoreGrid.innerHTML = "";
   for(const k in data.dimScores){
     const d = document.createElement("div");
     d.className = "eval-score-item";
-    d.innerHTML = `<span>${k}</span><b>${Math.round(data.dimScores[k])} 分</b>`;
+    d.innerHTML = `<span>${k}</span><b>${Math.round(data.dimScores[k])} pts</b>`;
     scoreGrid.appendChild(d);
   }
 
   const adviceList = document.getElementById("evalAdviceList");
   adviceList.innerHTML = "";
   const advices = [];
-  if(data.metrics.camberGainF.val < 0.035) advices.push({ type: 'danger', text: "【前外倾增益偏低】当前仅 " + data.metrics.camberGainF.formatted + " °/mm，过弯车身侧倾时前轮接地变差，易造成剧烈推头！建议拉长下控制臂或抬高上控制臂外球销。" });
-  if(data.metrics.bumpSteerF.val > 0.03) advices.push({ type: 'danger', text: "【前跳动转向过大】当前为 " + data.metrics.bumpSteerF.formatted + " °/mm，赛车冲过路肩时方向盘将剧烈抢把！建议调整转向机高低 (RACK_Z) 使转向拉杆与下摆臂虚拟瞬心重合。" });
-  if(data.metrics.rcHeightF.val < 20) advices.push({ type: 'warn', text: "【前侧倾中心过低】侧倾力臂过大导致过弯侧倾严重，建议适当调整内外球销几何高度。" });
-  if(data.metrics.rollStiffnessPct.val < 48) advices.push({ type: 'warn', text: "【前侧倾刚度占比偏低】当前后轴过硬，高速弯出弯时后轮附着力容易被突破，车辆趋向过度转向。" });
-  if(advices.length === 0) advices.push({ type: 'good', text: "【完美几何架构】当前悬架各项指标均处于职业赛车最佳黄金视窗内，外倾补偿与跳动转向极其收敛！" });
+  if(data.metrics.camberGainF.val < 0.035) advices.push({ type: 'danger', text: "[Front camber gain too low] Currently only " + data.metrics.camberGainF.formatted + " °/mm — front tire contact degrades as the body rolls in corners, inviting violent understeer! Lengthen the lower control arm or raise the outer ball joint of the upper control arm." });
+  if(data.metrics.bumpSteerF.val > 0.03) advices.push({ type: 'danger', text: "[Front bump steer too large] Currently " + data.metrics.bumpSteerF.formatted + " °/mm — the wheel will fight the driver hard over kerbs! Adjust steering rack height (RACK_Z) so the tie rod coincides with the lower control arm's virtual instant center." });
+  if(data.metrics.rcHeightF.val < 20) advices.push({ type: 'warn', text: "[Front roll center too low] The oversized roll moment arm makes the body roll hard in corners; adjust the inner/outer ball-joint heights appropriately." });
+  if(data.metrics.rollStiffnessPct.val < 48) advices.push({ type: 'warn', text: "[Front roll-stiffness share too low] The rear axle is currently too stiff — rear grip breaks away on high-speed corner exit and the car trends to oversteer." });
+  if(advices.length === 0) advices.push({ type: 'good', text: "[Excellent geometry] Every suspension metric currently sits inside the pro-racing golden window; camber compensation and bump steer are extremely well converged!" });
 
   advices.forEach(adv => {
     const el = document.createElement("div");
@@ -220,7 +227,7 @@ function openSuspensionEvaluation(){
       </div>
       <div class="metric-val-row">
         <span class="metric-val">${m.formatted} <small style="font-size:10px;font-weight:normal;">${def.unit}</small></span>
-        <span class="metric-target">目标: ${def.target}</span>
+        <span class="metric-target">Target: ${def.target}</span>
       </div>
       <div class="metric-desc">${def.desc}</div>
     `;
@@ -229,7 +236,7 @@ function openSuspensionEvaluation(){
 
   drawRadarChart(data.dimScores);
   modal.classList.add("show");
-  /* M9（T1-3）：导出按钮在每次打开报告时重绑，避免与关闭按钮的 handler 顺序耦合 */
+  /* M9（T1-3）：导出按钮在每次打开报告时重绑，避免与关闭按钮的 handler 顺序耦合 — M9 (T1-3): the export button is re-bound every time the report opens, avoiding handler-order coupling with the close button */
   const eb = document.getElementById("evalExportBtn");
   if(eb) eb.onclick = exportDesignReport;
 }
@@ -249,6 +256,7 @@ function openSuspensionEvaluation(){
       取画布像素——不另算一套，报告与屏幕不可能对不上。
    3. **诚实标注**：报告末尾显式写清模型边界（准静态线性区、载荷敏感性参考、
       未含项），避免拿去做超出模型的结论——本项目的红线。
+   ── M9 2026-09-20 - T1-3 one-click design-report export. Competition design reports are a hard requirement and previously only screenshots could be stitched together; this serializes the CURRENT STATE directly into a self-contained, printable HTML: vehicle parameters - overall score & six-dimension radar - key KPIs - four-view snapshots - characteristic curves - handling readouts - sensitivity-sweep results (if any) - baseline delta (if any) - solver status & disclaimers. Design constraints: 1. zero dependencies: no jsPDF / no network, pure strings + canvas.toDataURL (consistent with the project's zero-build, offline-usable policy); printing uses the browser's own flow (Ctrl+P -> save as PDF). 2. single data source: all KPIs go through calculateEvaluationData() (the same function as the on-screen evaluation report), sensitivity uses SIM.sensRes (the copy written by the sweep engine), views and curves are taken directly from canvas pixels — nothing is recomputed, so the report and the screen can never disagree. 3. honest labeling: the end of the report explicitly states the model boundaries (quasi-static linear region, load-sensitivity reference, exclusions), to avoid conclusions beyond the model — this project's red line.
    ═══════════════════════════════════════════════════════════════════════════ */
 function exportDesignReport(){
   let data = null;
@@ -257,7 +265,7 @@ function exportDesignReport(){
     .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const num = (v, d) => (typeof v === "number" && isFinite(v)) ? v.toFixed(d === undefined ? 2 : d) : "—";
 
-  /* 车辆与参数 */
+  /* 车辆与参数 — vehicle & parameters */
   const preset = (typeof VEHICLE_PRESETS !== "undefined" && VEHICLE_PRESETS[S.vehicleType]) || {};
   const vehName = preset.name || S.vehicleType;
   const tireF = (S.front && S.front.tire) || {}, tireR = (S.rear && S.rear.tire) || {};
@@ -265,21 +273,21 @@ function exportDesignReport(){
   const fzRef = Math.max(1, (S.mTotal || 0) * 9.81 / 4);
 
   const vehRows = [
-    ["车型平台", vehName],
-    ["轴距 wb", num(S.wb, 0) + " mm"],
-    ["整车总质量", num(S.mTotal, 0) + " kg"],
-    ["簧载总质量", num(S.mSprung, 0) + " kg"],
-    ["质心高 hcg / 簧载质心高 hs", num(S.hcg, 0) + " / " + num(S.hs, 0) + " mm"],
-    ["前后角簧上质量", num(S.front.mS, 1) + " / " + num(S.rear.mS, 1) + " kg"],
-    ["前后非簧载(单侧)", num(S.front.mU, 1) + " / " + num(S.rear.mU, 1) + " kg"],
-    ["前后主弹簧刚度", num(S.front.kS, 0) + " / " + num(S.rear.kS, 0) + " N/mm"],
-    ["前后轮胎垂向刚度", num(S.front.kT, 0) + " / " + num(S.rear.kT, 0) + " N/mm"],
-    ["前后 ARB 直径", num(S.front.arb && S.front.arb.d, 1) + " / " + num(S.rear.arb && S.rear.arb.d, 1) + " mm"],
-    ["前后轮胎宽度", num(tireF.W, 0) + " / " + num(tireR.W, 0) + " mm"],
-    ["轮胎 MF", "Fy0=" + num(tq.Fy0, 0) + " N · FzNom=" + num(tq.FzNom, 0) + " N · By=" + num(tq.By, 1)
+    ["Vehicle platform", vehName],
+    ["Wheelbase wb", num(S.wb, 0) + " mm"],
+    ["Total mass", num(S.mTotal, 0) + " kg"],
+    ["Total sprung mass", num(S.mSprung, 0) + " kg"],
+    ["CoG height hcg / sprung CoG height hs", num(S.hcg, 0) + " / " + num(S.hs, 0) + " mm"],
+    ["Front/rear corner sprung mass", num(S.front.mS, 1) + " / " + num(S.rear.mS, 1) + " kg"],
+    ["Front/rear unsprung (per side)", num(S.front.mU, 1) + " / " + num(S.rear.mU, 1) + " kg"],
+    ["Front/rear main spring rate", num(S.front.kS, 0) + " / " + num(S.rear.kS, 0) + " N/mm"],
+    ["Front/rear tire vertical stiffness", num(S.front.kT, 0) + " / " + num(S.rear.kT, 0) + " N/mm"],
+    ["Front/rear ARB diameter", num(S.front.arb && S.front.arb.d, 1) + " / " + num(S.rear.arb && S.rear.arb.d, 1) + " mm"],
+    ["Front/rear tire width", num(tireF.W, 0) + " / " + num(tireR.W, 0) + " mm"],
+    ["Tire MF", "Fy0=" + num(tq.Fy0, 0) + " N · FzNom=" + num(tq.FzNom, 0) + " N · By=" + num(tq.By, 1)
               + " · Cy=" + num(tq.Cy, 2) + " · LS=" + num(tq.LS, 3) + " · FzRef=" + num(fzRef, 0) + " N"],
-    ["准静态工况", "gy=" + num(S.qs && S.qs.gy, 2) + "g · gx=" + num(S.qs && S.qs.gx, 2)
-                 + "g · 气动下压 " + num(S.qs && S.qs.aeroF, 0) + " N"],
+    ["Quasi-static load case", "gy=" + num(S.qs && S.qs.gy, 2) + "g · gx=" + num(S.qs && S.qs.gx, 2)
+                 + "g · Aero downforce " + num(S.qs && S.qs.aeroF, 0) + " N"],
   ];
 
   /* KPI 表。两个真源，都不得另算：
@@ -287,7 +295,8 @@ function exportDesignReport(){
        （`SIM.mFR/mRR`）；注意 calculateEvaluationData 的 `metrics` 里**没有**这四个键，
        它们是整车定位量而非评价维度量。
      · 其余评价类量 —— calculateEvaluationData().metrics[key].formatted
-       （值为 `{val, formatted}` 结构；直接 num() 会全渲染成 "—"）。 */
+       （值为 `{val, formatted}` 结构；直接 num() 会全渲染成 "—"）。
+       — KPI table. Two sources of truth, neither may be recomputed: (a) the four wheel-alignment angles (camber/toe/KPI/caster) — the same metrics object as the right-dock readouts (SIM.mFR/mRR); note calculateEvaluationData's metrics does NOT contain these four keys — they are whole-vehicle alignment quantities, not evaluation-dimension quantities. (b) all other evaluation quantities come from calculateEvaluationData().metrics[key].formatted (a {val, formatted} structure; num() on it directly would render everything as "—"). */
   const mM = ((S.axis === "front" ? SIM.mFR : SIM.mRR) || {});
   const kpi = (data && data.metrics) || {};
   const kv = k => { const o = kpi[k];
@@ -297,38 +306,39 @@ function exportDesignReport(){
     return (typeof o.val === "number" && isFinite(o.val)) ? num(o.val, 2) : "—";
   };
   const kpiRows = [
-    ["车轮外倾角 CAMBER", num(mM.cam, 2) + " °"],
-    ["车轮前束角 TOE", num(mM.toe, 3) + " °"],
-    ["主销内倾角 KPI / SAI", num(mM.kpi, 2) + " °"],
-    ["主销后倾角 CASTER", num(mM.cast, 2) + " °"],
-    ["主销接地偏移距 SCRUB", kv("scrubRadiusF") + " mm"],
-    ["主销后倾拖距 TRAIL", kv("casterTrailF") + " mm"],
-    ["外倾角增益 CAMBER GAIN", kv("camberGainF") + " °/25mm"],
-    ["跳动转向 BUMP STEER", kv("bumpSteerF") + " °/25mm"],
-    ["侧倾中心高 ROLL CTR H", kv("rcHeightF") + " mm"],
-    ["抗俯仰率 ANTI-DIVE", kv("antiDiveF") + " %"],
-    ["瞬态运动速比 MOTION RATIO", kv("motionRatioF")],
-    ["轮端等效刚度 WHEEL RATE", kv("wheelRateF") + " N/mm"],
-    ["簧载固有频率 RIDE FREQ", kv("rideFreqF") + " Hz"],
-    ["阻尼比 DAMPING RATIO", kv("dampingRatioF")],
-    ["前轴侧倾刚度占比", kv("rollStiffnessPct") + " %"],
-    ["阿克曼率 ACKERMANN", kv("ackermannPct") + " %"],
-    ["不足转向梯度 US GRADIENT", kv("usGradient") + " °/g"],
+    ["Wheel camber", num(mM.cam, 2) + " °"],
+    ["Wheel toe angle", num(mM.toe, 3) + " °"],
+    ["Kingpin inclination (KPI / SAI)", num(mM.kpi, 2) + " °"],
+    ["Caster angle", num(mM.cast, 2) + " °"],
+    ["Scrub radius", kv("scrubRadiusF") + " mm"],
+    ["Caster trail", kv("casterTrailF") + " mm"],
+    ["Camber gain", kv("camberGainF") + " °/25mm"],
+    ["Bump steer", kv("bumpSteerF") + " °/25mm"],
+    ["Roll center height", kv("rcHeightF") + " mm"],
+    ["Anti-dive ratio", kv("antiDiveF") + " %"],
+    ["Motion ratio", kv("motionRatioF")],
+    ["Wheel rate", kv("wheelRateF") + " N/mm"],
+    ["Ride frequency", kv("rideFreqF") + " Hz"],
+    ["Damping ratio", kv("dampingRatioF")],
+    ["Front roll-stiffness share", kv("rollStiffnessPct") + " %"],
+    ["Ackermann %", kv("ackermannPct") + " %"],
+    ["Understeer gradient (US)", kv("usGradient") + " °/g"],
   ];
   const qs = SIM.qsRes || {};
   const qsRows = [
-    ["稳态侧倾角", num(qs.rollDeg, 2) + " °"], ["整车侧倾梯度", num(qs.rollGrad, 2) + " °/g"],
-    ["前/后轴侧倾刚度", num(qs.kphi_f, 0) + " / " + num(qs.kphi_r, 0) + " N·m/°"],
-    ["前/后侧偏角", num(qs.alphaF, 2) + " / " + num(qs.alphaR, 2) + " °"],
-    ["TLLTD（前轴载荷转移占比）", num(qs.tlltd, 1) + " %"],
-    ["四轮接触载荷 FL/FR/RL/RR", qs.fz ? [qs.fz.FL, qs.fz.FR, qs.fz.RL, qs.fz.RR].map(v=>num(v,0)).join(" / ") + " N" : "—"],
-    ["Jacking 抬升", num(qs.jackingMm, 2) + " mm"],
+    ["Steady-state roll angle", num(qs.rollDeg, 2) + " °"], ["Vehicle roll gradient", num(qs.rollGrad, 2) + " °/g"],
+    ["Front/rear roll stiffness", num(qs.kphi_f, 0) + " / " + num(qs.kphi_r, 0) + " N·m/°"],
+    ["Front/rear slip angle", num(qs.alphaF, 2) + " / " + num(qs.alphaR, 2) + " °"],
+    ["TLLTD (front axle load-transfer share)", num(qs.tlltd, 1) + " %"],
+    ["Four-wheel contact loads FL/FR/RL/RR", qs.fz ? [qs.fz.FL, qs.fz.FR, qs.fz.RL, qs.fz.RR].map(v=>num(v,0)).join(" / ") + " N" : "—"],
+    ["Jacking rise", num(qs.jackingMm, 2) + " mm"],
   ];
 
   /* 画布 → 图片。
      ⚠ 捕获前必须**强制重绘一次**：打开评价模态会改变布局 → ResizeObserver 触发
      sizeView → 画布被 resize 清空，而下一帧 rAF 还没跑（同步代码里）⇒ 直接
-     toDataURL 会拍到空白帧（上一版实测：视图快照是白框、曲线图正常）。 */
+     toDataURL 会拍到空白帧（上一版实测：视图快照是白框、曲线图正常）。
+     — canvas -> image. WARNING: force one full redraw before capturing. Opening the evaluation modal changes the layout -> ResizeObserver fires -> sizeView -> the canvas is resized and cleared, while the next rAF frame has not run yet (we are inside synchronous code) -> toDataURL would capture a blank frame (measured in the previous version: view snapshots were white boxes while curve plots were fine). */
   try{ if(typeof drawAll === "function") drawAll(); }catch(e){}
   const imgs = [];
   const pushCanvas = (cv, label) => {
@@ -337,7 +347,8 @@ function exportDesignReport(){
     try{
       /* 降采样到 ≤900px 宽：视图画布是全分辨率（1238×794 @dpr2 = 493KB/张），
          直接把 dataURL 塞进报告会让单份报告涨到 750KB+；打印 900px 足够，
-         并铺白底（打印不依赖透明）。曲线小图不动。 */
+         并铺白底（打印不依赖透明）。曲线小图不动。
+         — Downsample to <=900px width: the view canvases are full resolution (1238x794 @dpr2 = 493KB each), so embedding dataURLs directly would push a single report past 750KB; 900px is plenty for printing, and a white background is painted (printing does not rely on transparency). Small curve plots are untouched. */
       const MAXW = 900;
       if(cv.width > MAXW){
         const k = MAXW / cv.width;
@@ -354,18 +365,18 @@ function exportDesignReport(){
     imgs.push({ label, url });
   };
   if(typeof VW !== "undefined") VW.forEach(v => { if(v && v.w > 60) pushCanvas(v.cv, (v.zh||"") + " " + (v.en||"")); });
-  if(typeof UI !== "undefined" && UI.plots) UI.plots.forEach((cv,i)=> pushCanvas(cv, "特性曲线 " + (i+1)));
-  pushCanvas(document.getElementById("usCurvePlot"), "不足转向特性 δ-ay");
-  pushCanvas(document.getElementById("evalRadarCanvas"), "六维评分雷达");
+  if(typeof UI !== "undefined" && UI.plots) UI.plots.forEach((cv,i)=> pushCanvas(cv, "Characteristic curve " + (i+1)));
+  pushCanvas(document.getElementById("usCurvePlot"), "Understeer characteristic δ-ay");
+  pushCanvas(document.getElementById("evalRadarCanvas"), "Six-dimension score radar");
 
-  /* 敏感度扫描（T1-1 结果） */
+  /* 敏感度扫描（T1-1 结果） — sensitivity sweep (T1-1 result) */
   const sr = SIM.sensRes;
-  let sensHtml = "<p class='mut'>本次会话尚未运行敏感度扫描（左侧「分析 → 灵敏度扫描」）。</p>";
+  let sensHtml = "<p class='mut'>No sensitivity sweep has been run this session (left panel: Analysis -> Sensitivity sweep).</p>";
   if(sr && sr.rows){
     const rows = sr.rows.slice().sort((a,b)=> Math.abs(b.S) - Math.abs(a.S));
-    sensHtml = "<p class='mut'>参数：<b>" + esc(sr.paramLabel) + "</b> ±" + num(sr.delta,1) + (sr.paramUnit||"")
-      + " · " + sr.n + " 点 · 共 " + rows.length + " 个目标 · 参数已还原为 " + num(sr.base,2) + (sr.paramUnit||"")
-      + "</p><table><thead><tr><th>目标</th><th>单位</th><th>基准</th><th>−Δ</th><th>+Δ</th><th>斜率 / 单位</th><th>敏感度</th></tr></thead><tbody>";
+    sensHtml = "<p class='mut'>Parameter: <b>" + esc(sr.paramLabel) + "</b> ±" + num(sr.delta,1) + (sr.paramUnit||"")
+      + " · " + sr.n + " points · " + rows.length + " objectives · parameter restored to " + num(sr.base,2) + (sr.paramUnit||"")
+      + "</p><table><thead><tr><th>Objective</th><th>Unit</th><th>Baseline</th><th>−Δ</th><th>+Δ</th><th>Slope / unit</th><th>Sensitivity</th></tr></thead><tbody>";
     rows.forEach(r=>{
       const bad = !isFinite(r.S);
       sensHtml += "<tr><td>" + esc(r.label) + "</td><td>" + esc(r.unit) + "</td><td>" + num(r.v0,2) + "</td><td>"
@@ -376,14 +387,15 @@ function exportDesignReport(){
   }
 
   /* 双参数交互（E12 结果）：网格表 + 交互强度判定。
-     阈值判定走 sens2Verdict() 单一真源，避免面板与报告各写一套阈值后漂移。 */
+     阈值判定走 sens2Verdict() 单一真源，避免面板与报告各写一套阈值后漂移。
+     — Two-parameter interaction (E12 result): grid table + interaction-strength verdict. The threshold verdict goes through the single sens2Verdict() source, so the panel and the report never drift apart with two sets of thresholds. */
   const s2 = SIM.sens2Res;
-  let inter2Html = "<p class='mut'>本次会话尚未运行双参数交互扫描（左侧「分析 → 双参数交互扫描」）。</p>";
+  let inter2Html = "<p class='mut'>No two-parameter interaction sweep has been run this session (left panel: Analysis -> Two-parameter interaction sweep).</p>";
   if(s2 && s2.M && s2.M.length){
     const verdict = (typeof sens2Verdict === "function") ? sens2Verdict(s2.rel) : "";
-    inter2Html = "<p class='mut'>X：<b>" + esc(s2.xLabel) + "</b> ±" + num(s2.dx,1) + esc(s2.xUnit)
-      + " · Y：<b>" + esc(s2.yLabel) + "</b> ±" + num(s2.dy,1) + esc(s2.yUnit)
-      + " · " + s2.n + "×" + s2.n + " 网格 · 目标：" + esc(s2.objLabel) + " [" + esc(s2.objUnit) + "]</p>"
+    inter2Html = "<p class='mut'>X: <b>" + esc(s2.xLabel) + "</b> ±" + num(s2.dx,1) + esc(s2.xUnit)
+      + " · Y: <b>" + esc(s2.yLabel) + "</b> ±" + num(s2.dy,1) + esc(s2.yUnit)
+      + " · " + s2.n + "×" + s2.n + " grid · objective: " + esc(s2.objLabel) + " [" + esc(s2.objUnit) + "]</p>"
       + "<table><thead><tr><th>Y ↓ / X →</th>"
       + s2.xs.map(v=>"<th>" + num(v,1) + "</th>").join("") + "</tr></thead><tbody>";
     for(let j = s2.n-1; j >= 0; j--){
@@ -391,20 +403,20 @@ function exportDesignReport(){
         + s2.M[j].map(v=>"<td>" + (isFinite(v) ? num(v,3) : "—") + "</td>").join("") + "</tr>";
     }
     inter2Html += "</tbody></table>"
-      + "<p>主效应 X " + (s2.mainX>=0?"+":"") + num(s2.mainX,4) + " · Y " + (s2.mainY>=0?"+":"") + num(s2.mainY,4)
-      + " · 交互项 " + (s2.inter>=0?"+":"") + num(s2.inter,4)
-      + "（相对强度 <b>" + (s2.rel*100).toFixed(0) + "%</b>）⇒ " + esc(verdict) + "</p>";
+      + "<p>Main effect X " + (s2.mainX>=0?"+":"") + num(s2.mainX,4) + " · Y " + (s2.mainY>=0?"+":"") + num(s2.mainY,4)
+      + " · Interaction term " + (s2.inter>=0?"+":"") + num(s2.inter,4)
+      + " (relative strength <b>" + (s2.rel*100).toFixed(0) + "%</b>) ⇒ " + esc(verdict) + "</p>";
   }
 
-  /* 多方案对比（E11 结果）：直接复用方案库的对比行，不另算 */
-  let setupCmpHtml = "<p class='mut'>未勾选方案（左侧「分析 → 方案库与对比」勾选 2~3 条即可）。</p>";
+  /* 多方案对比（E11 结果）：直接复用方案库的对比行，不另算 — multi-setup comparison (E11 result): reuse the setup library's comparison rows directly, nothing recomputed */
+  let setupCmpHtml = "<p class='mut'>No setups checked (left panel: Analysis -> Setup library & comparison, check 2-3 rows).</p>";
   try{
     if(typeof setupCompareRows === "function"){
       const cmp = setupCompareRows();
       if(cmp.sel.length >= 2){
         setupCmpHtml = "<p class='mut'>"
-          + cmp.sel.map((r,i)=> (i===0?"基准：":"") + "<b>" + esc(r.name) + "</b>").join(" · ")
-          + "（Δ 相对基准列）</p><table><thead><tr><th>KPI</th><th>单位</th>"
+          + cmp.sel.map((r,i)=> (i===0?"Base: ":"") + "<b>" + esc(r.name) + "</b>").join(" · ")
+          + " (Δ vs baseline column)</p><table><thead><tr><th>KPI</th><th>Unit</th>"
           + cmp.sel.map(r=>"<th>" + esc(r.name) + "</th>").join("") + "</tr></thead><tbody>";
         cmp.rows.forEach(x=>{
           const v0 = x.vals[0];
@@ -423,14 +435,14 @@ function exportDesignReport(){
         setupCmpHtml += "</tbody></table>";
       }
     }
-  }catch(e){ /* 方案库不可用时保持占位文案，绝不让报告导出失败 */ }
+  }catch(e){ /* 方案库不可用时保持占位文案，绝不让报告导出失败 — if the setup library is unavailable, keep the placeholder text; the report export must never fail */ }
 
-  /* 基准差异（若已锁定基准线） */
+  /* 基准差异（若已锁定基准线） — baseline delta (if a baseline is locked) */
   let baseHtml = "";
   if(S.hasBaseline){
-    const items = [["外倾增益 CG","cg","°/25mm"],["跳动转向 BS","bs","°/25mm"],["运动速比 MR","mr","-"],
-                   ["侧倾中心 RC","rcH","mm"],["轮端刚度 WR","kw","N/mm"]];
-    baseHtml = "<h2>基准线差异（Baseline Delta）</h2><table><thead><tr><th>项目</th><th>当前 ACTIVE</th><th>基准 BASE</th><th>差异 DELTA</th></tr></thead><tbody>";
+    const items = [["Camber gain CG","cg","°/25mm"],["Bump steer BS","bs","°/25mm"],["Motion ratio MR","mr","-"],
+                   ["Roll center RC","rcH","mm"],["Wheel rate WR","kw","N/mm"]];
+    baseHtml = "<h2>Baseline delta</h2><table><thead><tr><th>Item</th><th>Current (ACTIVE)</th><th>Baseline (BASE)</th><th>Delta (DELTA)</th></tr></thead><tbody>";
     items.forEach(([lb,k,u])=>{
       const g = id => { const e = document.getElementById(id); return e ? e.textContent : "—"; };
       baseHtml += "<tr><td>" + lb + " <span class='mut'>" + u + "</span></td><td>" + esc(g("df_a_"+k))
@@ -439,18 +451,18 @@ function exportDesignReport(){
     baseHtml += "</tbody></table>";
   }
 
-  /* 评分与建议 */
-  let scoreHtml = "<p class='mut'>评价数据不可用（缺几何或扫掠结果）。</p>";
+  /* 评分与建议 — score & advice */
+  let scoreHtml = "<p class='mut'>Evaluation data unavailable (missing geometry or sweep results).</p>";
   if(data && data.dimScores){
-    scoreHtml = "<table><thead><tr><th>维度</th><th>得分</th></tr></thead><tbody>";
+    scoreHtml = "<table><thead><tr><th>Dimension</th><th>Score</th></tr></thead><tbody>";
     for(const k in data.dimScores) scoreHtml += "<tr><td>" + esc(k) + "</td><td>" + Math.round(data.dimScores[k]) + " / 100</td></tr>";
-    scoreHtml += "<tr class='tot'><td>综合评分</td><td>" + (data.overall != null ? data.overall : "—") + " / 100</td></tr></tbody></table>";
+    scoreHtml += "<tr class='tot'><td>Overall score</td><td>" + (data.overall != null ? data.overall : "—") + " / 100</td></tr></tbody></table>";
   }
 
   const engineTxt = (typeof ENG !== "undefined" && ENG.ok)
-    ? ("已连接引擎 " + esc(ENG.url)) : "内置 JS 求解器（离线）";
+    ? ("Engine connected: " + esc(ENG.url)) : "Built-in JS solver (offline)";
   const stamp = new Date().toLocaleString("zh-CN");
-  /* 残差取真源：状态栏同源求解残差（07-plots 写 sbRes），缺省回退到当前轴 metrics */
+  /* 残差取真源：状态栏同源求解残差（07-plots 写 sbRes），缺省回退到当前轴 metrics — residual from the true source: the same solve residual as the status bar (07-plots writes sbRes), falling back to the current axis metrics when absent */
   const resEl = document.getElementById("sbRes");
   const residual = (resEl && resEl.textContent && resEl.textContent !== "—")
     ? resEl.textContent
@@ -460,7 +472,7 @@ function exportDesignReport(){
     "<tr><th>" + esc(r[0]) + "</th><td>" + esc(r[1]) + "</td></tr>").join("") + "</tbody></table>";
 
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-<title>LABSUS 设计报告 · ${esc(S.vehicleType)} · ${esc(stamp)}</title>
+<title>LABSUS Design Report · ${esc(S.vehicleType)} · ${esc(stamp)}</title>
 <style>
   :root{color-scheme:light}
   body{font:13px/1.6 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;color:#1a1f28;background:#fff;margin:0;padding:28px 34px;max-width:1000px}
@@ -479,45 +491,45 @@ function exportDesignReport(){
   .note{margin-top:22px;padding:10px 12px;border-left:3px solid #94a3b8;background:#f8fafc;font-size:11.5px;color:#475569}
   @media print{body{padding:0;max-width:none} h2{page-break-after:avoid} figure,table{page-break-inside:avoid}}
 </style></head><body>
-<h1>LABSUS 悬架设计报告</h1>
-<div class="meta">车型：<b>${esc(vehName)}</b> · 生成时间：${esc(stamp)} · 求解器：${engineTxt} · 最大约束残差：${esc(residual)} mm</div>
+<h1>LABSUS Suspension Design Report</h1>
+<div class="meta">Vehicle: <b>${esc(vehName)}</b> · Generated: ${esc(stamp)} · Solver: ${engineTxt} · Max constraint residual: ${esc(residual)} mm</div>
 
-<h2>一、车辆与调校参数</h2>
+<h2>1. Vehicle & tuning parameters</h2>
 ${rowsTbl(vehRows)}
 
-<h2>二、综合评分</h2>
+<h2>2. Overall score</h2>
 ${scoreHtml}
 
-<h2>三、关键设计 KPI</h2>
+<h2>3. Key design KPIs</h2>
 ${rowsTbl(kpiRows)}
 
-<h2>四、准静态操稳</h2>
+<h2>4. Quasi-static handling</h2>
 ${rowsTbl(qsRows)}
 
-<h2>五、视图快照与特性曲线</h2>
-<div class="grid">${imgs.map(x => `<figure><img src="${x.url}" alt="${esc(x.label)}"><figcaption>${esc(x.label)}</figcaption></figure>`).join("") || "<p class='mut'>无可用画布。</p>"}</div>
+<h2>5. View snapshots & characteristic curves</h2>
+<div class="grid">${imgs.map(x => `<figure><img src="${x.url}" alt="${esc(x.label)}"><figcaption>${esc(x.label)}</figcaption></figure>`).join("") || "<p class='mut'>No canvases available.</p>"}</div>
 
-<h2>六、敏感度扫描</h2>
+<h2>6. Sensitivity sweep</h2>
 ${sensHtml}
 
-<h2>七、双参数交互扫描</h2>
+<h2>7. Two-parameter interaction sweep</h2>
 ${inter2Html}
 
-<h2>八、多方案对比</h2>
+<h2>8. Multi-setup comparison</h2>
 ${setupCmpHtml}
 ${baseHtml}
 
 <div class="note">
-<b>模型边界与免责说明</b>（避免超出模型的结论）：<br>
-① 稳态操稳量为<b>线性区准静态解</b>：侧偏角 α 由轴侧偏刚度线性换算，未含轮胎非线性饱和、瞬态松弛与热效应；<br>
-② 载荷敏感性按 <b>μ 每翻倍降 LS</b> 建模，参考载荷取整车静轮载均值 mT·g/4；<br>
-③ 未含项：衬套旋转柔度（δ_rot≡0）、camber→grip 耦合、路面谱激励、气动地面效应细化；<br>
-④ 敏感度扫描为<b>单参数局部扫描</b>（其余参数冻结），未含参数交互；跨参数结论需多变量验证；<br>
-⑤ 双内核（Python 引擎 / 前端 JS）通过 <code>tphys_parity</code> 对拍，最差相对差约 0.5%。
+<b>Model boundaries & disclaimers</b> (avoid conclusions beyond the model):<br>
+① Steady-state handling quantities are <b>linear-region quasi-static solutions</b>: slip angle α is linearly converted from axle cornering stiffness and excludes tire nonlinear saturation, transient relaxation and thermal effects;<br>
+② Load sensitivity is modeled as <b>LS dropping per doubling of μ</b>; the reference load is the vehicle mean static wheel load mT·g/4;<br>
+③ Not included: bushing rotational compliance (δ_rot≡0), camber→grip coupling, road-spectrum excitation, refined aerodynamic ground effect;<br>
+④ Sensitivity sweeps are <b>single-parameter local sweeps</b> (all other parameters frozen) with no parameter interactions; cross-parameter conclusions require multivariate validation;<br>
+⑤ The dual kernels (Python engine / front-end JS) are cross-checked via <code>tphys_parity</code>; worst relative difference ≈ 0.5%.
 </div>
 </body></html>`;
 
-  /* 打开新窗口；被拦截则退回 Blob 下载 */
+  /* 打开新窗口；被拦截则退回 Blob 下载 — open a new window; fall back to a Blob download if blocked */
   let w = null;
   try{ w = window.open("", "_blank"); }catch(e){ w = null; }
   if(w && w.document){
@@ -528,16 +540,17 @@ ${baseHtml}
       const blob = new Blob([html], {type:"text/html;charset=utf-8"});
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "LABSUS_设计报告_" + S.vehicleType + "_" + new Date().toISOString().slice(0,10) + ".html";
+      a.download = "LABSUS_Design_Report_" + S.vehicleType + "_" + new Date().toISOString().slice(0,10) + ".html";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
     }catch(e){
       const st = document.getElementById("evalOverallScore");
-      if(st) st.textContent = "导出失败：" + e.message;
+      if(st) st.textContent = "Export failed: " + e.message;
     }
   }
   /* 返回完整 HTML 串（便于自动化取证：把返回值写进隐藏节点再 --dump-dom 读回来），
-     而不是长度——旧实现 return html.length，导致"看起来成功、实际拿到的是个数字"。 */
+     而不是长度——旧实现 return html.length，导致"看起来成功、实际拿到的是个数字"。
+  — Return the full HTML string (easy for automated forensics: write the return value into a hidden node and read it back with --dump-dom) rather than a length — the old return html.length made "success" while returning a number. */
   return html;
 }
 window.exportDesignReport = exportDesignReport;
@@ -724,7 +737,7 @@ class StraightPath extends TrackPath {
     this.bumps = [];
     this.mooseSections = [];
     this.washboardSections = [];
-    this.undulatingSections = []; // G28-fix：必须随场景重建清空，否则波浪永久叠加到其他所有场景
+    this.undulatingSections = []; // G28-fix：必须随场景重建清空，否则波浪永久叠加到其他所有场景 — must be cleared on every scene rebuild, otherwise the waves permanently stack onto all other scenarios
     this.splitMuSections = [];
     this.slopeSections = [];
     this.gantries = [];
@@ -734,19 +747,19 @@ class StraightPath extends TrackPath {
     const rCount = Math.max(1, Math.min(50, this.params.repeatCount || 10));
 
     if (sc === "comprehensive") {
-      // 🏆 默认：全工况综合连环大试验场 (7 大工况连续串联)
+      // 🏆 默认：全工况综合连环大试验场 (7 大工况连续串联) — default: full-spectrum combined proving ground (7 load cases chained in series)
       let curY = 0;
       
-      // 1. 弹射加速与制动区 (0-100 & 100-0)
+      // 1. 弹射加速与制动区 (0-100 & 100-0) — launch-acceleration & braking zone
       this.segments.push({
-        id: "seg_accel", type: "accel_brake", name: "⚡ 弹射加速与制动",
+        id: "seg_accel", type: "accel_brake", name: "⚡ Launch acceleration & braking",
         yStart: curY, yEnd: curY + 110.0, targetSpeed: 38.0, triggerY: curY + 75.0
       });
       this.gantries.push({ y: curY, text: "🏁 START · 0-100 ACCEL & BRAKE" });
       curY += 120.0;
 
       // 2. 三连飞坡跳台 (3x Jump Ramps)
-      this.gantries.push({ y: curY, text: "🚀 TRIPLE JUMP RAMPS · 三连飞坡" });
+      this.gantries.push({ y: curY, text: "🚀 TRIPLE JUMP RAMPS · 3 consecutive jump ramps" });
       for (let i = 0; i < 3; i++) {
         const ry = curY + 15.0 + i * 65.0;
         const rH = this.params.rampHeight || 1.10;
@@ -755,13 +768,13 @@ class StraightPath extends TrackPath {
         });
       }
       this.segments.push({
-        id: "seg_ramp", type: "jump_ramp", name: "🚀 三连飞坡跳台 (3x Ramps)",
+        id: "seg_ramp", type: "jump_ramp", name: "🚀 Triple jump ramps (3x)",
         yStart: curY, yEnd: curY + 220.0, targetSpeed: this.targetSpeed
       });
       curY += 230.0;
 
       // 3. 连续交错坎与减速丘 (Speed Bumps & Cleats)
-      this.gantries.push({ y: curY, text: "🚧 SPEED BUMPS & CLEATS · 连续过坎" });
+      this.gantries.push({ y: curY, text: "🚧 SPEED BUMPS & CLEATS · consecutive bumps & cleats" });
       const bH = this.params.bumpHeight || 0.060;
       for (let i = 0; i < 6; i++) {
         const by = curY + 15.0 + i * 8.0;
@@ -771,13 +784,13 @@ class StraightPath extends TrackPath {
         });
       }
       this.segments.push({
-        id: "seg_bumps", type: "bumps_cleats", name: "🚧 连续交错减速坎 (6x Bumps)",
+        id: "seg_bumps", type: "bumps_cleats", name: "🚧 Consecutive staggered speed bumps (6x)",
         yStart: curY, yEnd: curY + 80.0, targetSpeed: 16.7
       });
       curY += 90.0;
 
       // 4. 连续双移线麋鹿避障 (2x Moose Tests, alternating left and right)
-      this.gantries.push({ y: curY, text: "🦌 ISO 3888-2 MOOSE TEST · 连续麋鹿避障" });
+      this.gantries.push({ y: curY, text: "🦌 ISO 3888-2 MOOSE TEST · consecutive moose avoidance" });
       for (let i = 0; i < 2; i++) {
         const my = curY + 15.0 + i * 70.0;
         const dir = (i % 2 === 0 ? -1 : 1);
@@ -787,13 +800,13 @@ class StraightPath extends TrackPath {
         });
       }
       this.segments.push({
-        id: "seg_moose", type: "moose_test", name: "🦌 连续双移线避障 (2x Moose)",
+        id: "seg_moose", type: "moose_test", name: "🦌 Consecutive double lane-change (2x Moose)",
         yStart: curY, yEnd: curY + 160.0, targetSpeed: (this.params.mooseSpeedKmh || 75.0) / 3.6
       });
       curY += 170.0;
 
       // 5. 搓板与暗坑耐久路 (Washboard & Potholes)
-      this.gantries.push({ y: curY, text: "🪨 WASHBOARD & POTHOLES · 搓板坑洼耐久" });
+      this.gantries.push({ y: curY, text: "🪨 WASHBOARD & POTHOLES · washboard & pothole endurance" });
       this.washboardSections.push({
         id: "comp_wash", y0: curY + 10.0, len: 45.0,
         wavelength: this.params.washboardWavelength || 1.25,
@@ -801,30 +814,30 @@ class StraightPath extends TrackPath {
         potholeDepth: this.params.potholeDepth || -0.055
       });
       this.segments.push({
-        id: "seg_wash", type: "washboard_potholes", name: "🪨 搓板波纹与暗坑路",
+        id: "seg_wash", type: "washboard_potholes", name: "🪨 Washboard corrugations & hidden potholes",
         yStart: curY, yEnd: curY + 80.0, targetSpeed: 13.9
       });
       curY += 90.0;
 
       // 6. 对开冰雪沥青路 ($\mu$-Split Surface)
-      this.gantries.push({ y: curY, text: "❄️ SPLIT-MU SURFACE · 对开冰雪制动" });
+      this.gantries.push({ y: curY, text: "❄️ SPLIT-MU SURFACE · split-μ ice/asphalt braking" });
       this.splitMuSections.push({
         id: "comp_split", y0: curY + 10.0, len: 90.0,
         muLeft: this.params.muLeft || 1.35, muRight: this.params.muRight || 0.28
       });
       this.segments.push({
-        id: "seg_split", type: "split_mu", name: "❄️ 对开路面附着偏摆",
+        id: "seg_split", type: "split_mu", name: "❄️ Split-μ surface grip imbalance",
         yStart: curY, yEnd: curY + 100.0, targetSpeed: 19.4
       });
       curY += 110.0;
 
       // 7. 连续极限坡度爬坡 (Slope Climb)
-      this.gantries.push({ y: curY, text: "⛰️ EXTREME SLOPE CLIMB · 极限陡坡爬坡" });
+      this.gantries.push({ y: curY, text: "⛰️ EXTREME SLOPE CLIMB · extreme steep-slope climb" });
       this.slopeSections.push({
         id: "comp_slope", y0: curY + 10.0, len: 120.0, grade: this.params.grade || 0.20
       });
       this.segments.push({
-        id: "seg_slope", type: "slope_climb", name: "⛰️ 连续极限陡坡爬坡",
+        id: "seg_slope", type: "slope_climb", name: "⛰️ Consecutive extreme steep-slope climb",
         yStart: curY, yEnd: curY + 130.0, targetSpeed: 18.0
       });
       curY += 140.0;
@@ -833,13 +846,13 @@ class StraightPath extends TrackPath {
       this.totalLength = curY;
 
     } else if (sc === "jump_ramp") {
-      // 🚀 连续飞坡极限界 (连续 10 个飞坡跳台)
+      // 🚀 连续飞坡极限界 (连续 10 个飞坡跳台) — consecutive jump-ramp gauntlet (10 jumps in a row)
       const rH = this.params.rampHeight || 1.10;
       const rLen = this.params.rampLen || 14.0;
       const rY0 = this.params.rampY !== undefined ? this.params.rampY : 20.0;
       const sp = this.params.rampSpacing || 65.0;
       let curY = rY0;
-      this.gantries.push({ y: 0, text: `🚀 ${rCount}x CONSECUTIVE JUMP RAMPS · 十连飞坡极限界` });
+      this.gantries.push({ y: 0, text: `🚀 ${rCount}x CONSECUTIVE JUMP RAMPS · 10-jump-ramp gauntlet` });
 
       for (let i = 0; i < rCount; i++) {
         const ry = curY;
@@ -847,7 +860,7 @@ class StraightPath extends TrackPath {
           id: `ramp_${i}`, y0: ry, len: rLen, h: rH, landingY: ry + rLen + 14.0, landingLen: 16.0, index: i + 1, total: rCount
         });
         this.segments.push({
-          id: `seg_ramp_${i}`, type: "jump_ramp", name: `🚀 第 ${i + 1}/${rCount} 个飞坡跳台`,
+          id: `seg_ramp_${i}`, type: "jump_ramp", name: `🚀 Jump ramp ${i + 1}/${rCount}`,
           yStart: ry - 10.0, yEnd: ry + sp - 10.0, targetSpeed: this.targetSpeed
         });
         curY += sp;
@@ -855,12 +868,12 @@ class StraightPath extends TrackPath {
       this.totalLength = curY + 50.0;
 
     } else if (sc === "moose_test") {
-      // 🦌 连续麋鹿避障测试 (连续 5~10 组左右交替双移线)
+      // 🦌 连续麋鹿避障测试 (连续 5~10 组左右交替双移线) — consecutive moose tests (5-10 alternating left/right double lane-changes)
       const off = Math.abs(this.params.mooseOffset || 3.5);
       const w = this.params.mooseLaneWidth || 2.8;
       const mY0 = this.params.mooseStartY !== undefined ? this.params.mooseStartY : 20.0;
       let curY = mY0;
-      this.gantries.push({ y: 0, text: `🦌 ${rCount}x CONSECUTIVE MOOSE TESTS · 连续麋鹿避障` });
+      this.gantries.push({ y: 0, text: `🦌 ${rCount}x CONSECUTIVE MOOSE TESTS · consecutive moose avoidance` });
 
       for (let i = 0; i < rCount; i++) {
         const my = curY;
@@ -869,7 +882,7 @@ class StraightPath extends TrackPath {
           id: `moose_${i}`, y0: my, offset: dir * off, width: w, len: 60.0, index: i + 1, total: rCount
         });
         this.segments.push({
-          id: `seg_moose_${i}`, type: "moose_test", name: `🦌 第 ${i + 1}/${rCount} 组麋鹿双移线 (${dir < 0 ? '向左' : '向右'})`,
+          id: `seg_moose_${i}`, type: "moose_test", name: `🦌 Moose double lane-change ${i + 1}/${rCount} (${dir < 0 ? 'left' : 'right'})`,
           yStart: my - 10.0, yEnd: my + 68.0, targetSpeed: (this.params.mooseSpeedKmh || 75.0) / 3.6
         });
         curY += 75.0;
@@ -877,12 +890,12 @@ class StraightPath extends TrackPath {
       this.totalLength = curY + 50.0;
 
     } else if (sc === "bumps_cleats") {
-      // 🚧 连续过坎与减速带
+      // 🚧 连续过坎与减速带 — consecutive bumps & speed humps
       const bH = this.params.bumpHeight || 0.060;
       const bY0 = this.params.bumpStartY !== undefined ? this.params.bumpStartY : 20.0;
       const bSp = this.params.bumpSpacing || 4.0;
       let curY = bY0;
-      this.gantries.push({ y: 0, text: `🚧 ${rCount * 4}x SPEED BUMPS & CLEATS · 连续过坎测试` });
+      this.gantries.push({ y: 0, text: `🚧 ${rCount * 4}x SPEED BUMPS & CLEATS · consecutive bump test` });
 
       for (let i = 0; i < rCount * 4; i++) {
         const by = curY + i * bSp;
@@ -892,16 +905,16 @@ class StraightPath extends TrackPath {
         });
       }
       this.segments.push({
-        id: "seg_bumps_all", type: "bumps_cleats", name: `🚧 连续交错过坎 (${rCount * 4} 连坎)`,
+        id: "seg_bumps_all", type: "bumps_cleats", name: `🚧 Consecutive staggered bumps (${rCount * 4} in a row)`,
         yStart: 0, yEnd: curY + rCount * 4 * bSp, targetSpeed: this.targetSpeed
       });
       this.totalLength = curY + rCount * 4 * bSp + 50.0;
 
     } else if (sc === "washboard_potholes") {
-      // 🪨 连续搓板与深坑路
+      // 🪨 连续搓板与深坑路 — continuous washboard & deep-pothole road
       const wY0 = this.params.washboardStartY !== undefined ? this.params.washboardStartY : 20.0;
       let curY = wY0;
-      this.gantries.push({ y: 0, text: "🪨 CONTINUOUS WASHBOARD & POTHOLES · 连续搓板坑洼" });
+      this.gantries.push({ y: 0, text: "🪨 CONTINUOUS WASHBOARD & POTHOLES · continuous washboard & potholes" });
       const wLen = 120.0;
       this.washboardSections.push({
         id: "wash_main", y0: curY, len: wLen,
@@ -910,7 +923,7 @@ class StraightPath extends TrackPath {
         potholeDepth: this.params.potholeDepth || -0.055
       });
       this.segments.push({
-        id: "seg_wash_all", type: "washboard_potholes", name: "🪨 连续搓板坑洼耐久路",
+        id: "seg_wash_all", type: "washboard_potholes", name: "🪨 Continuous washboard & pothole endurance road",
         yStart: 0, yEnd: curY + wLen + 50.0, targetSpeed: this.targetSpeed
       });
       this.totalLength = curY + wLen + 80.0;
@@ -918,30 +931,30 @@ class StraightPath extends TrackPath {
     } else if (sc === "accel_brake") {
       this.gantries.push({ y: 0, text: "⚡ 0-100 ACCELERATION & MAXIMUM BRAKING" });
       this.segments.push({
-        id: "seg_accel", type: "accel_brake", name: "⚡ 0-100 弹射加速与全力制动",
+        id: "seg_accel", type: "accel_brake", name: "⚡ 0-100 launch accel & full braking",
         yStart: 0, yEnd: 150.0, targetSpeed: 45.0, triggerY: this.params.accelBrakeTriggerY || 90.0
       });
       this.totalLength = 200.0;
 
     } else if (sc === "split_mu") {
-      this.gantries.push({ y: 0, text: "❄️ SPLIT-MU RUNWAY · 对开路面附着稳定性" });
+      this.gantries.push({ y: 0, text: "❄️ SPLIT-MU RUNWAY · split-μ traction stability" });
       this.splitMuSections.push({
         id: "split_main", y0: 10.0, len: 180.0,
         muLeft: this.params.muLeft || 1.35, muRight: this.params.muRight || 0.28
       });
       this.segments.push({
-        id: "seg_split", type: "split_mu", name: "❄️ 对开路面附着偏摆测试",
+        id: "seg_split", type: "split_mu", name: "❄️ Split-μ surface grip imbalance test",
         yStart: 0, yEnd: 200.0, targetSpeed: this.targetSpeed
       });
       this.totalLength = 240.0;
 
     } else if (sc === "slope_climb") {
-      this.gantries.push({ y: 0, text: "⛰️ CONTINUOUS SLOPE CLIMB · 连续大坡度爬坡" });
+      this.gantries.push({ y: 0, text: "⛰️ CONTINUOUS SLOPE CLIMB · continuous steep-slope climb" });
       this.slopeSections.push({
         id: "slope_main", y0: 10.0, len: 300.0, grade: this.params.grade || 0.18
       });
       this.segments.push({
-        id: "seg_slope", type: "slope_climb", name: "⛰️ 连续极限大坡度爬坡",
+        id: "seg_slope", type: "slope_climb", name: "⛰️ Consecutive extreme slope climb",
         yStart: 0, yEnd: 320.0, targetSpeed: this.targetSpeed
       });
       this.totalLength = 350.0;
@@ -950,6 +963,7 @@ class StraightPath extends TrackPath {
       // 🌊 越野连续交错波浪起伏荒原 (Off-Road Staggered Moguls & Articulation)
       // G28-fix 参数重标定：波浪必须满足 a = A·(2πv/λ)² < g 才不会把车抛飞；
       // 默认 0.035m/9m @45km/h ≈ 2.7m/s²（舒缓旷野起伏），旧 0.14m/4.8m ≈ 2.4g 必飞车
+      // — G28-fix recalibration: the wave must satisfy a = A(2πv/λ)² < g or the car gets launched; default 0.035m/9m @45km/h ≈ 2.7m/s² (gentle open-terrain undulation), the old 0.14m/4.8m ≈ 2.4g always launched the car
       const wL = this.params.undulatingWavelength || 9.0;
       const amp = this.params.undulatingAmplitude !== undefined ? this.params.undulatingAmplitude : 0.035;
       const crossAmp = this.params.undulatingCrossAmp !== undefined ? this.params.undulatingCrossAmp : 0.035;
@@ -964,13 +978,13 @@ class StraightPath extends TrackPath {
         repeatCount: rCount
       });
 
-      this.gantries.push({ y: 0, text: `🌊 OFF-ROAD MOGULS · 越野连续交错起伏包 (波长 ${wL.toFixed(1)}m · 浪高 ${(amp*1000).toFixed(0)}mm)` });
+      this.gantries.push({ y: 0, text: `🌊 OFF-ROAD MOGULS · off-road staggered wave packs (wavelength ${wL.toFixed(1)}m · wave height ${(amp*1000).toFixed(0)}mm)` });
 
       for (let i = 0; i < rCount; i++) {
         const segY = uY0 + i * wL;
         this.segments.push({
           id: `seg_undul_${i}`, type: "undulating_road",
-          name: `🌊 越野交错起伏包 (${i + 1}/${rCount}) · 左右反相铰接 · 浪高 ${(amp*1000).toFixed(0)}mm`,
+          name: `🌊 Off-road staggered wave packs (${i + 1}/${rCount}) · left/right anti-phase articulation · wave height ${(amp*1000).toFixed(0)}mm`,
           yStart: segY, yEnd: segY + wL, targetSpeed: this.targetSpeed
         });
       }
@@ -1034,7 +1048,7 @@ class StraightPath extends TrackPath {
   }
 
   getActiveSegment(y) {
-    if (!this.segments.length) return { name: "直线道路", type: "straight", index: 1, total: 1, progress: 0 };
+    if (!this.segments.length) return { name: "Straight road", type: "straight", index: 1, total: 1, progress: 0 };
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
       if (y >= seg.yStart && y <= seg.yEnd) {
@@ -1044,7 +1058,7 @@ class StraightPath extends TrackPath {
     }
     const last = this.segments[this.segments.length - 1];
     if (y > last.yEnd) {
-      return { name: "🏁 终点冲刺区", type: "finish", index: this.segments.length, total: this.segments.length, progress: 1.0 };
+      return { name: "🏁 Finish straight", type: "finish", index: this.segments.length, total: this.segments.length, progress: 1.0 };
     }
     return { name: this.segments[0].name, type: this.segments[0].type, index: 1, total: this.segments.length, progress: 0 };
   }
@@ -1173,31 +1187,31 @@ class StraightPath extends TrackPath {
       }
     }
 
-    // 5. Undulating Road Surface (自然非铺装起伏荒原 · 左右连续交错波浪包)
+    // 5. Undulating Road Surface (自然非铺装起伏荒原 · 左右连续交错波浪包) — natural unpaved undulating terrain · left/right staggered wave packs
     if (this.undulatingSections && this.undulatingSections.length) {
       for (const u of this.undulatingSections) {
         if (y >= u.y0 && y <= (u.y0 + u.len)) {
-          isBump = false; // 自然地表起伏，非离散碰撞坎
+          isBump = false; // 自然地表起伏，非离散碰撞坎 — natural terrain undulation, not a discrete cleat
           const dy = y - u.y0;
           const k_y = (2.0 * Math.PI) / Math.max(1.5, u.wavelength);
           const phaseRad = (u.phaseDeg !== undefined ? u.phaseDeg : 180) * (Math.PI / 180);
 
           // 左右反相交错起伏波浪 (Staggered Moguls)
-          // 左轮 (x < 0) 遇波峰时，右轮 (x > 0) 正好进入波谷，激发悬架极限交叉轴运动
+          // 左轮 (x < 0) 遇波峰时，右轮 (x > 0) 正好进入波谷，激发悬架极限交叉轴运动 — when the left wheel (x < 0) is on a crest the right wheel (x > 0) is exactly in a trough, exciting extreme cross-axle suspension motion
           const leftWave = u.amp * Math.sin(k_y * dy);
           const rightWave = u.amp * Math.sin(k_y * dy + phaseRad);
 
-          // 横向平滑过渡带 (中心 x=0 处平缓过渡)
+          // 横向平滑过渡带 (中心 x=0 处平缓过渡) — lateral smoothing band (gentle transition at x=0)
           const blend = Math.max(0.0, Math.min(1.0, (x + 0.9) / 1.8));
           const smoothBlend = blend * blend * (3.0 - 2.0 * blend);
           let localZ = leftWave * (1.0 - smoothBlend) + rightWave * smoothBlend;
 
-          // 叠加细微的自然荒原旷野微地形质感 (波长较长的平缓地貌)
-          // G28-fix：微地形幅值随浪高设置自适应，否则 H 调小时固定 40mm 微项反成主波形
+          // 叠加细微的自然荒原旷野微地形质感 (波长较长的平缓地貌) — superimposed fine natural-wilderness micro-terrain texture (long-wavelength gentle relief)
+          // G28-fix：微地形幅值随浪高设置自适应，否则 H 调小时固定 40mm 微项反成主波形 — G28-fix: the micro-terrain amplitude adapts to the wave-height setting, otherwise with small H the fixed 40mm micro term becomes the dominant waveform
           const microAmp = Math.min(0.04, u.amp * 0.6);
           localZ += microAmp * Math.sin(0.35 * k_y * dy + x * 0.4);
 
-          // 边缘平缓渐变融入外围自然地表
+          // 边缘平缓渐变融入外围自然地表 — edges blend smoothly into the surrounding natural terrain
           const absX = Math.abs(x);
           if (absX > 4.5) {
             const edgeFade = Math.max(0.0, Math.min(1.0, (7.5 - absX) / 3.0));
@@ -1365,16 +1379,22 @@ class CircuitPath extends TrackPath {
     //     (5) 窗口重叠时用「弯心权重」交叉淡入淡出，而非硬切归属，保证符号连续。
     //     注：与赛道宽度无关。hw_m=4.9（总宽 9.8m，比真实 F1 赛道 13~15m 更窄），
     //         且幅度由 hw_m 推导 —— 加宽赛道只会放大摆幅、扭得更凶。
+    //     ── 3b. G22 racing line: outside-inside-out target-line offset (aggressive line — ride the kerbs, chase lap time).
+    //     Two root defects of the G21 implementation (confirmed by three scratch/diag_*.cjs measurement scripts):
+    //     (a) corner fragmentation: the exit threshold 0.6x was too tight, splitting the T1-T4 snail corners into 4 pieces, each running the full outside->apex->outside profile; plus spline-noise pseudo-corners (15m arc / 3.6° turn) — 5 of the 15 measured segments turned less than 25° in total.
+    //     (b) apexOff/outOff magnitude depended only on track width and severity, never scaled with segment length -> even a 74m short bend was asked for ~10m of lateral swing; measured target-line kink was 0.806 m/m = 38.9°, physically unfollowable — the car wiggled one corner into several.
+    //     Fixes: (1) relax the exit threshold to 0.30x so one physical corner is not chopped by local curvature dips; (2) drop pseudo-corners whose total turn < MIN_TURN_DEG (spline noise is not a corner); (3) make the offset profile arc-length parametrized and extend it EXT_M into the adjacent straights — a real driver is already outside on the straight before corner entry, so lateral travel comes from the straight, not from inside the corner (the key to reducing the kink angle: lengthen the travel instead of cutting the magnitude, so the kerbs are still fully used); (4) clamp magnitude by effective length: the four-segment cosine profile's peak-slope closed form is peak|d(offset)/ds| = 2π(apexOff+outOff)/L_eff (verified: L=74m, A=10m -> 0.85 m/m, matching the measured 0.806), so back-solve A <= SLOPE_MAX*L_eff/(2π) — short bends swing less, long bends use full kerb; (5) where windows overlap, cross-fade with apex weighting instead of hard ownership, keeping the sign continuous.
+    //     Note: independent of track width. hw_m=4.9 (total width 9.8m, narrower than real F1 tracks at 13-15m), and magnitude is derived from hw_m — widening the track only amplifies the swing.
     const HW_M = 4.9, KERB_M = 1.35;
-    const CURV_ENTER = 0.0045;              // 进入弯道阈值（R<222m）
-    const CURV_EXIT = CURV_ENTER * 0.30;    // 退出阈值（R<740m）——迟滞放宽防切碎
-    const MIN_TURN_DEG = 25.0;              // 段总转角下限，低于此为样条噪声
-    const EXT_M = 55.0;                     // 剖面向两侧直道延伸（横向行程的真正来源）
-    const SLOPE_MAX = 0.24;                 // |d(offset)/ds| 上限 m/m（≈13.5° 折角）
+    const CURV_ENTER = 0.0045;              // 进入弯道阈值（R<222m） — corner-entry threshold (R<222m)
+    const CURV_EXIT = CURV_ENTER * 0.30;    // 退出阈值（R<740m）——迟滞放宽防切碎 — exit threshold (R<740m); hysteresis relaxed to prevent chopping
+    const MIN_TURN_DEG = 25.0;              // 段总转角下限，低于此为样条噪声 — minimum total turn per segment; below this it is spline noise
+    const EXT_M = 55.0;                     // 剖面向两侧直道延伸（横向行程的真正来源） — profile extends into the straights on both sides (the true source of lateral travel)
+    const SLOPE_MAX = 0.24;                 // |d(offset)/ds| 上限 m/m（≈13.5° 折角） — |d(offset)/ds| cap in m/m (≈13.5° kink angle)
     this.hw_m = HW_M; this.kerb_m = KERB_M;
     for (let i2 = 0; i2 < P; i2++) { this.pts[i2].offset = 0; this.pts[i2].cornerId = -1; }
 
-    // (1) 曲率分弯（带迟滞）
+    // (1) 曲率分弯（带迟滞） — split corners by curvature (with hysteresis)
     const rawSegs = [];
     let ci = 0;
     while (ci < P) {
@@ -1385,7 +1405,7 @@ class CircuitPath extends TrackPath {
         ci = cj;
       } else ci++;
     }
-    // (2) 段总转角 = 曲率沿弧长积分；弯心侧由符号定（右弯 curv<0 → 弯心在右 +）
+    // (2) 段总转角 = 曲率沿弧长积分；弯心侧由符号定（右弯 curv<0 → 弯心在右 +） — segment total turn = curvature integrated along arc length; apex side decided by sign (right-hand corner curv<0 -> apex on the right, +)
     const turnOf = (i0, i1) => {
       let t = 0;
       for (let k = i0; k < i1; k++) t += this.pts[k].curvature * (this.pts[k + 1].s - this.pts[k].s);
@@ -1397,30 +1417,30 @@ class CircuitPath extends TrackPath {
     }
     this.cornerSegsDropped = rawSegs.length - cornerSegs.length;
 
-    // (3)(4)(5) 逐段生成偏移剖面，交叉淡入淡出累加
+    // (3)(4)(5) 逐段生成偏移剖面，交叉淡入淡出累加 — build the offset profile segment by segment, accumulating with cross-fades
     const TL = this.totalLength;
     const offNum = new Array(P).fill(0), offDen = new Array(P).fill(0);
     const cidW = new Array(P).fill(-1), cidBest = new Array(P).fill(-1);
     let cid = 0;
     for (const [i0, i1] of cornerSegs) {
       const s0 = this.pts[i0].s, s1 = this.pts[i1].s;
-      const wA = s0 - EXT_M, wB = s1 + EXT_M;              // 延伸后的窗口
+      const wA = s0 - EXT_M, wB = s1 + EXT_M;              // 延伸后的窗口 — window after extension
       const L_eff = Math.max(1.0, wB - wA);
       const sumCurv = turnOf(i0, i1);
       const apexDir = (sumCurv < 0) ? 1 : -1;
       const avgCurvAbs = Math.abs(sumCurv) / Math.max(1, i1 - i0 + 1) / 2.0;
-      const severity = Math.min(1, avgCurvAbs / 0.010);     // 弯越急 → 越贴路肩/越外放
-      // 激进口径：弯心骑满路肩内侧（HW+0.65·KERB≈5.78m），入/出弯贴外侧沥青边
+      const severity = Math.min(1, avgCurvAbs / 0.010);     // 弯越急 → 越贴路肩/越外放 — the tighter the corner, the more the line hugs the kerb / opens outward
+      // 激进口径：弯心骑满路肩内侧（HW+0.65·KERB≈5.78m），入/出弯贴外侧沥青边 — aggressive convention: apex rides fully on the kerb inner edge (HW+0.65·KERB≈5.78m), entry/exit hug the outer asphalt edge
       const sevF = 0.62 + 0.38 * severity;
       let apexOff = (HW_M + 0.65 * KERB_M) * sevF;
       let outOff = (HW_M - 0.10) * sevF;
-      // (4) 折角预算反解幅度上限
+      // (4) 折角预算反解幅度上限 — (4) back-solve the magnitude cap from the kink-angle budget
       const ampMax = SLOPE_MAX * L_eff / (2 * Math.PI);
       const ampScale = Math.min(1.0, ampMax / Math.max(0.01, apexOff + outOff));
       apexOff *= ampScale; outOff *= ampScale;
 
       for (let k = 0; k < P; k++) {
-        // 环状窗口：s 可能跨起终点，取落在 [wA,wB] 内的那个镜像
+        // 环状窗口：s 可能跨起终点，取落在 [wA,wB] 内的那个镜像 — wraparound window: s may cross start/finish, take the mirrored copy that lands in [wA,wB]
         const sk = this.pts[k].s;
         let cand = null;
         for (let m = -1; m <= 1; m++) {
@@ -1429,13 +1449,13 @@ class CircuitPath extends TrackPath {
         }
         if (cand === null) continue;
         const phi = (cand - wA) / L_eff;
-        // 四段余弦（C¹）：0 → −outOff → +apexOff → −outOff → 0，段边界归零不跳变
+        // 四段余弦（C¹）：0 → −outOff → +apexOff → −outOff → 0，段边界归零不跳变 — four-segment cosine (C1): 0 -> -outOff -> +apexOff -> -outOff -> 0; back to zero at segment boundaries, no jumps
         let prof;
         if (phi < 0.25) { const t = phi / 0.25; prof = -outOff * (1 - Math.cos(Math.PI * t)) / 2; }
         else if (phi < 0.5) { const t = (phi - 0.25) / 0.25; prof = -outOff + (apexOff + outOff) * (1 - Math.cos(Math.PI * t)) / 2; }
         else if (phi < 0.75) { const t = (phi - 0.5) / 0.25; prof = apexOff - (apexOff + outOff) * (1 - Math.cos(Math.PI * t)) / 2; }
         else { const t = (phi - 0.75) / 0.25; prof = -outOff * (1 + Math.cos(Math.PI * t)) / 2; }
-        // (5) 弯心权重：phi=0.5 处 1，窗口两端 0 —— 重叠段之间平滑过渡
+        // (5) 弯心权重：phi=0.5 处 1，窗口两端 0 —— 重叠段之间平滑过渡 — (5) apex weighting: 1 at phi=0.5, 0 at the window ends — smooth transitions between overlapping segments
         const w = Math.max(0, 1 - Math.abs(phi - 0.5) * 2);
         if (w <= 0) continue;
         offNum[k] += apexDir * prof * w;
@@ -1449,7 +1469,7 @@ class CircuitPath extends TrackPath {
       this.pts[k].cornerId = offDen[k] > 1e-9 ? cidW[k] : -1;
     }
     this.cornerCount = cid;
-    // 移动平均平滑（防段间微跳与离散噪声），环状窗口 7 点
+    // 移动平均平滑（防段间微跳与离散噪声），环状窗口 7 点 — moving-average smoothing (guards against inter-segment micro-jumps and discrete noise), wraparound 7-point window
     const offRaw = this.pts.map(p => p.offset);
     for(let i3 = 0; i3 < P; i3++){
       let s = 0;
@@ -1460,6 +1480,7 @@ class CircuitPath extends TrackPath {
     //     2π·A/L_eff）；步骤 (5) 的交叉淡入淡出在窗口重叠区会合成出超出该解析界
     //     的斜率（实测 0.291 > 0.24）。故对 offset 数组做前向+后向双向限幅，
     //     使 |d(offset)/ds| ≤ SLOPE_MAX 【恒成立】，不依赖剖面形状的假设。
+    //     — (6) hard slope clamp. The magnitude budget in step (4) only holds for a single-segment profile (peak slope 2π·A/L_eff); the cross-fade in step (5) can synthesize slopes above that analytic bound in overlapping windows (measured 0.291 > 0.24). Therefore clamp the offset array forward+backward so |d(offset)/ds| <= SLOPE_MAX holds unconditionally, independent of profile-shape assumptions.
     for (let pass = 0; pass < 6; pass++) {
       let changed = false;
       for (let k = 0; k < P - 1; k++) {
@@ -1486,6 +1507,7 @@ class CircuitPath extends TrackPath {
     //     ★ 根因修复核心：控制器此前用【中心线】的 heading/curvature 去追【赛车线】的
     //       横向目标，航向项增益 1.0 对横向项 ~0.03 形成 30:1 压制 ⇒ 车被拉回中线。
     //       这三个量让赛车线成为一等公民，drive() 的三个参考量得以同源。
+    //       — 3c. G22 racing line's own tangent / curvature / normal / arc length (same 7-point span convention as the centerline). Core root-cause fix: the controller previously tracked the racing line's lateral target using the centerline's heading/curvature; the heading gain 1.0 suppressed the ~0.03 lateral term 30:1, dragging the car back to the centerline. These three quantities make the racing line a first-class citizen and give drive() consistent reference inputs.
     for (let i5 = 0; i5 < P; i5++) {
       const pv = this.pts[(i5 - 4 + P) % P], nx5 = this.pts[(i5 + 4) % P];
       this.pts[i5].refHeading = Math.atan2(-(nx5.refX - pv.refX), nx5.refY - pv.refY);
@@ -1507,8 +1529,8 @@ class CircuitPath extends TrackPath {
       this.pts[i7].refNx = Math.cos(this.pts[i7].refHeading);
       this.pts[i7].refNy = Math.sin(this.pts[i7].refHeading);
     }
-    this._hintCtrl = 0;   // getLookahead 最近点搜索的 hint 缓存
-    this._hintRoad = 0;   // getRoadElevation 的 hint 缓存（每子步 4 轮，热路径）
+    this._hintCtrl = 0;   // getLookahead 最近点搜索的 hint 缓存 — hint cache for the getLookahead nearest-point search
+    this._hintRoad = 0;   // getRoadElevation 的 hint 缓存（每子步 4 轮，热路径） — hint cache for getRoadElevation (4 wheels per substep, hot path)
     
     // 4. Physical Aerodynamic Speed Envelope & Friction Limits
     // G21（2026-09-01）push 升级：横向包络 0.72μ→0.85μ，制动 4.8→5.5，加速 5.2→5.8（真实车手探极限口径）
@@ -1517,6 +1539,7 @@ class CircuitPath extends TrackPath {
     //      → 自然得到更高弯速，这就是「赛车线圈速奖励」的物理来源，无需再拍一个
     //      经验百分比（原 5b 的 +4% 已删）；而换线过渡区 refCurvature 偏大 → 自动压速，
     //      也是正确的（横向移动本身要吃掉一部分抓地力预算）。
+    //      — G21 (2026-09-01) push upgrade: lateral envelope 0.72μ→0.85μ, braking 4.8→5.5, acceleration 5.2→5.8 (real-driver limit-probing convention). G22: the lateral envelope now uses the racing-line curvature refCurvature instead of the centerline curvature — the car drives the racing line, and the usable lateral acceleration is decided by the racing line's real radius; a larger racing-line radius at the apex -> smaller curvature -> naturally higher cornering speed. That is the physics behind the "racing-line lap-time bonus" (the empirical +4% from the old 5b is deleted); and in transition zones refCurvature is larger -> speed is automatically limited, which is also correct (the lateral shift itself consumes part of the grip budget).
     const vehType = (typeof window !== "undefined" && window.S && window.S.vehicleType) ? window.S.vehicleType : "formula";
     const v_top_kmh = (vehType === "formula") ? 335.0 : (vehType === "gt3" || vehType === "sport") ? 295.0 : (vehType === "kart") ? 140.0 : 245.0;
     const v_top_veh = v_top_kmh * (1000.0 / 3600.0);
@@ -1531,7 +1554,7 @@ class CircuitPath extends TrackPath {
     }
     
     // 5. Backward & Forward Braking/Acceleration Passes
-    // G21：push 口径——真实车手试探刹车点的包络上限（逐圈学习会在运行时继续压低）
+    // G21：push 口径——真实车手试探刹车点的包络上限（逐圈学习会在运行时继续压低） — G21: push convention — the envelope ceiling for a real driver probing the braking point (per-lap learning keeps lowering it at runtime)
     const a_brake = 5.5 * Math.min(1.2, Math.max(0.8, aggrScale));
     const a_accel = 5.8 * Math.min(1.2, Math.max(0.8, aggrScale));
     
@@ -1567,6 +1590,7 @@ class CircuitPath extends TrackPath {
     //      曲率、但车实际跑赛车线」的口径不一致。步骤 4 改用 refCurvature 后，弯速奖励
     //      由赛车线的真实几何半径直接给出（弯心半径更大 → 曲率更小 → v_max 更高），
     //      物理自洽且逐点连续，不再需要按 cornerId 拍一个全局百分比。
+    //      — 5b. G22: the original "corner +4% speed bonus" is deleted — that empirical bonus was compensating for the inconsistency of using centerline curvature for the speed envelope while the car actually runs the racing line. With step 4 switching to refCurvature, the cornering-speed bonus comes directly from the racing line's true geometric radius (larger apex radius -> smaller curvature -> higher v_max); it is physically self-consistent and pointwise continuous, so no global percentage per cornerId is needed anymore.
   }
 
   /* G22：带 hint 窗口的最近点搜索。
@@ -1575,7 +1599,8 @@ class CircuitPath extends TrackPath {
      是 ~18万次距离计算/帧。窗口 ±WIN 点（≈±80m）+ 两道退化护栏后降至 ~5千次。
      useRef=true 时对赛车线(refX/refY)搜索，false 对中心线(x/y)。
      护栏：① 命中窗口边界 ⇒ 可能真最近点在窗外；② 窗口内最近距离 > 25m ⇒
-     车辆可能已传送/重生。任一命中则回退全量搜索，保证结果与旧实现一致。 */
+     车辆可能已传送/重生。任一命中则回退全量搜索，保证结果与旧实现一致。
+  — G22: nearest-point search with a hint window. Why: VehicleDynamics15DOF.step() runs at 1000Hz substeps and calls getRoadElevation once per wheel (4 wheels), ~16 substeps per frame = 64 calls/frame; the old O(P) full scan at P=2884 was ~180k distance computations per frame. A ±WIN-point window (~±80m) plus two degradation guards brings it to ~5k. useRef=true searches the racing line (refX/refY), false the centerline (x/y). Guards: (1) the search hits a window boundary -> the true nearest point may be outside; (2) the nearest in-window distance > 25m -> the vehicle may have teleported/respawned. Either guard falls back to the full scan, guaranteeing identical results to the old implementation. */
   _nearestIdx(x, y, hint, useRef) {
     const P = this.pts.length;
     const WIN = 40;
@@ -1602,7 +1627,8 @@ class CircuitPath extends TrackPath {
 
   /* G22：沿赛车线弧长前进 ld 米，返回目标点索引。
      旧实现名为 getLookahead 但只返回【最近点】，v 参数完全未用。现保留真弧长
-     前进能力，但【默认关闭】——原因见 _leadDist。 */
+     前进能力，但【默认关闭】——原因见 _leadDist。
+  — G22: advance ld meters along the racing line's arc length and return the target point index. The old function named getLookahead only returned the nearest point and its v parameter was entirely unused. True arc-length advance is kept, but DEFAULT OFF — reason in _leadDist. */
   _advanceIdx(i, ld) {
     if (!(ld > 0)) return i;
     const P = this.pts.length;
@@ -1623,16 +1649,17 @@ class CircuitPath extends TrackPath {
      若再对 heading 施加弧长前视 ld，前视点切向相对车身已转过 k·ld，会与曲率
      前馈【重复计权】：k=0.02（R=50m）、ld=20m 时多打 23°，而真正需要的只有 3°。
      旧代码的 `+forward*(lookDist*0.22)` 平移就是这类重复计权（且平移方向跟车身
-     航向而非赛道）。如确需预览，请显式传 leadM 并同步下调曲率前馈。 */
+     航向而非赛道）。如确需预览，请显式传 leadM 并同步下调曲率前馈。
+     — G22: look-ahead distance — DEFAULT 0, a derived conclusion, not an omission. drive() is a Stanley-type controller: lateral error measured at the front axle + curvature feedforward. That combination is EXACT on a constant-curvature arc: on-line and aligned, e_psi=0 and e_y=0 => δ = -atan(WB·k), exactly what is needed. Adding an arc-length look-ahead ld on top of heading would double-count with the curvature feedforward: the look-ahead point's tangent is already rotated by k·ld relative to the body — at k=0.02 (R=50m), ld=20m that over-steers by 23° when only 3° is required. The old `+forward*(lookDist*0.22)` shift was exactly such double-counting (and it shifted along the body heading, not the track). If preview is truly needed, pass leadM explicitly and reduce the curvature feedforward accordingly. */
   _leadDist(v, leadM, kAt) {
     if (typeof leadM !== "number" || !isFinite(leadM) || leadM <= 0) return 0;
-    // 显式启用时：急弯自动少看（发卡弯 R≈25m 里看 30m 等于看到 70° 开外）
+    // 显式启用时：急弯自动少看（发卡弯 R≈25m 里看 30m 等于看到 70° 开外） — when explicitly enabled: look less on tight corners (looking 30m ahead in a R≈25m hairpin means staring 70°+ off course)
     const ldCurv = 0.75 / Math.max(0.004, Math.abs(kAt || 0));
     return Math.max(0, Math.min(45.0, Math.min(leadM, ldCurv)));
   }
 
   getLookahead(x, y, v, leadM) {
-    // ★ G22：最近点对【赛车线】搜索 —— 控制基准必须与目标线同源。
+    // ★ G22：最近点对【赛车线】搜索 —— 控制基准必须与目标线同源。 — G22: the nearest point is searched on the racing line — the control reference must share the target line's frame.
     const closestIdx = this._nearestIdx(x, y, this._hintCtrl, true);
     this._hintCtrl = closestIdx;
     const pt = this.pts[closestIdx];
@@ -1641,6 +1668,7 @@ class CircuitPath extends TrackPath {
     //   crossTrackError —— 相对【中心线】，物理赛道边界与罚时判定用（赛道边缘
     //                      关于中心线对称，不能用赛车线量，否则弯心永远不触发）；
     //   lineError       —— 相对【赛车线】，控制用（法向也取赛车线法向 refNx/refNy）。
+    //  — Two lateral errors whose semantics must stay separate: crossTrackError is relative to the CENTERLINE (physical track boundary & penalty-time judgement; the track edges are symmetric about the centerline, so the racing line must NOT be used here or the apex would never trigger); lineError is relative to the RACING LINE (used for control; the normal is also the racing-line normal refNx/refNy).
     const crossTrackError = (x - pt.x) * pt.nx + (y - pt.y) * pt.ny;
     const lineError = (x - pt.refX) * pt.refNx + (y - pt.refY) * pt.refNy;
 
@@ -1650,20 +1678,20 @@ class CircuitPath extends TrackPath {
 
     return {
       // ★ G22：三个控制参考量全部取自赛车线的前视点（修复前：heading/curvature
-      //   取中心线、横向目标取赛车线，两条线互相打架）
+      //   取中心线、横向目标取赛车线，两条线互相打架） — G22: all three control references come from the racing line's look-ahead point (before the fix: heading/curvature came from the centerline while the lateral target came from the racing line — the two lines fought each other)
       targetHeading: tp.refHeading,
       targetCurvature: tp.refCurvature,
       targetSpeed: tp.v_max,
       crossTrackError: crossTrackError,
       lineError: lineError,
       // 以下 x/y/nx/ny 保持【中心线】语义不变（向后兼容：11-stages.js:3782 的
-      // 转播机位用 tvPt.x/y/nx/ny 向赛道侧外推 22m，改成赛车线会偏移最多 5.8m）
+      // 转播机位用 tvPt.x/y/nx/ny 向赛道侧外推 22m，改成赛车线会偏移最多 5.8m） — G21/G22: the following x/y/nx/ny keep CENTERLINE semantics (backward compatibility: the broadcast cameras at 11-stages.js:3782 extrapolate tvPt.x/y/nx/ny 22m off the track side; switching to the racing line would shift them up to 5.8m)
       nx: pt.nx,
       ny: pt.ny,
       x: pt.x,
       y: pt.y,
       idx: closestIdx,
-      // G21/G22：赛车线目标点与法向（外-内-外）、弯道索引（逐圈刹车学习用）
+      // G21/G22：赛车线目标点与法向（外-内-外）、弯道索引（逐圈刹车学习用） — G21/G22: racing-line target point & normal (outside-inside-out) and corner index (for per-lap braking learning)
       offset: pt.offset || 0,
       refX: pt.refX,
       refY: pt.refY,
@@ -1688,7 +1716,8 @@ class CircuitPath extends TrackPath {
   /* G30（2026-09-04）：参考线等距采样——MPC 预测时域用。从弧长 sStart 起、
      沿赛车线每 ds 取一个参考点，共 n 个（闭合赛道对 totalLength 取模）。
      返回字段与 pts/赛车线同源：x/y（赛车线）、heading、curvature（赛车线）、
-     v_max、cornerId、isDRS、s。StraightPath/CirclePath 等无 refX 的路径回退中心线。 */
+     v_max、cornerId、isDRS、s。StraightPath/CirclePath 等无 refX 的路径回退中心线。
+  — G30 (2026-09-04): equidistant sampling of the reference line for the MPC prediction horizon. Starting from arc length sStart, take one reference point every ds along the racing line, n points total (mod totalLength on closed circuits). Returned fields share the pts/racing-line sources: x/y (racing line), heading, curvature (racing line), v_max, cornerId, isDRS, s. Paths without refX (StraightPath/CirclePath etc.) fall back to the centerline. */
   samplePath(sStart, n, ds = 2.0) {
     const L = this.totalLength || 0;
     const out = [];
@@ -1712,11 +1741,12 @@ class CircuitPath extends TrackPath {
   }
 
   /* 弧长 → pts 索引（pts[i].s 沿环单调递增；s ∈ [0, L) 环形归属）。
-     二分 + 端部回绕：pts[0].s 为首段长（非 0），首段覆盖 s ∈ [0, pts[0].s)。 */
+     二分 + 端部回绕：pts[0].s 为首段长（非 0），首段覆盖 s ∈ [0, pts[0].s)。
+  — Arc length -> pts index (pts[i].s increases monotonically along the loop; s ∈ [0, L) wraps). Binary search + end wraparound: pts[0].s is the first segment's length (non-zero) and the first segment covers s ∈ [0, pts[0].s). */
   _idxAtS(s) {
     const pts = this.pts, N = pts.length;
     if (N === 0) return 0;
-    // 首段 [0, pts[0].s) 归属：s 超过半段就近 pts[0]，否则回绕到 pts[N-1]
+    // 首段 [0, pts[0].s) 归属：s 超过半段就近 pts[0]，否则回绕到 pts[N-1] — first-segment [0, pts[0].s) ownership: s beyond half a segment maps to pts[0], otherwise wraps to pts[N-1]
     if (s <= pts[0].s) return (s > pts[0].s * 0.5) ? 0 : N - 1;
     let lo = 0, hi = N - 1;
     while (lo < hi) {
@@ -1731,15 +1761,16 @@ class CircuitPath extends TrackPath {
     // 单帧 ~64 次。旧的 O(P) 全量遍历在 P=2884 时是 ~18万次距离计算/帧，
     // 改用 hint 窗口后降至 ~5千次。路面高程/路肩/砾石均关于【中心线】定义，
     // 故此处仍对中心线搜索（useRef=false），与 getLookahead 的赛车线基准分开。
+    // G22: hot path — VehicleDynamics15DOF.step() calls this once per wheel per 1000Hz substep, ~64 calls/frame. The old O(P) full scan at P=2884 was ~180k distance computations per frame; the hint-window version brings it to ~5k. Road elevation / shoulder / gravel are all defined relative to the CENTERLINE, so the search stays on the centerline (useRef=false), separate from getLookahead's racing-line basis.
     const closestIdx = this._nearestIdx(x, y, this._hintRoad, false);
     this._hintRoad = closestIdx;
 
     const pt = this.pts[closestIdx];
     const ey = (x - pt.x) * pt.nx + (y - pt.y) * pt.ny;
     const absEy = Math.abs(ey);
-    const hw = this.hw_m || 7.0; // G21：窄道——沥青半宽（新 4.9m，旧赛道对象回退 7.0）
+    const hw = this.hw_m || 7.0; // G21：窄道——沥青半宽（新 4.9m，旧赛道对象回退 7.0） — G21: narrow lane — asphalt half-width (new 4.9m; older track objects fall back to 7.0)
     const kw = this.kerb_m || 1.35; // 1.35m FIA Kerb width
-    const s = pt.s || (closestIdx * 2.0); // G22：用真实累计弧长（旧实现用 idx*2 估算）
+    const s = pt.s || (closestIdx * 2.0); // G22：用真实累计弧长（旧实现用 idx*2 估算） — G22: use the true accumulated arc length (the old implementation estimated idx*2)
     
     let z_road = 0.0;
     let isKerb = false;

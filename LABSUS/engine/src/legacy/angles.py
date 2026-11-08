@@ -3,7 +3,14 @@
 从主仓 src/solver/angles.py 精简，剥离 tire 依赖（S1 门禁不需要接触斑）。
 返回键名：camber_deg / kpi_deg / caster_deg / toe_deg / scrub_radius_mm / caster_trail_mm。
 
-符号约定（P2-0 冻结，与主仓一致）：
+Alignment angle computation from solver results (engine-isolated copy).
+
+Trimmed down from the main repo's src/solver/angles.py, with the tire
+dependency stripped (the S1 gate does not need the contact patch).
+Returned keys: camber_deg / kpi_deg / caster_deg / toe_deg /
+scrub_radius_mm / caster_trail_mm.
+
+符号约定（P2-0 冻结，与主仓一致） — Sign conventions (frozen at P2-0, consistent with the main repo):
     Camber:  negative = top of wheel inward (both sides)
     Toe:     positive = toe-in (both sides)
     KPI/SAI: positive = kingpin axis top inboard (both sides)
@@ -34,6 +41,8 @@ def compute_alignment_angles(result_dict, chassis_points=None, hp=None):
         Must contain UP1, UP2, UP5 at minimum (3-element arrays/lists).
     hp : dict, optional
         Tire parameters; S1 gate 测试不传，scrub/trail 回退到轮心近似。
+        (The S1 gate test does not pass it; scrub/trail fall back to the
+        wheel-center approximation.)
     """
     UP1 = np.asarray(result_dict["UP1"], dtype=float)
     UP2 = np.asarray(result_dict["UP2"], dtype=float)
@@ -96,6 +105,7 @@ def compute_alignment_angles(result_dict, chassis_points=None, hp=None):
         toe_deg = 0.0
 
     # ── Scrub / Trail（S1：无 tire 接触斑，回退到轮心投影）──
+    # Scrub/Trail (S1: no tire contact patch, fall back to the wheel-center projection)
     contact_y = UP5[1]
     contact_x = UP5[0]
 

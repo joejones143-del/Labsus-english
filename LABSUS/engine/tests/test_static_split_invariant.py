@@ -14,6 +14,21 @@
 物理不变量：**簧载质量大的一端，静载必须更大**。
 
 本测试在旧代码下必然 FAIL（这正是它的价值）。
+
+English: front/rear-axle static load distribution invariants (M5, 2026-09-20).
+Background (physical bug fixed empirically this round): a/b mean **a = CG->front-axle
+distance, b = CG->rear-axle distance** (lecture ch10 sec.2.1 defines z_ra = (b/L)-z_rc,f +
+(a/L)-z_rc,r, i.e. front-axle weight = b/L). Per-axle sprung load follows from the
+point-mass model, so static load naturally gives "the end carrying more sprung mass takes
+more". The old implementation (consistent across chassis.py / 03-mechanism.js /
+11-stages.js) wrote the rear static share with the roles swapped — i.e. it treated the
+"rear sprung share" as the CG->rear-axle distance, exchanging front/rear axle static loads
+wholesale. Measured: with spring_mass_kg 300 front / 340 rear the front share was 52.2%;
+the physically correct value is 46.9%. The three places all agreeing => double-ended
+cross-checks and mirror tests cannot catch it (they only check self-consistency), so this
+file pins the physical invariant directly: **the end with the larger sprung mass must
+carry the larger static load**.
+This test necessarily FAILs on the old code (which is exactly its value).
 """
 import math
 
@@ -47,18 +62,18 @@ def _axle_loads(f_ms: float, r_ms: float, mu_f: float = 22.0, mu_r: float = 24.0
 
 
 def test_front_axle_heavier_when_front_sprung_mass_heavier():
-    """簧载重的一端必须承担更多静载（旧代码在此对调，必然 FAIL）。"""
-    F, R = _axle_loads(340.0, 300.0)      # 前轴簧载更重
+    """簧载重的一端必须承担更多静载（旧代码在此对调，必然 FAIL）。"""  # English: the end carrying more sprung mass must take more static load (the old code swapped here, necessarily FAIL).
+    F, R = _axle_loads(340.0, 300.0)      # 前轴簧载更重 — front axle carries more sprung mass
     assert F > R, f"前轴簧载 340 > 后轴 300，前轴静载应更大，实测 F={F:.1f} R={R:.1f}"
 
 
 def test_rear_axle_heavier_when_rear_sprung_mass_heavier():
-    F, R = _axle_loads(300.0, 340.0)      # 后轴簧载更重（FSAE 典型）
+    F, R = _axle_loads(300.0, 340.0)      # 后轴簧载更重（FSAE 典型） — rear axle carries more sprung mass (FSAE-typical)
     assert R > F, f"后轴簧载 340 > 前轴 300，后轴静载应更大，实测 F={F:.1f} R={R:.1f}"
 
 
 def test_static_split_matches_point_mass_model():
-    """定量锚：Fz_axle = m_sprung·g·(m_axle/Σm) + m_unsprung_axle·g（±0.5%）。"""
+    """定量锚：Fz_axle = m_sprung·g·(m_axle/Σm) + m_unsprung_axle·g（±0.5%）。"""  # English: quantitative anchor: Fz_axle = m_sprung-g-(m_axle/total m) + m_unsprung_axle-g (+-0.5%).
     f_ms, r_ms, mS = 300.0, 340.0, 420.0
     mu_f, mu_r = 22.0, 24.0
     F, R = _axle_loads(f_ms, r_ms, mu_f, mu_r)
@@ -70,23 +85,23 @@ def test_static_split_matches_point_mass_model():
 
 
 def test_split_is_ratio_driven_not_absolute():
-    """只与两轴簧载比例有关：等比例放大 10 倍，静载占比不变。"""
+    """只与两轴簧载比例有关：等比例放大 10 倍，静载占比不变。"""  # English: depends only on the sprung-mass ratio of the two axles: scaling both by 10x leaves the static-load split unchanged.
     f1, r1 = _axle_loads(30.0, 34.0, 2.2, 2.4)
     f2, r2 = _axle_loads(300.0, 340.0, 22.0, 24.0)
     s1, s2 = f1 / (f1 + r1), f2 / (f2 + r2)
-    # 容差 3e-3：非簧载/弹簧刚度在两种量级下经准静态侧倾闭环后的二阶差异
-    # （实测 1.5e-3），不改变"比例驱动"这一结论。
+    # 容差 3e-3：非簧载/弹簧刚度在两种量级下经准静态侧倾闭环后的二阶差异 — tolerance 3e-3: second-order difference after the quasi-static roll loop for unsprung/spring stiffnesses at the two magnitudes
+    # （实测 1.5e-3），不改变"比例驱动"这一结论。 — (measured 1.5e-3); it does not change the "ratio-driven" conclusion.
     assert abs(s1 - s2) < 3e-3, (s1, s2)
-    # 并且占比与"前簧载份额"同向（前 30/64 = 46.9%）
+    # 并且占比与"前簧载份额"同向（前 30/64 = 46.9%） — and the share moves in the same direction as the front sprung share (front 30/64 = 46.9%)
     assert abs(s2 - 0.469) < 0.03, s2
 
 
 def test_split_direction_matches_cg_distance():
-    """方向自洽：b/L 必须等于前轴簧载份额（a/b 的语义锚）。"""
-    f_ms, r_ms = 480.0, 160.0      # 极端前置偏置
+    """方向自洽：b/L 必须等于前轴簧载份额（a/b 的语义锚）。"""  # English: direction self-consistency: b/L must equal the front sprung share (the a/b semantic anchor).
+    f_ms, r_ms = 480.0, 160.0      # 极端前置偏置 — extreme front bias
     F, R = _axle_loads(f_ms, r_ms, 22.0, 24.0)
     sprung_share = f_ms / (f_ms + r_ms)
-    # 去掉非簧载贡献后，前轴占比应接近 sprung_share
+    # 去掉非簧载贡献后，前轴占比应接近 sprung_share — after removing the unsprung contribution, the front share should approach sprung_share
     unsprung_f = 2 * 22.0 * G
     approx_share = (F - unsprung_f) / (F + R - (2 * 22.0 + 2 * 24.0) * G)
     assert math.isclose(approx_share, sprung_share, rel_tol=0.01), (approx_share, sprung_share)

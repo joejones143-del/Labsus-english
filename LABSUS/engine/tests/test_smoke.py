@@ -1,7 +1,7 @@
 from src.solver.mechanism.models import build_mechanism
 from src.solver.mechanism.solver import find_limits, solve_pose
 
-PRO = {  # 前推杆侧硬点（PRO 前悬架）
+PRO = {  # 前推杆侧硬点（PRO 前悬架） — front pushrod-side hardpoints (PRO front suspension)
     "CH1": [240.0,180.0,145.0], "CH2": [240.0,-160.0,155.0],
     "CH3": [360.0,140.0,380.0], "CH4": [360.0,-130.0,390.0],
     "UP1": [730.0,10.0,165.0],  "UP2": [675.0,-15.0,455.0],

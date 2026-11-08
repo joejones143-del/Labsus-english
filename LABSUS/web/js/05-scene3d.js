@@ -62,12 +62,12 @@ function arcTube(sc, pts, r, col, w){
   }
 }
 
-/* ================================ 5. 定形防撞区与自适应悬架舱总装 ================================ */
+/* ================================ 5. 定形防撞区与自适应悬架舱总装 — Shaped crash zones & adaptive suspension-bay final assembly ================================ */
 function buildScenePRO(){
   const sc=[];
   const yF = S.wb/2, yR = -S.wb/2;
 
-  // 根据当前车型切换对应的车架与空间架构
+  // 根据当前车型切换对应的车架与空间架构 — Swap frame & space architecture per vehicle
   if(S.vehicleType === "gt3" || S.vehicleType === "gt3_sport") {
     buildGT3Spaceframe(sc, yF, yR);
   } else if(S.vehicleType === "baja") {
@@ -76,16 +76,16 @@ function buildScenePRO(){
     buildDecoupledImpactSpaceframe(sc, yF, yR);
   }
 
-  // 传动系：EDU 电驱动总成与差速器
+  // 传动系：EDU 电驱动总成与差速器 — Powertrain: EDU electric drive unit & differential
   if(S.show.powertrain) buildPowertrainEDU(sc, yF, yR);
 
-  // 转向系：中置单座方程式转向总成
+  // 转向系：中置单座方程式转向总成 — Steering: mid-mounted single-seat Formula steering assembly
   if(S.show.steer_col) buildFormulaCentralSteering(sc, yF);
 
-  // 制动系：中置双回路主缸与踏板
+  // 制动系：中置双回路主缸与踏板 — Brakes: mid-mounted dual-circuit master cylinders & pedal
   if(S.show.master_cyl) buildBrakeHydraulicSystem(sc, yF, yR);
 
-  // 悬架与车轮端各系统实例装配 /* F-40: 保证车轮转向与外倾角随机构实时精确计算 */
+  // 悬架与车轮端各系统实例装配 — Suspension & wheel-end system instance assembly /* F-40: 保证车轮转向与外倾角随机构实时精确计算 — wheel steer & camber always computed precisely in real time from the mechanism */
   const mF = (SIM.FR ? metrics(SIM.FR, 'front') : null);
   const mR = (SIM.RR ? metrics(SIM.RR, 'rear') : null);
   const mFL = (SIM.FL && S.show.mirror ? metrics(SIM.FL, 'front') : null);
@@ -257,7 +257,7 @@ function buildGT3Spaceframe(sc, yF, yR){
   }
 }
 
-/* ================================ C. SAE Baja 巴哈越野赛车管架 ================================ */
+/* ================================ C. SAE Baja 巴哈越野赛车管架 — SAE Baja off-road spaceframe ================================ */
 function buildBajaSpaceframe(sc, yF, yR){
   const hF = S.front.hp, hR = S.rear.hp;
   const T = (a, b, r, col) => cylinder(sc, a, b, r||15, col||"#334155", 1.4, 12, "rgba(30, 41, 59, 0.90)"); 
@@ -266,7 +266,8 @@ function buildBajaSpaceframe(sc, yF, yR){
   /* 真实越野 SAE Baja 空间管架与副车架结构：
      轴距 wb = 1400 mm (yF = +700, yR = -700)
      轮心半轮距 WC.X = 620 mm (总轮距 1240 mm)
-     深黑结构钢大梁 + 前下护板 + 前悬横梁 */
+     深黑结构钢大梁 + 前下护板 + 前悬横梁
+     — True off-road SAE Baja spaceframe & subframe: wheelbase wb = 1400 mm (yF = +700, yR = -700); half track width WC.X = 620 mm (total 1240 mm); dark structural-steel rails + front skid plate + front suspension crossmember */
   const Y_front_bulk = yF + 220;   // 前舱鼻锥横隔 (机舱/前防撞盒)
   const Y_front_hoop = yF - 240;   // 前防滚环 (方向机与踏板上方)
   const Y_main_hoop  = yR + 240;   // 主防滚环 (车手头枕/防滚架最高点)
@@ -285,7 +286,7 @@ function buildBajaSpaceframe(sc, yF, yR){
   const W_roof       = 240;        // 车顶半宽 240mm (总宽 480mm)
   const W_rear       = 180;        // 后舱半宽 180mm (总宽 360mm)
 
-  // 关键节点定义
+  // 关键节点定义 — key node definitions
   const FBM_TL = [-W_nose, Y_front_bulk, Z_nose],       FBM_TR = [W_nose, Y_front_bulk, Z_nose];
   const FBM_BL = [-W_nose, Y_front_bulk, Z_bottom],     FBM_BR = [W_nose, Y_front_bulk, Z_bottom];
   const FHO_TL = [-W_roof, Y_front_hoop, Z_front_hoop], FHO_TR = [W_roof, Y_front_hoop, Z_front_hoop];
@@ -315,12 +316,12 @@ function buildBajaSpaceframe(sc, yF, yR){
 
   // 2. 侧面防撞与座舱桁架 (Side Impact Structure & Lower Rails)
   if(S.show.frame_side){
-    // 前舱连接
+    // 前舱连接 — front bay connections
     T(FBM_BL, FHO_BL); T(FBM_BR, FHO_BR);
     T(FBM_TL, FHO_ML); T(FBM_TR, FHO_MR);
     D(FBM_TL, FHO_BL); D(FBM_TR, FHO_BR);
 
-    // 侧面腰梁与底梁
+    // 侧面腰梁与底梁 — side waist rails & bottom rails
     T(FHO_BL, RHO_BL); T(FHO_BR, RHO_BR);
     T(FHO_ML, RHO_ML); T(FHO_MR, RHO_MR);
 
@@ -331,7 +332,7 @@ function buildBajaSpaceframe(sc, yF, yR){
 
   // 3. 后防滚架斜撑与后机舱 (Rear Roll Hoop Bracing & Engine Bay)
   if(S.show.frame_rear){
-    // 后舱底梁与腰梁
+    // 后舱底梁与腰梁 — rear bay bottom rails & waist rails
     T(RHO_BL, RR_BL); T(RHO_BR, RR_BR);
     T(RHO_ML, RR_TL); T(RHO_MR, RR_TR);
 
@@ -339,7 +340,7 @@ function buildBajaSpaceframe(sc, yF, yR){
     T(RHO_TL, RR_TL); T(RHO_TR, RR_TR);
     D(RHO_TL, RR_BL); D(RHO_TR, RR_BR);
 
-    // 后端封闭隔框
+    // 后端封闭隔框 — rear-end closing bulkhead
     T(RR_TL, RR_TR); T(RR_BL, RR_BR); 
     T(RR_TL, RR_BL); T(RR_TR, RR_BR);
     D(RR_TL, RR_BR); D(RR_TR, RR_BL);
@@ -393,12 +394,12 @@ function buildBajaSpaceframe(sc, yF, yR){
     T(R_DMP_R, RR_TR, 14, sfC);  T(L_DMP_R, RR_TL, 14, sfC);
     T(R_DMP_R, L_DMP_R, 16, sfC);
 
-    // 后轴副车架横梁
+    // 后轴副车架横梁 — rear axle subframe crossmember
     box3D(sc, [0, yR, 185], [420, 80, 45], "#334155", 1.5, "rgba(30, 41, 59, 0.95)");
   }
 }
 
-/* 核心车架建模：前后防撞吸能区与乘员舱完全定形，仅悬架舱过渡管件随硬点自适应 */
+/* 核心车架建模：前后防撞吸能区与乘员舱完全定形，仅悬架舱过渡管件随硬点自适应 — core chassis modeling: front/rear crash energy-absorption zones & cockpit fully shaped; only the suspension-bay transition tubes adapt to the hardpoints */
 function buildDecoupledImpactSpaceframe(sc, yF, yR){
   const hF = S.front.hp, hR = S.rear.hp;
 
@@ -645,7 +646,7 @@ function buildDecoupledImpactSpaceframe(sc, yF, yR){
   }
 }
 
-/* 2. 传动系：EDU 电驱动单元与差速器几何 */
+/* 2. 传动系：EDU 电驱动单元与差速器几何 — Powertrain: EDU electric drive unit & differential geometry */
 function buildPowertrainEDU(sc, yF, yR){
   box3D(sc, [0, yF-30, 250], [220, 170, 150], EC("motor",SYSTEM_COLORS.motor), 1.3, EC("motorBody",SYSTEM_COLORS.motorBody));
   cylinder(sc, [-110, yF-30, 250], [110, yF-30, 250], 75, EC("motor",SYSTEM_COLORS.motor), 1.2, 14);
@@ -659,7 +660,7 @@ function buildPowertrainEDU(sc, yF, yR){
   cylinder(sc, [120, yR, 260], [150, yR, 260], 44, EC("diff",SYSTEM_COLORS.diff), 1.2, 12);
 }
 
-/* 3. 转向系：单座方程式中置横向蝴蝶方向盘与转向管柱 */
+/* 3. 转向系：单座方程式中置横向蝴蝶方向盘与转向管柱 — Steering: single-seat Formula mid-mounted open-face (butterfly) wheel & steering column */
 function buildFormulaCentralSteering(sc, yF){
   const swAngle = S.swAngle * D2R;
   const rackY = S.front.hp.RACK[1] + yF;
@@ -744,7 +745,7 @@ function buildFormulaCentralSteering(sc, yF){
   }
 }
 
-/* 4. 制动系：中置双回路总泵、踏板平衡杆与管网 */
+/* 4. 制动系：中置双回路总泵、踏板平衡杆与管网 — Brakes: mid-mounted dual-circuit master cylinders, pedal balance bar & pipe network */
 function buildBrakeHydraulicSystem(sc, yF, yR){
   const pMC_L = [-35, yF + 100, S.front.hp.LCA_F[2] + 40];
   const pMC_R = [35,  yF + 100, S.front.hp.LCA_F[2] + 40];
@@ -771,7 +772,7 @@ function buildBrakeHydraulicSystem(sc, yF, yR){
   }
 }
 
-/* 5. 车轮端与悬架总成装配 */
+/* 5. 车轮端与悬架总成装配 — Wheel-end & suspension assembly */
 function addAxleAssemblyPRO(sc, M, m, sx, yOff, axis){
   if(!M || !M.n || !m) return;
   const state = S[axis];
@@ -785,8 +786,8 @@ function addAxleAssemblyPRO(sc, M, m, sx, yOff, axis){
   const ax=nrm([m.ax[0]*sx, m.ax[1], m.ax[2]]);
   const kg=T(m.kg);
   const tR=state.tire.R, tW=state.tire.W, rimR=state.tire.rim, dR=state.tire.disc;
-  const rimHalf = state.tire.rimW ? Math.max(18, state.tire.rimW * 0.30) : 6; // G29 自定义轮毂宽度→轮辋深度；预设态保持原 6mm 浅盘观感
-  const etOff = -(state.tire.et || 0); // G29 偏距：ET 正值轮面缩进（ISO ET 语义），负值外凸
+  const rimHalf = state.tire.rimW ? Math.max(18, state.tire.rimW * 0.30) : 6; // G29 自定义轮毂宽度→轮辋深度；预设态保持原 6mm 浅盘观感 — G29 custom rim width → rim depth; preset state keeps the original 6 mm shallow-dish look
+  const etOff = -(state.tire.et || 0); // G29 偏距：ET 正值轮面缩进（ISO ET 语义），负值外凸 — G29 offset: positive ET insets the rim face (ISO ET semantics), negative protrudes
     const _eU0=nrm(sub([0,0,1],mul(ax,dot([0,0,1],ax)))), _eV0=cross(ax,_eU0);
   let _spin = 0;
   if(window._tireSpinAngles) {
@@ -957,16 +958,16 @@ function addAxleAssemblyPRO(sc, M, m, sx, yOff, axis){
 }
 
 function buildScene(){
-  /* PRO 渲染入口：完整底盘模型（2026-08-27 已清除 legacy addShared/drawSubframe/addInstance 死代码） */
+  /* PRO 渲染入口：完整底盘模型（2026-08-27 已清除 legacy addShared/drawSubframe/addInstance 死代码） — PRO render entry: full chassis model (legacy addShared/drawSubframe/addInstance dead code removed 2026-08-27) */
   return buildScenePRO();
 }
 
-/* ================================ 9. 四视口正交/透视投影引擎 ================================ */
+/* ================================ 9. 四视口正交/透视投影引擎 — Four-viewport orthographic/perspective projection engine ================================ */
 const VDEF=[
-  {key:"front",zh:"正视图",en:"FRONT VIEW",ax:"X-Z",bx:[1,0,0],by:[0,0,1],type:"o",note:"+Y⊗车头  +X→外侧"},
-  {key:"top",  zh:"俯视图",en:"PLAN VIEW", ax:"X-Y",bx:[1,0,0],by:[0,1,0],type:"o",note:"+Z⊙向上  ↑车头"},
-  {key:"side", zh:"侧视图",en:"SIDE VIEW", ax:"Y-Z",bx:[0,1,0],by:[0,0,1],type:"o",note:"+X⊙外侧  →车头"},
-  {key:"iso",  zh:"等轴测",en:"ISOMETRIC", ax:"3D", type:"p",note:"左键旋转 · 滚轮缩放"}
+  {key:"front",zh:"Front view",en:"FRONT VIEW",ax:"X-Z",bx:[1,0,0],by:[0,0,1],type:"o",note:"+Y⊗ front of car  +X→ outboard"},
+  {key:"top",  zh:"Top view",en:"PLAN VIEW", ax:"X-Y",bx:[1,0,0],by:[0,1,0],type:"o",note:"+Z⊙ up  ↑ car front"},
+  {key:"side", zh:"Side view",en:"SIDE VIEW", ax:"Y-Z",bx:[0,1,0],by:[0,0,1],type:"o",note:"+X⊙ outboard  → car front"},
+  {key:"iso",  zh:"Isometric",en:"ISOMETRIC", ax:"3D", type:"p",note:"Left-drag rotate · scroll zoom"}
 ];
 const VW=[];
 
@@ -976,16 +977,17 @@ function initViews(){
     const w=document.createElement("div");w.className="vw";w.dataset.k=d.key;
     /* M7（2026-09-20）：视图名单独包一层 .vnm。单视口模式下顶栏 #v4VpTitle 已显示
        同一个名字，视口内再写一遍是纯重复；四宫格时各口需要自标，故只收起名字、
-       保留轴向刻度 [X-Z] 与语义提示（+Y⊗车头）以及 F/M 按钮。 */
+       保留轴向刻度 [X-Z] 与语义提示（+Y⊗车头）以及 F/M 按钮。
+       — M7: the view name gets its own .vnm wrapper. In single-viewport mode the top bar #v4VpTitle already shows the same name, so writing it again inside the pane is pure duplication; in the 2x2 quad each pane needs its own label, so we only collapse the name while keeping the axis scale [X-Z], the semantic hints (+Y⊗ front) and the F/M buttons. */
     w.innerHTML='<div class="vwh"><span class="vnm"><b>'+d.zh+'</b>'+d.en+' <span class="vax">['+d.ax+']</span></span>'+
-      '<span class="vi">'+d.note+'</span><span class="vb" title="适应">F</span><span class="vb" title="最大化">M</span></div>'+
+      '<span class="vi">'+d.note+'</span><span class="vb" title="Fit">F</span><span class="vb" title="Maximize">M</span></div>'+
       '<canvas></canvas>';
     vp.appendChild(w);
     const v=Object.assign({},d,{el:w,cv:w.querySelector("canvas"),w:10,h:10,dpr:1,
       s:0.5,cx:0,cy:0,az:-35*D2R,elv:24*D2R,dist:3200,tgt:[420,0,340],mx:false});
     v.ctx=v.cv.getContext("2d"); VW.push(v);
     const bts=w.querySelectorAll(".vb");
-    bts[0].onclick=e=>{e.stopPropagation();v.sLocked=false;v.geoFitted=false;fitView(v);};   // M7：F=适应，交还自动取景
+    bts[0].onclick=e=>{e.stopPropagation();v.sLocked=false;v.geoFitted=false;fitView(v);};   // M7：F=适应，交还自动取景 — M7: F=fit, hands framing back to auto-fit
     bts[1].onclick=e=>{e.stopPropagation();toggleMax(v);};
     hookView(v);
     w.addEventListener("mouseenter",()=>{VW.forEach(q=>q.el.classList.remove("act"));w.classList.add("act");});
@@ -1006,7 +1008,8 @@ function sizeView(v){
        四分之一大的格子（实测 iso 格 613×310，而终态 1238×794），一锁死就再不自适应
        ⇒ 车只占视口 38%×27%、四宫格里还会裁出画面。现在：只要用户还没手动旋转/缩放/
        平移（v.sLocked），尺寸每变一次就重新取景；用户一接管即永久让位。
-       手工适应入口（F 按钮 / 双击）会清掉 sLocked，交还给自动取景。 */
+       手工适应入口（F 按钮 / 双击）会清掉 sLocked，交还给自动取景。
+       — M7 first-layout race fix: stay auto-fitted until the user takes over. The old code fitView-ed only on the first sizeView and immediately set inited=true, but the canvas changes size several times during boot (quad 2x2 layout -> single .vp-single -> final size) and the first fit often captured a quarter-sized cell (measured iso cell 613x310 vs final 1238x794); once locked it never re-fitted, leaving the car at just 38%x27% of the viewport or cropped in the quad. Now: as long as the user has not manually rotated/zoomed/panned (v.sLocked), refit on every size change; once the user takes over, auto-fit yields permanently. The manual fit entry points (F button / double-click) clear sLocked and hand control back to auto-fit. */
     if(!v.sLocked) fitView(v);
   }
 }
@@ -1038,13 +1041,14 @@ function fitPoints(){
   pts.push([0,0,0]); return pts;
 }
 function fitView(v){
-  if(v.w<20||v.h<20){v.s=0.5;return;}   // 防初次布局竞态 (2026-08-24)
+  if(v.w<20||v.h<20){v.s=0.5;return;}   // 防初次布局竞态 (2026-08-24) — guard against the initial-layout race (2026-08-24)
   const pts=fitPoints();
   /* M7（2026-09-20）：自适应必须计入"硬点之外的绘制量"。
      fitPoints() 只给硬点节点，而实际画出的是轮胎圆（半径 R）、减振柱、鱼眼球、
      尺寸标注线——它们会画到硬点云之外约一个轮胎半径。旧实现只按硬点云取景，
      于是"贴合"时车实际被裁掉一圈（实测 1:2.0 时前后轮与尾翼全部出画）。
-     这里在包围盒两侧各加一个轮胎半径的余量；同时对整体留 82% 的目标占比。 */
+     这里在包围盒两侧各加一个轮胎半径的余量；同时对整体留 82% 的目标占比。
+     — auto-fit must count drawing beyond the hardpoints. fitPoints() only returns hardpoint nodes, but what is actually drawn includes the tire circles (radius R), damper struts, spherical eyes and dimension lines, which extend about one tire radius beyond the hardpoint cloud; the old fit used only the hardpoint cloud, so the car got cropped on all sides (measured at 1:2.0 both wheels and the wing fell out of frame). Add a one-tire-radius margin to each side of the bounding box and keep an 82% target coverage. */
   const pad = (typeof S!=="undefined" && S.tire && S.tire.R) ? S.tire.R*1.05 : 260;
   const FILL = 0.82;
   if(v.type==="o"){
@@ -1060,7 +1064,8 @@ function fitView(v){
     /* 等轴测：先用 s=1 试投影求屏幕包围盒，再按目标占比反解 s。
        透视投影对 s 是线性的，所以这一步是精确解而不是再估一次
        （旧实现 `s = min(w,h)/(r*2.2)` 用 3D 半径估，对"长而扁"车身严重失配：
-       单视口只占 38%×27%，四宫格里又横向裁出画面）。 */
+       单视口只占 38%×27%，四宫格里又横向裁出画面）。
+       — Isometric: first project with s=1 to get the screen bounding box, then backsolve s from the target coverage. Perspective projection is linear in s, so this is an exact solve rather than another estimate (the old s = min(w,h)/(r*2.2) estimated from the 3D radius and mismatched long, flat bodies badly: single viewport only 38%x27%, and the quad cropped the car sideways). */
     camIso(v);
     let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9,seen=0;
     pts.forEach(p=>{
@@ -1071,12 +1076,12 @@ function fitView(v){
     if(seen>1&&a1>a0&&b1>b0){
       v.s=FILL*Math.min((v.w-30)/Math.max(1,(a1-a0)+2*pad),(v.h-40)/Math.max(1,(b1-b0)+2*pad));
     }else{
-      v.s=Math.min(v.w,v.h)/(r*1.45);   // 兜底：点云退化时退回半径估算
+      v.s=Math.min(v.w,v.h)/(r*1.45);   // 兜底：点云退化时退回半径估算 — fallback: radius-based estimate if the point cloud degenerates
     }
   }
 }
 
-/* ================================ 10. 渲染绘制与 HUD ================================ */
+/* ================================ 10. 渲染绘制与 HUD — Rendering & HUD ================================ */
 function dash(ctx,d){ctx.setLineDash(d||[]);}
 
 function dimLine(ctx,A,B,txt,off,col){
@@ -1102,7 +1107,7 @@ function dimLine(ctx,A,B,txt,off,col){
 }
 
 function angArc(ctx,O,r,a0,a1,txt,col){
-  if(!O||!(r>0))return;   // 防负半径竞态 (2026-08-24)
+  if(!O||!(r>0))return;   // 防负半径竞态 (2026-08-24) — guard against negative-radius race (2026-08-24)
   ctx.strokeStyle=col||C.dim;ctx.lineWidth=1;dash(ctx,[3,2]);
   ctx.beginPath();ctx.arc(O[0],O[1],r,Math.min(a0,a1),Math.max(a0,a1));ctx.stroke();dash(ctx,[]);
   const am=(a0+a1)/2;
@@ -1115,7 +1120,7 @@ function drawOverlay(v){
   const ctx = v.ctx;
   const yF = S.wb/2, yR = -S.wb/2;
 
-  /* ---- 1. 正视图：瞬心 IC / 侧倾中心 RC / KPI / Camber / 主销偏移距 ---- */
+  /* ---- 1. 正视图：瞬心 IC / 侧倾中心 RC / KPI / Camber / 主销偏移距 — front view: instant center IC / roll center RC / KPI / camber / scrub radius ---- */
   if(v.key === "front"){
     const isF = S.axis === 'front';
     const m = isF ? SIM.mFR : SIM.mRR;
@@ -1142,12 +1147,12 @@ function drawOverlay(v){
       ctx.strokeStyle = C.ic; ctx.lineWidth = 1.3;
       ctx.beginPath();
       ctx.moveTo(icS[0]-7, icS[1]); ctx.lineTo(icS[0]+7, icS[1]);
-      ctx.moveTo(icS[0], icS[1]-7); ctx.lineTo(icS[0], icS[1]+7);   /* F-42（2026-08-30）：竖线端点应为 (x,y+7)，旧实现写成斜线 */
+      ctx.moveTo(icS[0], icS[1]-7); ctx.lineTo(icS[0], icS[1]+7);   /* F-42（2026-08-30）：竖线端点应为 (x,y+7)，旧实现写成斜线 — vertical line endpoints must be (x,y+7); the old implementation drew it slanted */
       ctx.stroke();
       ctx.fillStyle = C.ic; ctx.font = "8.5px ui-monospace,monospace";
-      ctx.fillText("IC 瞬心", icS[0]+9, icS[1]-4);
+      ctx.fillText("IC instant center", icS[0]+9, icS[1]-4);
 
-      // RC 侧倾中心
+      // RC 侧倾中心 — RC roll center
       const rc = SIM.rc2 ? SIM.rc2 : (m.rcH!==null ? [0, m.rcH] : null);
       if(rc){
         const rS = P2(v, [rc[0], yOff, rc[1]]);
@@ -1160,26 +1165,26 @@ function drawOverlay(v){
         ctx.beginPath(); ctx.arc(rS[0], rS[1], 4.5, 0, 6.2832); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(rS[0]-9, rS[1]); ctx.lineTo(rS[0]+9, rS[1]);
         ctx.moveTo(rS[0], rS[1]-9); ctx.lineTo(rS[0]+9, rS[1]+9); ctx.stroke();
-        ctx.fillStyle = C.rc; ctx.fillText("RC 侧倾中心 "+fmt(rc[1],1)+"mm", rS[0]+11, rS[1]-4);
+        ctx.fillStyle = C.rc; ctx.fillText("RC roll center "+fmt(rc[1],1)+"mm", rS[0]+11, rS[1]-4);
       }
     }
 
     if(S.show.dim){
       const O = P2(v, [0, yOff, m.cp[2]]), Cp = P2(v, [m.cp[0], yOff, m.cp[2]]);
-      dimLine(ctx, O, Cp, "轮距半宽 "+fmt(m.cp[0],1), 34, C.dim);
+      dimLine(ctx, O, Cp, "Track half-width "+fmt(m.cp[0],1), 34, C.dim);
       const K = P2(v, [m.kg[0], yOff, m.kg[2]]);
-      dimLine(ctx, K, Cp, "主销偏移距 "+fmt(m.scrub,1), -30, C.kpg);
+      dimLine(ctx, K, Cp, "Scrub radius "+fmt(m.scrub,1), -30, C.kpg);
       
       const Mcur = isF ? SIM.FR : SIM.RR;
       const W0 = P2(v, [m.wc[0], yOff, Mcur.n[Mcur.idx.WC].p0[2]]), W1 = P2(v, [m.wc[0], yOff, m.wc[2]]);
-      if(abs(m.tr) > 0.5) dimLine(ctx, W0, W1, "轮跳 "+sfmt(m.tr,1), 46, C.path);
+      if(abs(m.tr) > 0.5) dimLine(ctx, W0, W1, "Bump/travel "+sfmt(m.tr,1), 46, C.path);
 
-      // KPI 主销内倾角
+      // KPI 主销内倾角 — KPI kingpin inclination angle
       const kb = P2(v, [m.lbj[0], yOff, m.lbj[2]]), kt = P2(v, [m.ubj[0], yOff, m.ubj[2]]);
       const a0 = atan2(kt[1]-kb[1], kt[0]-kb[0]);
       angArc(ctx, kb, 52, -PI/2, a0, "KPI "+fmt(m.kpi,2)+"°", C.kp);
 
-      // Camber 外倾角
+      // Camber 外倾角 — camber angle
       const wcS = P2(v, [m.wc[0], yOff, m.wc[2]]);
       const up = [-m.ax[2], m.ax[0]];
       const a1 = atan2(-up[1], up[0]);
@@ -1196,20 +1201,20 @@ function drawOverlay(v){
 
     const kb = P2(v, [0, m.lbj[1]+yOff, m.lbj[2]]), kt = P2(v, [0, m.ubj[1]+yOff, m.ubj[2]]);
     const a0 = atan2(kt[1]-kb[1], kt[0]-kb[0]);
-    angArc(ctx, kb, 55, -PI/2, a0, "后倾 "+fmt(m.cast,2)+"°", C.kp);
+    angArc(ctx, kb, 55, -PI/2, a0, "Caster "+fmt(m.cast,2)+"°", C.kp);
     const K = P2(v, [0, m.kg[1]+yOff, m.kg[2]]), Cp = P2(v, [0, m.cp[1]+yOff, m.cp[2]]);
-    dimLine(ctx, Cp, K, "拖距 "+fmt(m.trail,1), -26, C.kpg);
+    dimLine(ctx, Cp, K, "Trail "+fmt(m.trail,1), -26, C.kpg);
 
     if(m.svic){
       const A = P2(v, [0, m.cp[1]+yOff, m.cp[2]]), B = P2(v, [0, m.svic[0]+yOff, m.svic[1]]);
       dash(ctx, [6,3]); ctx.strokeStyle = C.ic; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); dash(ctx, []);
       ctx.fillStyle = C.ic; ctx.font = "8.5px ui-monospace,monospace";
-      ctx.fillText("→侧视瞬心 抗俯仰 "+(m.anti===null?"--":fmt(m.anti,0)+"%"), A[0]+14, A[1]-8);
+      ctx.fillText("→Side-view IC anti-dive "+(m.anti===null?"--":fmt(m.anti,0)+"%"), A[0]+14, A[1]-8);
     }
   }
 
-  /* ---- 3. 俯视图：车轮中心基准线 / 角度扇形弧 / Toe-In & Toe-Out 辅助线 / 转向中心 ---- */
+  /* ---- 3. 俯视图：车轮中心基准线 / 角度扇形弧 / Toe-In & Toe-Out 辅助线 / 转向中心 — top view: wheel-center datum lines / angle fan arcs / toe-in & toe-out guide lines / steering center ---- */
   if(v.key === "top"){
     const drawSteerGuide = (mm, sx, yAxisOff, labelPrefix, state) => {
       if(!mm) return;
@@ -1237,11 +1242,11 @@ function drawOverlay(v){
       angArc(ctx, O, state.tire.R * v.s * 0.95, aa, bb, lbl, C.knu);
     };
 
-    drawSteerGuide(SIM.mFR, 1, yF, "前右 FR", S.front);
-    if(S.show.mirror) drawSteerGuide(SIM.mFL, -1, yF, "前左 FL", S.front);
+    drawSteerGuide(SIM.mFR, 1, yF, "Front-right FR", S.front);
+    if(S.show.mirror) drawSteerGuide(SIM.mFL, -1, yF, "Front-left FL", S.front);
 
-    drawSteerGuide(SIM.mRR, 1, yR, "后右 RR", S.rear);
-    if(S.show.mirror) drawSteerGuide(SIM.mRL, -1, yR, "后左 RL", S.rear);
+    drawSteerGuide(SIM.mRR, 1, yR, "Rear-right RR", S.rear);
+    if(S.show.mirror) drawSteerGuide(SIM.mRL, -1, yR, "Rear-left RL", S.rear);
 
     if(S.show.dim && SIM.mFL && abs(S.rack) > 2){
       const ak = ackermann('front');
@@ -1257,7 +1262,7 @@ function drawOverlay(v){
           ctx.moveTo(P[0]-6, P[1]); ctx.lineTo(P[0]+6, P[1]);
           ctx.moveTo(P[0], P[1]-6); ctx.lineTo(P[0]+6, P[1]);
           ctx.stroke();
-          ctx.fillStyle = C.ic; ctx.fillText("转向中心 ICR", P[0]+8, P[1]-4);
+          ctx.fillStyle = C.ic; ctx.fillText("Steering center ICR", P[0]+8, P[1]-4);
         }
       }
     }
@@ -1271,7 +1276,8 @@ function drawAll(){
     /* M7（2026-09-20）：几何就绪后补一次取景。首个 sizeView 往往早于机构求解——
        那时 fitPoints() 只有 fallback 点云（`if(!SIM.FR)return[[0,0,0],…]`），按它取景
        会把真实车辆画到视口外。这里等 SIM.FR 出现且拿到真实尺寸后再定一次；
-       同样受 sLocked 保护，用户手动调过视角就不再打扰。 */
+       同样受 sLocked 保护，用户手动调过视角就不再打扰。
+       — M7: refit once the geometry is ready. The first sizeView usually runs before the mechanism solves, when fitPoints() only has the fallback cloud (if(!SIM.FR)return[[0,0,0],…]) — fitting then would push the real car off the viewport, so refit once SIM.FR appears with real dimensions; again guarded by sLocked so a user-adjusted view is never disturbed. */
     if(!v.sLocked && SIM.FR && v.w>=20 && v.h>=20 && !v.geoFitted){ fitView(v); v.geoFitted=true; }
     drawView(v,sc);
   });

@@ -9,6 +9,15 @@
 
 基线硬点（DWB 命名）取自前端 PRESETS["前悬架 (推杆 Pushrod 架构)"]，
 与 S1 测试常量 PRO_POINTS 同源（数值一致）。
+
+English: /api/v3 service layer (S2): DWB hardpoints -> engine mechanism -> load-case
+sweeps -> curves + gains. Coordinate system matches `dwb-pro-fullchassis.html`:
+X = outboard (right wheel +X) / Y = forward / Z = up. Hardpoint name map (frontend DWB
+name -> engine mechanism point): LCA_F->CH1, LCA_R->CH2, UCA_F->CH3, UCA_R->CH4,
+LBJ->UP1, UBJ->UP2, TRO->UP3, STRUT_OUT->UP4, WC->UP5, RACK->FL1, STRUT_IN->CH5,
+RCK_AX_A->RK_PIVOT, RCK_DMP->RK_DAMPER, DMP_BODY->DAMPER_CHASSIS. Baseline hardpoints
+(DWB names) come from the frontend PRESETS front-suspension pushrod preset, sharing the
+same origin as the S1 test constant PRO_POINTS (identical values).
 """
 from __future__ import annotations
 
@@ -28,7 +37,7 @@ from src.api.v3models import (
 )
 from src.components.bushing import Bushing6DOF, Curve
 from src.geometry import line_intersect_2d
-from src.metrics.kandc import _slope  # F-13：单一差分内核（全局共用）
+from src.metrics.kandc import _slope  # F-13：单一差分内核（全局共用） — single differencing kernel (shared globally)
 from src.solver.compliance import solve_compliance_full
 from src.solver.forces import QSLoad
 from src.solver.mechanism.models import build_mechanism
@@ -59,22 +68,32 @@ DEFAULT_DWB_POINTS: dict[str, list[float]] = {
 
 
 def mirror_left(points: dict[str, list[float]]) -> dict[str, list[float]]:
-    """左侧镜像：X（外侧轴）取负。"""
+    """左侧镜像：X（外侧轴）取负。
+
+    English: left-side mirror — negate X (the outboard axis).
+    """
     return {k: [-p[0], p[1], p[2]] for k, p in points.items()}
 
 
 def to_engine_points(points: dict[str, list[float]]) -> dict[str, np.ndarray]:
-    """DWB 命名 → 引擎机构点 dict（含 frame 节点）。"""
+    """DWB 命名 → 引擎机构点 dict（含 frame 节点）。
+
+    English: DWB names -> engine mechanism-point dict (including frame nodes).
+    """
     out: dict[str, np.ndarray] = {}
     for dwb, eng in DWB_TO_ENGINE.items():
         out[eng] = np.asarray(points[dwb], dtype=float)
-    # 摇臂轴用 RCK_AX_A 单点（solve_rocker 绕 RK_PIVOT 真实三维轴；RCK_AX_B 未建模——见 BUSHING_NODES）
+    # 摇臂轴用 RCK_AX_A 单点（solve_rocker 绕 RK_PIVOT 真实三维轴；RCK_AX_B 未建模——见 BUSHING_NODES） — rocker axis uses the single RCK_AX_A point (solve_rocker rotates about the real 3D
+    # RK_PIVOT axis; RCK_AX_B is not modeled — see BUSHING_NODES)
     return out
 
 
 def make_bushings(specs: list[BushingSpec],
                   points: dict[str, list[float]]) -> dict[str, Bushing6DOF]:
-    """BushingSpec 列表 → 引擎 Bushing6DOF 集合（member_nodes = 引擎锚点）。"""
+    """BushingSpec 列表 → 引擎 Bushing6DOF 集合（member_nodes = 引擎锚点）。
+
+    English: BushingSpec list -> engine Bushing6DOF set (member_nodes = engine anchors).
+    """
     out: dict[str, Bushing6DOF] = {}
     for s in specs:
         eng = DWB_TO_ENGINE.get(s.node)
@@ -118,6 +137,13 @@ def _wheel_axis(design: DesignSpec, side: float = 1.0) -> np.ndarray:
     Toe-in 正 / Camber 顶向内负在 X 镜像下保持车辆全局约定
     （core/convention.py：两侧统一），与前端"右框架计算 + 渲染镜像"
     （SIM.FL=buildMech('front')）语义对齐。
+
+    English: design-position wheel axis (side-generalized version of the frontend axW;
+    2026-08-22 mirror fix). side=+1 right corner (+X = outboard); side=-1 left corner
+    (mirrored axis, -X = outboard). Toe-in positive / camber negative (top leaning in)
+    keep the vehicle-global convention under X mirroring (core/convention.py: identical
+    on both sides), aligned with the frontend semantics of "compute on the right frame +
+    mirror at render time" (SIM.FL=buildMech('front')).
     """
     cam = design.camber_deg * math.pi / 180.0
     toe = design.toe_deg * math.pi / 180.0
@@ -140,6 +166,19 @@ def _estimate_rotation(m) -> np.ndarray:
     混入刚体拟合会污染 camber/toe。偏差量级随几何而定：基准几何推杆
     +90mm 行程处 camber ~0.4°；repo 默认推杆 preset 同点复核 ~0.08°
     （2026-09-18 评审实测）。knuckle 拓扑下 ids 与历史常量一致，行为不变。
+
+    English: least-squares attitude estimation (Kabsch/SVD) — rotation matrix from the
+    knuckle design position to the current position. The engine solver only outputs node
+    positions (distance-only constraints), not rigid-body quaternions; the directions of
+    knuckle-attached labels such as the wheel axis must be recovered via attitude
+    estimation (the frontend gets them directly from quaternions).
+    2026-09-07 (found by cross-checking an independent analytic reference): the rigid-body
+    point set must use the actual members of the mechanism KNUCKLE cluster — with
+    strut_attach=lca/uca, UP4 hangs on a control arm and moves relative to the knuckle, so
+    mixing it into the fit pollutes camber/toe. The error magnitude is geometry-dependent:
+    ~0.4° camber at +90mm travel on the baseline pushrod geometry; ~0.08° re-checked at the
+    same point on the repo default pushrod preset (2026-09-18 review measurement). With
+    knuckle topology the ids match the historical constants and behavior is unchanged.
     """
     body = next((b for b in m.bodies if b.name == "KNUCKLE"), None)
     ids = list(body.ids) if body is not None else _KNUCKLE_IDS
@@ -163,16 +202,25 @@ def pose_metrics(m, tire_R: float, design: DesignSpec) -> dict:
     convention.py"两侧相同"的车辆全局约定翻号 —— 镜像几何输入下六项
     定位角左右相等。此前左角复用右框架公式导致 scrub 偏差
     2·tireR·sin(|camber|)（基线 13.61mm）、kpi 符号反转。
+
+    English: extract alignment metrics from the solved mechanism (same math as the frontend
+    metrics(), rewritten in pure numpy). Side convention (2026-08-22 mirror fix, P0):
+    classify left/right corners by the sign of wheel-center X; the left corner (WC.x<0,
+    -X outboard) gets the design wheel axis mirrored, and kpi / scrub flip sign per the
+    vehicle-global convention.py "identical on both sides" rule — with mirrored geometry
+    input, all six alignment angles come out equal on both sides. Previously the left
+    corner reused the right-frame formulas, giving a scrub error of 2·tireR·sin(|camber|)
+    (13.61mm on the baseline) and a flipped kpi sign.
     """
     P = {k: m.node(k).pos for k in _ENGINE_KEYS}
     wc, lbj, ubj = P["UP5"], P["UP1"], P["UP2"]
-    side = 1.0 if float(wc[0]) >= 0.0 else -1.0   # +1 右角 / -1 左角
+    side = 1.0 if float(wc[0]) >= 0.0 else -1.0   # +1 右角 / -1 左角 — +1 right corner / -1 left corner
     ax = _estimate_rotation(m) @ _wheel_axis(design, side)
 
     cam = -math.asin(float(np.clip(ax[2], -1.0, 1.0))) * R2D
     toe = math.atan2(float(ax[1]), side * float(ax[0])) * R2D
 
-    # 接地点：沿主销轴水平投影（前端同款）
+    # 接地点：沿主销轴水平投影（前端同款） — contact patch: horizontal projection along the steering (kingpin) axis (same as the frontend)
     z_hat = np.array([0.0, 0.0, 1.0])
     rad = z_hat - ax * float(np.dot(z_hat, ax))
     rn = float(np.linalg.norm(rad)) or 1e-12
@@ -182,14 +230,17 @@ def pose_metrics(m, tire_R: float, design: DesignSpec) -> dict:
     dz = float(ubj[2] - lbj[2]) or 1e-9
     kpi = math.atan2(side * (float(lbj[0]) - float(ubj[0])), dz) * R2D
     cast = math.atan2(-(float(ubj[1]) - float(lbj[1])), dz) * R2D
-    # 主销-地面交点：t0>1（越过 LBJ 向下到地面）。2026-08-22 修复符号：
-    # 旧式 (cp.z−ubj.z)/dz 得 t0<0，kg 落到 UBJ 上方（scrub=229/trail=−54.7 均错）。
+    # 主销-地面交点：t0>1（越过 LBJ 向下到地面）。2026-08-22 修复符号： — kingpin/ground
+    # intersection: t0>1 (past LBJ, down to the ground). 2026-08-22 sign fix:
+    # 旧式 (cp.z−ubj.z)/dz 得 t0<0，kg 落到 UBJ 上方（scrub=229/trail=−54.7 均错）。 — the old (cp.z−ubj.z)/dz gave t0<0, putting kg above UBJ
+    # (scrub=229 / trail=−54.7, both wrong).
     t0 = (float(ubj[2]) - float(cp[2])) / dz
     kg = _lerp3(ubj, lbj, t0)
-    scrub = side * (float(cp[0]) - float(kg[0]))   # 外侧为正，两侧相同
+    scrub = side * (float(cp[0]) - float(kg[0]))   # 外侧为正，两侧相同 — positive outboard, identical on both sides
     trail = float(kg[1]) - float(cp[1])
 
-    # 侧倾中心高度（侧视瞬心 → 接地点垂线交点）
+    # 侧倾中心高度（侧视瞬心 → 接地点垂线交点） — roll center height (side-view instantaneous
+    # center -> intersection with the vertical through the contact patch)
     lp = _axis_at_y(P["CH1"], P["CH2"], float(wc[1]))
     up = _axis_at_y(P["CH3"], P["CH4"], float(wc[1]))
     ic = _isect2(np.array([lp[0], lp[2]]), np.array([lbj[0] - lp[0], lbj[2] - lp[2]]),
@@ -213,7 +264,11 @@ _ARCH_TO_ATTACH = {"pushrod": "lca", "pullrod": "uca"}
 
 
 def _arch_attach(arch: str) -> str:
-    """arch → STRUT_OUT 附着拓扑（P2，与前端 PRESETS strutOutAttach 对齐）。"""
+    """arch → STRUT_OUT 附着拓扑（P2，与前端 PRESETS strutOutAttach 对齐）。
+
+    English: arch -> STRUT_OUT attach topology (P2, aligned with frontend PRESETS
+    strutOutAttach).
+    """
     return _ARCH_TO_ATTACH.get(arch, "knuckle")
 
 
@@ -227,6 +282,17 @@ def _new_mech(points: dict[str, list[float]], *, left: bool = False, arch: str =
       是摇臂压缩侧无解/分支跳变/MR=0 的根因之一）。
     - strut_attach 由 arch 映射（P2，2026-08-22）：pushrod→lca / pullrod→uca，
       与前端 PRESETS strutOutAttach（FRONT:"lca", REAR:"uca"）一致；未知 arch → knuckle。
+
+    English: mechanism construction (2026-08-22 double fix + P2):
+    - steer_axis = (-1,0,0): the rack translates along world -X, matching frontend
+      setChassis `RACK.x -= rack` bit-for-bit (both sides move the same way — a real rack
+      translates as a whole). The old (0,±1,0) was a drag-link-style input with 20.8:1
+      different steering sensitivity for the same rack millimeters.
+    - rocker_axis = RCK_AX_A→RCK_AX_B real 3D axis (the old default X axis did not match
+      the pivot geometry and was one root cause of no-solution / branch jumps / MR=0 on
+      the rocker compression side).
+    - strut_attach mapped from arch (P2, 2026-08-22): pushrod→lca / pullrod→uca, matching
+      frontend PRESETS strutOutAttach (FRONT:"lca", REAR:"uca"); unknown arch -> knuckle.
     """
     eng = to_engine_points(points)
     sa = np.array([-1.0, 0.0, 0.0])
@@ -238,7 +304,11 @@ def _new_mech(points: dict[str, list[float]], *, left: bool = False, arch: str =
 
 def _solve_point(points, bushings, case: CaseLoad, travel: float, rack: float,
                  tire_R: float, design: DesignSpec, arch: str = "pushrod"):
-    """单点求解：有衬套走 K&C 全链路，无衬套走纯运动学。返回 (metrics, status, warn)。"""
+    """单点求解：有衬套走 K&C 全链路，无衬套走纯运动学。返回 (metrics, status, warn)。
+
+    English: single-point solve — with bushings, the full K&C compliance chain; without,
+    pure kinematics. Returns (metrics, status, warn).
+    """
     mech = _new_mech(points, arch=arch)
     if bushings:
         res = solve_compliance_full(mech, bushings=bushings, case=_qsload(case),
@@ -253,7 +323,11 @@ def _solve_point(points, bushings, case: CaseLoad, travel: float, rack: float,
 
 
 def _gains_from_curves(x: list[float], y: dict[str, list[float]], axis_key: str) -> dict:
-    """中心差分增益表（复用 S1 metrics/kandc.py 的斜率约定）。"""
+    """中心差分增益表（复用 S1 metrics/kandc.py 的斜率约定）。
+
+    English: central-difference gain table (reuses the slope conventions of S1
+    metrics/kandc.py).
+    """
     from src.metrics.kandc import (
         _slope,
         bump_steer_deg_per_25,
@@ -272,7 +346,7 @@ def _gains_from_curves(x: list[float], y: dict[str, list[float]], axis_key: str)
     return gains
 
 
-# ── 四工况 ───────────────────────────────────────────────────────────
+# ── 四工况 ─────────────────────────────────────────────────────────── ( the four sweep cases: bump / roll / steer / compliance )
 
 def run_bump(req: KandcRequest) -> KandcResponse:
     points = req.points or DEFAULT_DWB_POINTS
@@ -289,7 +363,8 @@ def run_bump(req: KandcRequest) -> KandcResponse:
         warnings.extend(warn)
         for k, v in m.items():
             curves.setdefault(k, []).append(None if v is None else round(float(v), 6))
-    # mr：damper 对 travel 的数值导数（-dL/dt，前端同款）
+    # mr：damper 对 travel 的数值导数（-dL/dt，前端同款） — mr: numerical derivative of
+    # damper length vs travel (-dL/dt, same as the frontend)
     trav = curves["travel"]
     dmp = curves["damper"]
     curves["mr"] = []
@@ -317,7 +392,11 @@ def run_bump(req: KandcRequest) -> KandcResponse:
 
 
 def run_roll(req: KandcRequest) -> KandcResponse:
-    """侧倾扫掠：右轮 +t / 左轮 −t（track_width 换算 roll_deg）。"""
+    """侧倾扫掠：右轮 +t / 左轮 −t（track_width 换算 roll_deg）。
+
+    English: roll sweep — right wheel +t / left wheel -t (roll_deg derived from
+    track_width).
+    """
     points_r = req.points or DEFAULT_DWB_POINTS
     points_l = mirror_left(points_r)
     bush_r = make_bushings(req.bushings, points_r) if req.bushings else {}
@@ -355,7 +434,10 @@ def run_roll(req: KandcRequest) -> KandcResponse:
 
 
 def run_steer(req: KandcRequest) -> KandcResponse:
-    """转向扫掠：rack 位移扫掠，travel=0。"""
+    """转向扫掠：rack 位移扫掠，travel=0。
+
+    English: steering sweep — rack displacement sweep, travel=0.
+    """
     points = req.points or DEFAULT_DWB_POINTS
     bushings = make_bushings(req.bushings, points) if req.bushings else {}
     t0 = time.perf_counter()
@@ -382,12 +464,16 @@ def run_compliance(req: KandcRequest) -> KandcResponse:
     """力 Compliance 扫掠：沿 compliance_axis（fx|fy|mz）扫力，travel=rack=0。
 
     无衬套时纯几何 → toe 不变（Compliance 位移为空），结果如实标注警告。
+
+    English: force-compliance sweep — sweep the force along compliance_axis (fx|fy|mz),
+    travel=rack=0. Without bushings it is pure kinematics -> toe unchanged (empty
+    compliance displacements); the result is flagged with an honest warning.
     """
     points = req.points or DEFAULT_DWB_POINTS
     bushings = make_bushings(req.bushings, points) if req.bushings else {}
     t0 = time.perf_counter()
     if not bushings:
-        warnings = ["无衬套定义：Compliance 位移为 0（纯几何），请传入 bushings 列表"]
+        warnings = ["no bushings defined: compliance displacements are 0 (kinematics only); pass a bushings list"]
     else:
         warnings = []
     xs = np.linspace(req.sweep.min, req.sweep.max, req.sweep.n)

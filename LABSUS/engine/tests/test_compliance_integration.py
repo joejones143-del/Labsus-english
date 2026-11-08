@@ -5,7 +5,7 @@ from src.solver.compliance import solve_compliance_full
 from src.solver.forces import QSLoad
 from src.solver.mechanism.models import build_mechanism
 
-PRO_POINTS = {  # 前轴推杆侧硬点（PRO 前悬架）
+PRO_POINTS = {  # 前轴推杆侧硬点（PRO 前悬架） — front-axle pushrod-side hardpoints (PRO front suspension)
     "CH1": np.array([240.0, 180.0, 145.0]),  "CH2": np.array([240.0, -160.0, 155.0]),
     "CH3": np.array([360.0, 140.0, 380.0]),  "CH4": np.array([360.0, -130.0, 390.0]),
     "UP1": np.array([730.0, 10.0, 165.0]),   "UP2": np.array([675.0, -15.0, 455.0]),
@@ -22,7 +22,7 @@ def _mech():
                            pushrod_from="UP4", pushrod_to="CH5")
 
 def test_integration_vertical_load_compliance():
-    """整车链路：接地点垂向 3000N → 二力杆静力 → LCA 前衬套压缩形变。"""
+    """整车链路：接地点垂向 3000N → 二力杆静力 → LCA 前衬套压缩形变。"""  # English: full-vehicle chain — 3000 N vertical at the contact patch -> two-force-link statics -> compression of the front LCA bushing.
     bush = Bushing6DOF(
         name="bCH1", anchor=PRO_POINTS["CH1"].copy(),
         kT=[Curve("linear", k=500.0)]*3, kR=[Curve("linear", k=8e4)]*3,
@@ -32,4 +32,4 @@ def test_integration_vertical_load_compliance():
     res = solve_compliance_full(_mech(), bushings={"bCH1": bush},
                                 case=QSLoad(fz=3000.0), travel=0.0, rack=0.0)
     assert res.status in ("VALID", "APPROXIMATE")
-    assert abs(res.delta["bCH1"][2]) > 0.01   # 形变 >0.01mm（UCA 近水平，垂向分担小）
+    assert abs(res.delta["bCH1"][2]) > 0.01   # 形变 >0.01mm（UCA 近水平，垂向分担小） — deflection >0.01mm (UCA nearly horizontal, so it carries little vertical share)

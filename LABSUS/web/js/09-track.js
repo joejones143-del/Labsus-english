@@ -21,7 +21,8 @@ const TPHYS = (function(){
           E=(p.Ey!==undefined?p.Ey:-0.5), D0=p.Fy0||5250,
           LS=(p.LS!==undefined?p.LS:0.10), FzN=p.FzNom||3500,
           /* M8（2026-09-20）：LS 的参考载荷与 μ 量级参考（FzN）分离。
-             缺省退化为 FzN ⇒ 旧口径逐位不变；赛道仿真由 payload 传真实静轮载。 */
+             缺省退化为 FzN ⇒ 旧口径逐位不变；赛道仿真由 payload 传真实静轮载。
+             — M8: LS reference load and mu-order reference (FzN) are separated. Falls back to FzN by default so the old behavior is bit-identical; track simulation passes real static wheel loads via payload. */
           FzR=(typeof p.FzRef==='number'&&p.FzRef>0)?p.FzRef:FzN,
           Sh=p.Sh||0, Sv=p.Sv||0;
     return function fy(aRad,fz){
@@ -43,7 +44,8 @@ const TPHYS = (function(){
     const fms=v.front.spring_mass_kg, rms=v.rear.spring_mass_kg;
     /* a = CG→前轴、b = CG→后轴（M5 2026-09-20 修复前后轴对调，与
        chassis.quasi_loads / 03-mechanism.solveQuasiStatic 同源）：
-       点质量模型 ⇒ b = L·m_f/(m_f+m_r)。旧式用后簧载份额当 b，使前后轴静载整体反了。 */
+       点质量模型 ⇒ b = L·m_f/(m_f+m_r)。旧式用后簧载份额当 b，使前后轴静载整体反了。
+       — a = CG->front axle, b = CG->rear axle (M5 2026-09-20 fixed the front/rear axle swap, same source as chassis.quasi_loads / 03-mechanism.solveQuasiStatic). Point-mass model gives b = L*m_f/(m_f+m_r); the old formula used the rear sprung share as b, which inverted front/rear static axle loads. */
     const b=L*(fms/(fms+rms)), a=L-b;
     const tf=Math.abs(v.front.points.WC[0])*2/1000;
     const tr=Math.abs(v.rear.points.WC[0])*2/1000;
@@ -102,7 +104,8 @@ const TPHYS = (function(){
      ⚠ 这里**内联**而不调 02-presets.js::resolveYawInertia：本文件会被 tphys_parity
      对拍沙箱**单独加载**（不含其他模块），硬调用会 ReferenceError 直接打死对拍
      （本轮实测踩到）。故用特性探测：沙箱里自动退回矩形近似（对拍锚显式给 iz，不受影响），
-     完整应用里用部件清单。 */
+     完整应用里用部件清单。
+     — M15: yaw inertia resolved in three tiers (explicit > FSAE parts list > rectangular approximation), same source of truth as engine transient.py::resolve_yaw_inertia. Inline it here instead of calling 02-presets.js::resolveYawInertia: this file is loaded ALONE in the tphys_parity sandbox (no other modules), so a hard call would throw ReferenceError and kill the comparison (hit in practice). Feature-detect instead: the sandbox falls back to the rectangular approximation (the parity anchor passes iz explicitly, unaffected), while the full app uses the parts list. */
   const _izDecl = body.iz_kg_m2;
   let _izVal, _izSrc;
   if(_izDecl){ _izVal = _izDecl; _izSrc = "declared"; }
@@ -361,35 +364,36 @@ const TPHYS = (function(){
   return {run:run, makeSimContext:makeSimContext};
 })();
 
-/* ================================ 14b. 赛道瞬态仿真（S3-2 前端闭环） ================================ */
+/* ================================ 14b. 赛道瞬态仿真（S3-2 前端闭环） — 14b. Track transient simulation (S3-2 front-end closed loop) ================================ */
 /* 数据链：本面板调校状态 → trackPayload()（复用整车 vehicle + 前端扫掠 K&C 查表）
    → POST /api/v3/chassis/simulate_track (或内置 TPHYS 闭包) → trace 时序 → 回放（俯视轨迹 + 3D 侧倾联动
-   + 遥测 HUD）。回放时 simulate() 被 trackStep 接管（roll 来自引擎准静态内核）。 */
+   + 遥测 HUD）。回放时 simulate() 被 trackStep 接管（roll 来自引擎准静态内核）。
+   — Data chain: this panel's tuning state -> trackPayload() (reuses the full vehicle + front-end sweep K&C lookup) -> POST /api/v3/chassis/simulate_track (or the built-in TPHYS closure) -> trace time series -> replay (top-down trajectory + 3D roll coupling + telemetry HUD). During replay simulate() is taken over by trackStep (roll comes from the engine's quasi-static core). */
 const TRK={
   res:null, req:null, mu:5250/3500,
   playing:false, i:0, speed:1.0, active:false, ready:false,
   preset:"skidpad", custom:null
 };
 const TRACK_PRESETS={
-  skidpad:{zh:"FSAE 稳态定圆 R=30m",closed:true,v:12.0,pts:(function(){
+  skidpad:{zh:"FSAE steady-state circle R=30m",closed:true,v:12.0,pts:(function(){
     const o=[];for(let k=0;k<64;k++){const t=2*PI*k/64;o.push([30*Math.cos(t),30*Math.sin(t)]);}return o;})()},
-  skidpad8:{zh:"FSAE 官方 8字定圆 (双环 R=15m)",closed:true,v:11.0,pts:(function(){
+  skidpad8:{zh:"FSAE official figure-8 (twin rings R=15m)",closed:true,v:11.0,pts:(function(){
     const o=[];
     for(let k=0;k<48;k++){const t=-PI/2-2*PI*k/48;o.push([+(15+15*Math.cos(t)).toFixed(3),+(15*Math.sin(t)).toFixed(3),11.0]);}
     for(let k=0;k<48;k++){const t=-PI/2+2*PI*k/48;o.push([+(-15-15*Math.cos(t)).toFixed(3),+(15*Math.sin(t)).toFixed(3),11.0]);}
     return o;})()},
-  autocross:{zh:"FSAE 官方 Autocross (800m 综合计时)",closed:true,v:0,pts:[
+  autocross:{zh:"FSAE official Autocross (800m combined timed)",closed:true,v:0,pts:[
     [0,0,14],[40,0,18],[80,5,16],[110,25,12],[125,55,10],[115,85,11],[95,115,13],[70,140,9],
     [40,145,9],[15,130,12],[-15,105,15],[-45,85,14],[-75,70,11],[-95,45,9],[-85,20,11],
     [-65,0,13],[-40,-15,12],[-15,-15,11]]},
-  accel:{zh:"FSAE 官方 75m 加速与制动区",closed:false,v:0,pts:[
+  accel:{zh:"FSAE official 75m accel & braking zone",closed:false,v:0,pts:[
     [0,0,0],[10,0,10],[25,0,18],[50,0,26],[75,0,32],[90,0,15],[110,0,0]]},
-  slalom:{zh:"FSAE 蛇形绕桩 (30m 桩距)",closed:false,v:13.0,pts:(function(){
+  slalom:{zh:"FSAE slalom cones (30m spacing)",closed:false,v:13.0,pts:(function(){
     const o=[[0,0]];for(let k=0;k<5;k++)o.push([15+30*k,(k%2?3.6:-3.6)]);o.push([180,0]);return o;})()},
-  minigp:{zh:"Mini GP 短道（发卡+S弯）",closed:true,v:0,pts:[
+  minigp:{zh:"Mini GP short circuit (hairpins + esses)",closed:true,v:0,pts:[
     [0,0,15],[50,0,17],[80,2,13],[95,15,10],[92,35,9],[75,45,10],
     [50,42,13],[35,48,11],[18,42,10],[5,28,9],[0,12,12]]},
-  shanghai:{zh:"上海国际赛车场 (F1 SIC 5.45km 全赛道)",closed:true,v:0,pts:[
+  shanghai:{zh:"Shanghai International Circuit (F1 SIC 5.45km full track)",closed:true,v:0,pts:[
     [0,0,75],[40,120,80],[80,240,85],[120,360,86],[150,450,75],
     [180,520,64],[235,580,64],[305,585,60],[360,545,55],[370,490,48],[335,450,45],[275,450,38],
     [215,470,28],[185,440,22],[200,400,24],[240,390,30],
@@ -412,7 +416,8 @@ function trackPayload(){
   else{const P=TRACK_PRESETS[TRK.preset]||TRACK_PRESETS.skidpad;closed=P.closed;
     pts=P.pts.map(p=>({x:p[0],y:p[1],target_speed:(p[2]!==undefined?p[2]:P.v)}));}
   /* F-52（2026-08-30）：trkLook/trkV0 控件可能尚未在 DOM 创建（与 ：4219/:4353 的
-     null 防御同款兜底）——此前直接 .value 抛 TypeError 使整条赛道链路死亡。 */
+     null 防御同款兜底）——此前直接 .value 抛 TypeError 使整条赛道链路死亡。
+     — F-52: the trkLook/trkV0 controls may not exist in the DOM yet (same null-guard as :4219/:4353) — reading .value directly used to throw TypeError and kill the whole track chain. */
   const ctlVal=(id,dflt)=>{const e=document.getElementById(id);
     if(!e)return dflt;const v=parseFloat(e.value);return Number.isFinite(v)?v:dflt;};
   const body={vehicle:base.vehicle,
@@ -430,14 +435,15 @@ function trackPayload(){
       FzNom:ctlVal("ssFzN",3500),
       Ls:ctlVal("ssLs",0.35),
       Cg:ctlVal("ssCg",6.0),
-      /* M8：同 792 行处——LS 参考载荷与前端瞬态层同源，防两内核口径分叉 */
+      /* M8：同 792 行处——LS 参考载荷与前端瞬态层同源，防两内核口径分叉 — M8: same as line 792 — LS reference load kept same-source with the front-end transient layer so the two kernels never diverge */
       FzRef:Math.max(1,(typeof S!=="undefined"&&S.mTotal?S.mTotal:1000)*9.81/4),
       LS:0.10, By:20, Cy:1.2, Ey:-0.5}};
   /* G31-P10-4：动力工坊定制规格下发——仅当生效 spec 与 legacy-equivalent
      物理不等价时才叠加嵌套字段（PowertrainSpec 继承 PowertrainParams，
      标量键共存；缺省不发 → payload 与旧行为逐字节一致，对拍锚不变）。
      前端专有字段（fricA/fricB/fricC/throttleTau/slipRefRadS/diff/centerDiff）
-     由 Python 端 PowertrainSpec extra=ignore 吸收。 */
+     由 Python 端 PowertrainSpec extra=ignore 吸收。
+     — G31-P10-4: powertrain-workshop custom spec submission — nested fields are only added when the effective spec is NOT physically equivalent to legacy (PowertrainSpec extends PowertrainParams, scalar keys coexist; nothing sent by default -> payload byte-identical to old behavior, parity anchor unchanged). Front-end-only fields (fricA/fricB/fricC/throttleTau/slipRefRadS/diff/centerDiff) are absorbed by Python-side PowertrainSpec extra=ignore. */
   if(typeof POWERTRAIN!=="undefined" && POWERTRAIN.spec && !POWERTRAIN.isLegacyEquivalent()){
     const ptSpec=JSON.parse(JSON.stringify(POWERTRAIN.spec));
     body.powertrain.architecture=ptSpec.architecture;
@@ -449,17 +455,17 @@ function trackPayload(){
     if(ptSpec.gearbox)body.powertrain.gearbox=ptSpec.gearbox;
     if(ptSpec.battery)body.powertrain.battery=ptSpec.battery;
   }
-  /* G29 轮胎工坊自定义参数注入（base.tire 来自 chassisPayload 的 SIM.userTire） */
+  /* G29 轮胎工坊自定义参数注入（base.tire 来自 chassisPayload 的 SIM.userTire） — G29 tire-workshop custom parameter injection (base.tire comes from SIM.userTire in chassisPayload) */
   if(base.tire) Object.assign(body.tire, base.tire);
-  /* 轮胎实测标定优先（讲义 EP08 数据链）：辨识成功后覆写参数 */
+  /* 轮胎实测标定优先（讲义 EP08 数据链）：辨识成功后覆写参数 — measured tire calibration wins (lecture EP08 data chain): overwrite parameters after successful identification */
   if(typeof SIM!=="undefined" && SIM.tireCalib){const tc=SIM.tireCalib;
     Object.assign(body.tire,{Fy0:tc.Fy0,FzNom:tc.FzNom,LS:tc.LS,By:tc.By,Cy:tc.Cy});
     if(isFinite(SIM.tireCalibEy))body.tire.Ey=SIM.tireCalibEy;}
   return body;
 }
 async function trackRun(){
-  const btn=document.getElementById("trkRun");if(btn)btn.textContent="仿真中…";
-  setTrkStatus(ENG.ok?"赛道瞬态仿真中…（引擎 /api/v3/chassis/simulate_track）":"赛道瞬态仿真中…（内置 JS 物理 TPHYS）",C.txt2);
+  const btn=document.getElementById("trkRun");if(btn)btn.textContent="Simulating…";
+  setTrkStatus(ENG.ok?"Transient track simulation running… (engine /api/v3/chassis/simulate_track)":"Transient track simulation running… (built-in JS physics TPHYS)",C.txt2);
   try{
     const body=trackPayload();TRK.req=body;
     let res;
@@ -481,20 +487,20 @@ async function trackRun(){
     TRK.i=0;TRK.playing=true;TRK.active=true;TRK.ready=true;
     fitTopViewToTrack();
     const sm=TRK.res.summary;
-    setTrkStatus((res.builtin?"[内置JS] ":"")+`完成：${sm.path_length_m}m · v_max ${sm.v_max}m/s · max ${sm.max_ay_g}g · ${TRK.res.ms|0}ms`+
-      (TRK.res.finished?"（到达终点）":"（限时截止）"),C.ok);
-  }catch(err){setTrkStatus("仿真失败："+err.message,C.nodeFix);}
-  finally{if(btn)btn.textContent="运行赛道仿真 RUN";}
+    setTrkStatus((res.builtin?"[built-in JS] ":"")+`Done: ${sm.path_length_m}m · v_max ${sm.v_max}m/s · max ${sm.max_ay_g}g · ${TRK.res.ms|0}ms`+
+      (TRK.res.finished?" (finish reached)":" (time limit reached)"),C.ok);
+  }catch(err){setTrkStatus("Simulation failed: "+err.message,C.nodeFix);}
+  finally{if(btn)btn.textContent="Run track simulation";}
   syncTrackUI();
 }
-function trackExit(){TRK.active=false;TRK.playing=false;syncTrackUI();setTrkStatus("已退出回放（恢复本地求解模式）",C.txt3);}
+function trackExit(){TRK.active=false;TRK.playing=false;syncTrackUI();setTrkStatus("Replay exited (back to local solve mode)",C.txt3);}
 
 function applyTrackFrame(i){
   const tr=TRK.res.trace;if(!tr||!tr[i])return;
   const row=tr[i],rDeg=row.roll||0;
   const MF=SIM.FR,MR=SIM.RR,NF=SIM.FL,NR=SIM.RL;
   const z0F=MF.n[MF.idx.WC].p0[2],z0R=MR.n[MR.idx.WC].p0[2];
-  const rack=clamp((row.delta||0)*R2D/0.5,-20,20);      /* 自行车转角→齿条 mm（显示用近似） */
+  const rack=clamp((row.delta||0)*R2D/0.5,-20,20);      /* 自行车转角→齿条 mm（显示用近似） — bicycle-model steer angle -> rack mm (display approximation) */
   driveTo(MF,z0F+travelR(SIM.halfF,rDeg),rack,'front');  SIM.mFR=metrics(MF,'front');
   driveTo(MR,z0R+travelR(SIM.halfR,rDeg),0,'rear');      SIM.mRR=metrics(MR,'rear');
   if(S.show.mirror){
@@ -550,7 +556,7 @@ function drawTrackOverlay(v){
 }
 function renderTrackTelemetry(row,i){
   const tr=TRK.res.trace;
-  /* G-G 图（ax 数值微分） */
+  /* G-G 图（ax 数值微分） — G-G diagram (numeric differentiation of ax) */
   const gg=document.getElementById("trkGG");
   if(gg){const tArr=TRK.res.t;const dpr=Math.min(2,devicePixelRatio||1),w=gg.clientWidth||200,h=gg.clientHeight||200;
     if(gg.width!==w*dpr){gg.width=w*dpr;gg.height=h*dpr;}
@@ -572,7 +578,7 @@ function renderTrackTelemetry(row,i){
     ctx.arc(cx0+ax*sc,cy0-(row.ay/9.81)*sc,3.6,0,6.2832);ctx.fill();
     ctx.fillStyle=C.txt3;ctx.font="8.5px ui-monospace,monospace";
     ctx.fillText("G-G (μ="+TRK.mu.toFixed(2)+")",6,11);}
-  /* 四轮载荷柱 */
+  /* 四轮载荷柱 — four-wheel load bars */
   const fz=document.getElementById("trkFZ");
   if(fz){const dpr=Math.min(2,devicePixelRatio||1),w=fz.clientWidth||280,h=fz.clientHeight||64;
     if(fz.width!==w*dpr){fz.width=w*dpr;fz.height=h*dpr;}
@@ -586,23 +592,23 @@ function renderTrackTelemetry(row,i){
       ctx.fillStyle=C.txt2;ctx.font="8.5px ui-monospace,monospace";
       ctx.fillText(k,12+q*bw+bw/2-6,h-3);
       ctx.fillText((v0|0)+"",12+q*bw+4,h-16-bh);});}
-  /* 三联曲线 */
+  /* 三联曲线 — triple curves */
   const t=TRK.res.t,xr=[t[0],t[t.length-1]||1];
   const mk=(id,title,unit,key,fn)=>{
     const cv=document.getElementById(id);if(!cv)return;
     plotXYMulti(cv,title,unit,[{c:C.strut,pts:tr.map((p,k)=>[t[k],fn?fn(p):(p[key]||0)])}],xr,t[i]);};
-  mk("trkC1","车速 SPEED","m/s","vx");
-  mk("trkC2","侧向加速度 LAT ACC","m/s²","ay");
-  mk("trkC3","转向角 STEER","rad","delta");
+  mk("trkC1","Vehicle speed","m/s","vx");
+  mk("trkC2","Lateral acceleration","m/s²","ay");
+  mk("trkC3","Steering angle","rad","delta");
 }
 function syncTrackUI(){
   const pb=document.getElementById("trkPlay"),sc=document.getElementById("trkScrub");
-  if(pb)pb.textContent=TRK.playing?"⏸ 暂停":"▶ 播放";
+  if(pb)pb.textContent=TRK.playing?"⏸ Pause":"▶ Play";
   if(sc&&TRK.res){sc.max=TRK.res.trace.length-1;sc.value=TRK.i;}
 }
 function setTrkStatus(t,c){const e=document.getElementById("trkStatus");if(e){e.textContent=t;e.style.color=c||C.txt3;}}
 function trackCSV(){
-  if(!TRK.res){setTrkStatus("先运行一次仿真",C.ela);return;}
+  if(!TRK.res){setTrkStatus("Run a simulation first",C.ela);return;}
   const tr=TRK.res.trace,ks=Object.keys(tr[0]);
   const csv=[ks.join(",")].concat(tr.map(p=>ks.map(k=>p[k]).join(","))).join("\n");
   const a=document.createElement("a");
@@ -618,8 +624,8 @@ const STAGE={
   cam:"behind", trace:null, v:null, tMax:1, raf:0, last:0, built:false, loop:true
 };
 const STAGE_CAMS=[
-  ["behind","尾部跟随"],["front","前部跟随"],["threeq","斜45deg跟随"],
-  ["top","顶视跟随"],["trackside","固定机位(起点)"]
+  ["behind","Chase behind"],["front","Chase front"],["threeq","45° chase"],
+  ["top","Top-down follow"],["trackside","Fixed camera (start)"]
 ];
 const STAGE_CAM_OFF={
   behind:[0,-13.5,4.4], front:[0,13.5,3.6], threeq:[8.5,-10.5,4.8],
@@ -641,59 +647,59 @@ function _stageBuild(){
   const w=document.createElement("div");w.id="stageWrap";
   w.innerHTML=
     '<div id="stageTop">'+
-      '<b class="st-bt">LABSUS - 赛道瞬态舞台</b><span class="st-st" id="stStatus">--</span>'+
+      '<b class="st-bt">LABSUS - Track Transient Stage</b><span class="st-st" id="stStatus">--</span>'+
       '<span class="sp"></span><span class="st-cams" id="stCams"></span>'+
       '<button class="st-btn" id="stPlay">PAUSE</button>'+
       '<select class="st-sel" id="stRate"><option value="0.5">0.5x</option><option value="1" selected>1.0x</option><option value="2">2.0x</option></select>'+
       '<input id="stScrub" type="range" min="0" max="1000" value="0">'+
-      '<button class="st-btn danger" id="stExit">X 退出</button>'+
+      '<button class="st-btn danger" id="stExit">X Exit</button>'+
     '</div>'+
     '<div id="stageBody">'+
       '<div id="stageCanvasBox"><canvas id="stageCanvas"></canvas></div>'+
       '<div id="stageSide">'+
-        '<div class="ss-t">四轮摩擦圆 TIRE FRICTION CIRCLES</div>'+
+        '<div class="ss-t">Tire friction circles (4 wheels)</div>'+
         '<div id="fcGrid"></div>'+
-        '<div class="ss-t">关键物理 LIVE TELEMETRY</div>'+
+        '<div class="ss-t">Live physics — LIVE TELEMETRY</div>'+
         '<div id="telGrid" class="telg"></div>'+
       '</div>'+
     '</div>';
   body.appendChild(w);
   const st=document.createElement("div");st.id="stageSetup";
   st.innerHTML=
-    '<div id="ssHead"><b>赛道仿真 - 初始属性设置</b><button class="st-btn danger" id="ssCancel">取消</button></div>'+
+    '<div id="ssHead"><b>Track simulation - initial setup</b><button class="st-btn danger" id="ssCancel">Cancel</button></div>'+
     '<div id="ssBody">'+
       '<div class="ss-col">'+
-        '<div class="ss-t">赛道图 TRACK</div>'+
-        '<div class="selrow"><label>预设</label><select id="ssPreset"></select></div>'+
+        '<div class="ss-t">Track map</div>'+
+        '<div class="selrow"><label>Preset</label><select id="ssPreset"></select></div>'+
         '<canvas id="ssPreview" width="320" height="200"></canvas>'+
-        '<div class="selrow"><button class="st-btn" id="ssImport">导入 JSON/CSV 路点</button></div>'+
-        '<div class="selrow"><label>模拟时长 s</label><input id="ssTime" type="number" value="25" step="1" min="5" max="120"></div>'+
+        '<div class="selrow"><button class="st-btn" id="ssImport">Import JSON/CSV waypoints</button></div>'+
+        '<div class="selrow"><label>Sim duration s</label><input id="ssTime" type="number" value="25" step="1" min="5" max="120"></div>'+
       '</div>'+
       '<div class="ss-col">'+
-        '<div class="ss-t">车辆与动力 VEHICLE and POWERTRAIN</div>'+
+        '<div class="ss-t">Vehicle & powertrain</div>'+
         '<div class="telg">'+
-          '<label>初速 m/s</label><input id="ssV0" type="number" value="6" step="0.5" min="2" max="30">'+
-          '<label>预瞄增益</label><input id="ssLook" type="number" value="0.9" step="0.05" min="0.4" max="1.5">'+
-          '<label>峰值扭矩 Nm</label><input id="ssTq" type="number" value="250" step="10" min="40" max="800">'+
-          '<label>峰值功率 kW</label><input id="ssPw" type="number" value="80" step="5" min="20" max="400">'+
-          '<label>前轴制动 %</label><input id="ssBrk" type="number" value="60" step="5" min="0" max="100">'+
+          '<label>Initial speed m/s</label><input id="ssV0" type="number" value="6" step="0.5" min="2" max="30">'+
+          '<label>Look-ahead gain</label><input id="ssLook" type="number" value="0.9" step="0.05" min="0.4" max="1.5">'+
+          '<label>Peak torque Nm</label><input id="ssTq" type="number" value="250" step="10" min="40" max="800">'+
+          '<label>Peak power kW</label><input id="ssPw" type="number" value="80" step="5" min="20" max="400">'+
+          '<label>Front axle braking %</label><input id="ssBrk" type="number" value="60" step="5" min="0" max="100">'+
         '</div>'+
-        '<div class="ss-t">气动 AERO</div>'+
+        '<div class="ss-t">Aero</div>'+
         '<div class="telg">'+
-          '<label>前下压 k</label><input id="ssAkf" type="number" value="0.55" step="0.05" min="0" max="4">'+
-          '<label>后下压 k</label><input id="ssAkr" type="number" value="0.45" step="0.05" min="0" max="4">'+
-          '<label>阻力 k</label><input id="ssAkd" type="number" value="0.35" step="0.05" min="0" max="4">'+
+          '<label>Front downforce k</label><input id="ssAkf" type="number" value="0.55" step="0.05" min="0" max="4">'+
+          '<label>Rear downforce k</label><input id="ssAkr" type="number" value="0.45" step="0.05" min="0" max="4">'+
+          '<label>Drag k</label><input id="ssAkd" type="number" value="0.35" step="0.05" min="0" max="4">'+
         '</div>'+
-        '<div class="ss-t">轮胎 TIRE (MF)</div>'+
+        '<div class="ss-t">Tire (MF)</div>'+
         '<div class="telg">'+
           '<label>Fy0 N</label><input id="ssFy0" type="number" value="5250" step="500" min="2000" max="20000">'+
           '<label>FzNom N</label><input id="ssFzN" type="number" value="3500" step="100" min="1000" max="8000">'+
-          '<label>松弛长度 m</label><input id="ssLs" type="number" value="0.35" step="0.05" min="0.05" max="1">'+
-          '<label>外倾系数 /rad</label><input id="ssCg" type="number" value="6.0" step="0.5" min="0" max="12">'+
+          '<label>Relaxation length m</label><input id="ssLs" type="number" value="0.35" step="0.05" min="0.05" max="1">'+
+          '<label>Camber coefficient /rad</label><input id="ssCg" type="number" value="6.0" step="0.5" min="0" max="12">'+
         '</div>'+
-        '<button class="st-btn go" id="ssGo">开始赛道仿真</button>'+
-        '<label style="margin-left:14px;color:#cbd5e1;cursor:pointer"><input type="checkbox" id="ssUseEng"> 使用引擎 (/api/v3)</label>'+
-        '<div class="ss-st" id="ssStatus">选择预设或导入路点 - 设置参数 - 开始仿真</div>'+
+        '<button class="st-btn go" id="ssGo">Start track simulation</button>'+
+        '<label style="margin-left:14px;color:#cbd5e1;cursor:pointer"><input type="checkbox" id="ssUseEng"> Use engine (/api/v3)</label>'+
+        '<div class="ss-st" id="ssStatus">Choose a preset or import waypoints - set parameters - start simulation</div>'+
       '</div>'+
     '</div>';
   body.appendChild(st);
@@ -713,10 +719,10 @@ function _stageBuild(){
     fg.appendChild(cell);
   });
   const tg=document.getElementById("telGrid");
-  [["telV","车速 v","m/s"],["telAx","纵向 ax","m/s2"],["telAy","侧向 ay","g"],
-   ["telYaw","横摆 yaw","rad/s"],["telRoll","侧倾 roll","deg"],["telPitch","俯仰 pitch","deg"],
-   ["telDelta","转向 delta","deg"],["telMuMax","mu 利用率",""],["telThr","油门",""],
-   ["telBrk","制动",""],["telSlipMax","松弛滑移 max","deg"],["telDist","时间","s"]].forEach(d=>{
+  [["telV","Speed v","m/s"],["telAx","Longitudinal ax","m/s2"],["telAy","Lateral ay","g"],
+   ["telYaw","Yaw","rad/s"],["telRoll","Roll","deg"],["telPitch","Pitch","deg"],
+   ["telDelta","Steering delta","deg"],["telMuMax","Mu utilization",""],["telThr","Throttle",""],
+   ["telBrk","Braking",""],["telSlipMax","Relaxation slip max","deg"],["telDist","Time","s"]].forEach(d=>{
     const g=document.createElement("div");g.className="telg-item";
     g.innerHTML="<span>"+d[1]+" <u>"+d[2]+"</u></span><b id='"+d[0]+"'>--</b>";
     tg.appendChild(g);
@@ -756,11 +762,11 @@ function trackStageRun(){
   const st=document.getElementById("ssStatus");
   const wantEng=document.getElementById("ssUseEng")&&document.getElementById("ssUseEng").checked;
   if(!ENG.ok){
-    if(wantEng){st.textContent="引擎未连接 → 请先连接，或取消「使用引擎」改走内置 JS 物理 (TPHYS)";return;}
-    st.textContent="引擎未连接 → 内置 JS 物理 (TPHYS) 仿真中…";
+    if(wantEng){st.textContent="Engine not connected → connect first, or uncheck “Use engine” to run the built-in JS physics (TPHYS)";return;}
+    st.textContent="Engine not connected → running built-in JS physics (TPHYS)…";
   }else{
-    st.textContent=wantEng?"仿真中...(引擎 /api/v3/chassis/simulate_track)"
-      :"仿真中...(内置 JS 物理 TPHYS：MF 松弛/复合滑移 + 动力/气动包络)";
+    st.textContent=wantEng?"Simulating... (engine /api/v3/chassis/simulate_track)"
+      :"Simulating... (built-in JS physics TPHYS: MF relaxation/combined slip + powertrain/aero envelopes)";
   }
   const base=chassisPayload();
   const lut=sw=>({travel:sw.rows.map(r=>r.tr),toe:sw.rows.map(r=>r.toe),cam:sw.rows.map(r=>r.cam)});
@@ -790,7 +796,8 @@ function trackStageRun(){
      物理不等价时才叠加嵌套字段（PowertrainSpec 继承 PowertrainParams，
      标量键共存；缺省不发 → payload 与旧行为逐字节一致，对拍锚不变）。
      前端专有字段（fricA/fricB/fricC/throttleTau/slipRefRadS/diff/centerDiff）
-     由 Python 端 PowertrainSpec extra=ignore 吸收。 */
+     由 Python 端 PowertrainSpec extra=ignore 吸收。
+     — G31-P10-4: powertrain-workshop custom spec submission — nested fields are only added when the effective spec is NOT physically equivalent to legacy (PowertrainSpec extends PowertrainParams, scalar keys coexist; nothing sent by default -> payload byte-identical to old behavior, parity anchor unchanged). Front-end-only fields (fricA/fricB/fricC/throttleTau/slipRefRadS/diff/centerDiff) are absorbed by Python-side PowertrainSpec extra=ignore. */
   if(typeof POWERTRAIN!=="undefined" && POWERTRAIN.spec && !POWERTRAIN.isLegacyEquivalent()){
     const ptSpec=JSON.parse(JSON.stringify(POWERTRAIN.spec));
     body.powertrain.architecture=ptSpec.architecture;
@@ -802,13 +809,13 @@ function trackStageRun(){
     if(ptSpec.gearbox)body.powertrain.gearbox=ptSpec.gearbox;
     if(ptSpec.battery)body.powertrain.battery=ptSpec.battery;
   }
-  /* 轮胎实测标定优先（讲义 EP08 数据链）：辨识成功后覆写舞台胎参数 */
+  /* 轮胎实测标定优先（讲义 EP08 数据链）：辨识成功后覆写舞台胎参数 — measured tire calibration wins (lecture EP08 data chain): overwrite the stage tire parameters after successful identification */
   if(SIM.tireCalib){const tc=SIM.tireCalib;
     Object.assign(body.tire,{Fy0:tc.Fy0,FzNom:tc.FzNom,LS:tc.LS,By:tc.By,Cy:tc.Cy});
     if(isFinite(SIM.tireCalibEy))body.tire.Ey=SIM.tireCalibEy;}
   const useEng=document.getElementById("ssUseEng")&&document.getElementById("ssUseEng").checked&&ENG.ok;
   const finishStage=function(res){
-    if(res.status!=="VALID"){document.getElementById("ssStatus").textContent="仿真失败："+res.status;return;}
+    if(res.status!=="VALID"){document.getElementById("ssStatus").textContent="Simulation failed: "+res.status;return;}
     STAGE.res=res;STAGE.trace=res.trace;STAGE.req=body;
     STAGE.tMax=res.t[res.t.length-1]||1;
     STAGE.open=true;STAGE.i=0;STAGE.playing=true;STAGE.scene=null;STAGE.mf=0;
@@ -817,7 +824,7 @@ function trackStageRun(){
     _stageSize();_stageOpen();STAGE.last=performance.now();requestAnimationFrame(stageTick);
     const sm=res.summary;
     document.getElementById("stStatus").textContent=
-      (res.builtin?"[内置JS] ":"")+sm.path_length_m+"m - v_max "+sm.v_max+"m/s - max "+sm.max_ay_g+"g - "+(res.ms|0)+"ms"+(res.finished?" (完赛)":"");
+      (res.builtin?"[built-in JS] ":"")+sm.path_length_m+"m - v_max "+sm.v_max+"m/s - max "+sm.max_ay_g+"g - "+(res.ms|0)+"ms"+(res.finished?" (finished)":"");
   };
   if(useEng){
     const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),120000);
@@ -825,7 +832,7 @@ function trackStageRun(){
       {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctl.signal})
     .then(r=>{clearTimeout(to);if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
     .then(res=>{finishStage(res);})
-    .catch(err=>{clearTimeout(to);document.getElementById("ssStatus").textContent="仿真失败："+err.message;});
+    .catch(err=>{clearTimeout(to);document.getElementById("ssStatus").textContent="Simulation failed: "+err.message;});
   }else{
     setTimeout(function(){
       const res=TPHYS.run(body, TPHYS.makeSimContext(body));
@@ -994,7 +1001,7 @@ function drawStageTelemetry(row){
 }
 
 function buildTrackPanel(host){
-  const b = sec(host, "动态驾驶测试 🏎️", "DYNAMIC TESTS", true, "blu");
+  const b = sec(host, "DYNAMIC TESTS 🏎️", "", true, "blu");
   
   const d = E("div");
   d.style.display = "flex"; 
@@ -1003,21 +1010,21 @@ function buildTrackPanel(host){
   d.style.padding = "6px 8px 8px 8px";
   
   const b1 = E("button"); 
-  b1.innerHTML = "🛣️ 直线综合工况试验场 (PROVING GROUND)"; 
+  b1.innerHTML = "🛣️ Straight-line multi-load-case proving ground (PROVING GROUND)"; 
   b1.onclick = () => { openSlopeStage(); };
   b1.style.padding = "7px 8px"; b1.style.background = "rgba(46,160,67,0.12)"; b1.style.border = "1px solid rgba(46,160,67,0.35)"; 
   b1.style.color = "#7ee787"; b1.style.borderRadius = "var(--r-sm)"; b1.style.cursor = "pointer"; b1.style.fontWeight = "600"; b1.style.fontSize = "10.5px"; b1.style.letterSpacing = "0.04em";
   b1.style.transition = "background .18s, border-color .18s, transform .1s";
   
   const b2 = E("button"); 
-  b2.innerHTML = "⭕ 定圆绕环稳态测试 (SKIDPAD)"; 
+  b2.innerHTML = "⭕ Steady-state circle test (SKIDPAD)"; 
   b2.onclick = () => { openSkidpadStage(); };
   b2.style.padding = "7px 8px"; b2.style.background = "rgba(210,153,34,0.12)"; b2.style.border = "1px solid rgba(210,153,34,0.35)"; 
   b2.style.color = "#e3b341"; b2.style.borderRadius = "var(--r-sm)"; b2.style.cursor = "pointer"; b2.style.fontWeight = "600"; b2.style.fontSize = "10.5px"; b2.style.letterSpacing = "0.04em";
   b2.style.transition = "background .18s, border-color .18s, transform .1s";
   
   const b3 = E("button"); 
-  b3.innerHTML = "🏁 综合赛道自动驾驶 (CIRCUIT)"; 
+  b3.innerHTML = "🏁 Full-circuit autopilot (CIRCUIT)"; 
   b3.onclick = () => { openCircuitStage(); };
   b3.style.padding = "7px 8px"; b3.style.background = "rgba(88,166,255,0.12)"; b3.style.border = "1px solid rgba(88,166,255,0.35)"; 
   b3.style.color = "#79c0ff"; b3.style.borderRadius = "var(--r-sm)"; b3.style.cursor = "pointer"; b3.style.fontWeight = "600"; b3.style.fontSize = "10.5px"; b3.style.letterSpacing = "0.04em";
@@ -1037,8 +1044,9 @@ function buildTrackPanel(host){
 }
 function buildTrackTelemetry(host){
   /* M7（2026-09-20）：默认折叠。此前 col=false ⇒ 5 张画布（200+64+110+96+96px）
-     在未跑赛道仿真时全部空着展开，把右坞站拉长近 600px 且看起来像坏掉。 */
-  const b2=sec(host,"赛道动态遥测","TRACK TELEMETRY · HUD",true,"purp");
+     在未跑赛道仿真时全部空着展开，把右坞站拉长近 600px 且看起来像坏掉。
+     — M7: collapsed by default. Previously col=false meant 5 canvases (200+64+110+96+96px) sat fully expanded and empty before any track simulation, dragging the right dock out by ~600px and looking broken. */
+  const b2=sec(host,"TRACK TELEMETRY · HUD","",true,"purp");
   const gg=E("canvas","plot");gg.id="trkGG";gg.style.height="200px";gg.style.width="100%";
   b2.appendChild(gg);
   const fz=E("canvas","plot");fz.id="trkFZ";fz.style.height="64px";fz.style.width="100%";
@@ -1052,8 +1060,9 @@ window.addEventListener("keydown",e=>{
   const t=e.target;
   if(t&&(t.tagName==="INPUT"||t.tagName==="SELECT"||t.tagName==="TEXTAREA"||t.isContentEditable))return;
   /* F-55（2026-08-30）：空格只在回放激活态生效——旧实现判断 TRK.res，
-     TRK.res 退出回放后永不清空，slope/skidpad 舞台的 Space 手刹被永久吃掉。 */
+     TRK.res 退出回放后永不清空，slope/skidpad 舞台的 Space 手刹被永久吃掉。
+     — F-55: Space only takes effect while replay is active — the old check tested TRK.res, which is never cleared after replay exit, permanently eating the Space handbrake on the slope/skidpad stages. */
   if(TRK.active&&TRK.res){e.preventDefault();TRK.playing=!TRK.playing;syncTrackUI();}
 });
 
-/* ================================ 15. 初始化与启动 ================================ */
+/* ================================ 15. 初始化与启动 — 15. Initialization & boot ================================ */

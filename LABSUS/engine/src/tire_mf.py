@@ -2,6 +2,13 @@
 
 S1 降阶：无复合滑移、无压力/温度项；摩擦圆（F_avail = μ(Fz)·Fz）作为
 无 MF 参数时的回退检查（沿用 V1 设计 §8.3）。
+
+Pacejka Magic Formula subset (S1): Fy(α,Fz), Fx(κ,Fz), Mz(α,Fz), with
+.tir-style parameter mapping.
+
+S1 reduced order: no combined slip, no pressure/temperature terms; the
+friction circle (F_avail = μ(Fz)·Fz) serves as the fallback check when no
+MF parameters are available (per the V1 design §8.3).
 """
 import math
 
@@ -13,7 +20,15 @@ def _load_d(d: dict[str, float]) -> dict[str, float]:
 
     M8：跳过 None（`FzRef` 的缺省语义是"未指定"，不是 0）——旧实现对全字典
     无差别 float() 强转，一旦有可空字段就 `TypeError: float() argument must be
-    ... not 'NoneType'`（实测打挂 7 个 transient 用例）。"""
+    ... not 'NoneType'`（实测打挂 7 个 transient 用例）。
+
+    Normalize numeric fields to float.
+
+    M8: skip None (the default semantics of `FzRef` is "unspecified", not
+    0) — the old implementation cast the whole dictionary to float()
+    indiscriminately, so any nullable field produced
+    `TypeError: float() argument must be ... not 'NoneType'` (observed to
+    break 7 transient test cases)."""
     return {k: float(v) for k, v in d.items() if v is not None}
 
 
@@ -22,9 +37,18 @@ def load_tir_params(src: dict) -> dict[str, float]:
 
     G24：回退缺省与 v3models.TireParams 保持同源（真实 GT3 光头胎量级，
     μ=5250/3500=1.50、By=20 ⇒ 峰值侧偏角 8.27°）。旧回退 8000/9.0 是占位值，
-    见 v3models.TireParams 文档。"""
+    见 v3models.TireParams 文档。
+
+    .tir-style mapping: B/C/E → By/Cy/Ey; Fy0 → D. Extend keys as needed.
+
+    G24: the fallback defaults stay in sync with v3models.TireParams
+    (real GT3 slick-tire magnitudes, μ=5250/3500=1.50, By=20 ⇒ peak slip
+    angle 8.27°). The old fallback 8000/9.0 was a placeholder; see the
+    v3models.TireParams documentation."""
     p = _load_d(src)
     # M8：FzRef 需保留"未指定"语义 ⇒ 不走 _load_d 的数值归一，单独校验。
+    # M8: FzRef must keep its "unspecified" semantics ⇒ do not run it
+    # through _load_d's numeric normalization; validate it separately.
     _ref = src.get("FzRef")
     _fzref = float(_ref) if isinstance(_ref, (int, float)) and not isinstance(_ref, bool) and _ref > 0 else None
     return {
@@ -34,6 +58,8 @@ def load_tir_params(src: dict) -> dict[str, float]:
         "FzNom": p.get("FzNom", 3500.0),
         "LS": p.get("LS", 0.0),
         # M8：载荷敏感性参考载荷。缺省 None ⇒ 退化为 FzNom（旧口径逐位不变）。
+        # M8: the load-sensitivity reference load. Default None ⇒ degrade to
+        # FzNom (old behavior bit-for-bit unchanged).
         "FzRef": _fzref,
     }
 
@@ -54,6 +80,30 @@ def load_d(fz: float, *, Fy0: float, FzNom: float = 3500.0, LS: float = 0.0,
     变化只能撬动 US +0.016 °/g——载荷转移类杠杆（ARB / 弹簧刚度 / 配重）几乎失效。
     传入真实静载作 FzRef 后，同一处实测杠杆达 +0.09 °/g。
     `FzRef=None`（缺省）退化为旧的 FzNom 口径，历史调用逐位不变。
+
+    Peak scale D(Fz) — **the project's single implementation** (applies
+    the Jensen load sensitivity when LS>0).
+
+    D = Fy0·(Fz/FzNom)·max(0.1, 1 − LS·(Fz/FzRef − 1)); with LS=0 it
+    degrades to the linear baseline.
+    M5 (2026-09-20) single-sourcing: previously this formula was written
+    out three times — in `evaluate_magic_formula_fy`, in
+    `MagicFormulaSub._d`, and in `api/chassis.py::_ca_mf`.
+
+    M8 (2026-09-20) **reference-load separation**: `FzNom` is the
+    **magnitude** reference (μ_nom = Fy0/FzNom, keeping the M5/G24
+    calibration unchanged), while `FzRef` is the **load-sensitivity**
+    reference (the operating point that the phrase "μ drops by LS per
+    doubling of load" is relative to). The old implementation conflated
+    the two, always using FzNom=3500 (GT3-class), while the actual FSAE
+    wheel load is about 580 N ⇒ the sensitivity was diluted ~6×: under a
+    measured ±100 N load swing, axle capacity only lost **0.037%**, so the
+    huge swing in roll stiffness 470→3351 N·m/° and TLLTD 45%→75% could
+    only move US by +0.016 °/g — load-transfer levers (ARB / spring
+    rates / ballast) were nearly ineffective. Passing the real static
+    load as FzRef makes the same measured lever worth +0.09 °/g.
+    `FzRef=None` (default) degrades to the old FzNom behavior; historical
+    calls are bit-for-bit unchanged.
     """
     if fz <= 0:
         return 0.0
@@ -85,6 +135,24 @@ def cornering_stiffness(
     标定（μ=1.50 / 峰值侧偏角 8.27°）。等宽或缺字段时 k≡1。
 
     `FzRef` = 载荷敏感性参考载荷（M8，见 `load_d`）；缺省退化为 FzNom。
+
+    Cornering stiffness Cα = dFy/dα|α=0 (N/rad) = axle_scale · By · Cy ·
+    D(Fz).
+
+    **The project's single implementation**: both the MF parameter entry
+    point `MagicFormulaSub.cornering_stiffness` and the vehicle-level US
+    gradient in `api/chassis.py` delegate to this function (M5
+    single-sourcing; previously two copies existed).
+
+    `axle_scale` = the axle balancing factor k = W_axle / mean(W_f, W_r),
+    balanced by tire width (M5 B3): it only amplifies the **stiffness
+    factor**, never the peak D (μ·Fz is essentially independent of tire
+    width) ⇒ it does not affect the tire-magnitude calibration
+    (μ=1.50 / peak slip angle 8.27°). With equal widths or missing fields,
+    k≡1.
+
+    `FzRef` = the load-sensitivity reference load (M8, see `load_d`);
+    the default degrades to FzNom.
     """
     return float(axle_scale * By * Cy
                  * load_d(fz, Fy0=Fy0, FzNom=FzNom, LS=LS, FzRef=FzRef))
@@ -121,17 +189,33 @@ class MagicFormulaSub:
 
         M8：`FzRef` 随参数走（轮胎级设定）——由 `load_tir_params` 从 .tir/请求
         原样带入，缺省 None ⇒ 旧 FzNom 口径。
+
+        Peak scale D(Fz); implemented at module level in `load_d` (the
+        project's single implementation).
+
+        M8: `FzRef` travels with the parameters (a per-tire setting) —
+        carried in as-is by `load_tir_params` from the .tir file/request;
+        the default None ⇒ the old FzNom behavior.
         """
         return load_d(fz, Fy0=self.p["Fy0"], FzNom=self.p["FzNom"],
                       LS=self.p.get("LS", 0.0), FzRef=self.p.get("FzRef"))
 
     @property
     def mu(self) -> float:
-        """摩擦圆预算（与 MF 标称峰值同源——修复 2026-08-22：不再独立硬编码 μ）。"""
+        """摩擦圆预算（与 MF 标称峰值同源——修复 2026-08-22：不再独立硬编码 μ）。
+
+        Friction-circle budget (same source as the MF nominal peak — fixed
+        2026-08-22: μ is no longer hardcoded independently).
+        """
         return self.p["Fy0"] / self.p["FzNom"]
 
     def fy_rad(self, a_rad, fz: float) -> np.ndarray:
-        """侧偏角为弧度时的横向力计算（辨识与底层求解器同源入口）。"""
+        """侧偏角为弧度时的横向力计算（辨识与底层求解器同源入口）。
+
+        Lateral force when the slip angle is given in radians (the entry
+        point shared by the identification code and the underlying
+        solver).
+        """
         return evaluate_magic_formula_fy(
             a_rad, fz,
             Fy0=self.p["Fy0"],
@@ -155,7 +239,20 @@ class MagicFormulaSub:
         抓地力与稳态不足转向梯度的轮胎侧根基（讲义 EP08/EP10）。
         实现在模块级 `cornering_stiffness`（全工程唯一，chassis 的 US 梯度
         走同一函数）；`axle_scale` = 按胎宽配平的轴系数（见该函数文档）；
-        `FzRef` = 载荷敏感性参考载荷（M8，见 `load_d`）。"""
+        `FzRef` = 载荷敏感性参考载荷（M8，见 `load_d`）。
+
+        Cornering stiffness Cα = dFy/dα @α=0 (N/rad): the linear-region
+        slope = axle_scale·B·C·D(Fz).
+
+        Includes load sensitivity (LS) — under heavy load Cα keeps rising
+        but sub-linearly; this is the tire-side root cause of load transfer
+        costing total axle grip and of the steady-state understeer gradient
+        (lectures EP08/EP10).
+        Implemented at module level in `cornering_stiffness` (the
+        project's single implementation; chassis's US gradient calls the
+        same function); `axle_scale` = the axle balancing factor by tire
+        width (see that function's doc); `FzRef` = the load-sensitivity
+        reference load (M8, see `load_d`)."""
         return cornering_stiffness(fz, Fy0=self.p["Fy0"], By=self.p["By"],
                                    Cy=self.p["Cy"], FzNom=self.p["FzNom"],
                                    LS=self.p.get("LS", 0.0), axle_scale=axle_scale,
@@ -172,5 +269,13 @@ class MagicFormulaSub:
 
         trail_mm：简化气动拖距（mm）。仍为单点近似 —— 无 Mz 峰值/形变耦合，
         标注 APPROXIMATE；调用方应显式传入真实值以撤除占位。
+
+        MZ = Fy × a simplified trail (P5-parametrized; the 60mm default
+        keeps the historical APPROXIMATE semantics).
+
+        trail_mm: the simplified pneumatic trail (mm). Still a single-point
+        approximation — no Mz peak/deformation coupling — marked
+        APPROXIMATE; callers should pass the real value explicitly to
+        remove the placeholder.
         """
         return self.fy(alpha_deg, fz) * (trail_mm / 1000.0)

@@ -5,6 +5,13 @@
 - 圆环：轨迹贴圆（半径中位数）、横摆率 ≈ v/R、侧倾方向、摩擦圆预算不被超
 - K&C 查表：前束 LUT 生效（直线被拉偏）——LUT→动力学的作用链
 - 非法输入 422
+
+English: /api/v3/chassis/simulate_track transient simulation acceptance tests (S3-1).
+Physical assertions (Lecture-11 methodology — assert physical properties, not magic numbers):
+- straight line: symmetry (small |y| drift, ay≈0, equal left/right wheel loads) + speed converging to target
+- circle: trajectory hugging the circle (median radius), yaw rate ≈ v/R, roll direction, friction-circle budget not exceeded
+- K&C lookup tables: the front-toe LUT takes effect (the straight line gets pulled off) — the LUT->dynamics action chain
+- invalid input -> 422
 """
 import math
 
@@ -17,6 +24,9 @@ client = TestClient(app)
 
 # S3-1 升级（2026-08-24）：赛道瞬态按 FSAE 规格基线（wb1620 / 480kg），
 # 与引擎 PRESETS 紧凑宽体一致；旧 2750/1420 乘用车基线随动力包络升级废除。
+# S3-1 upgrade (2026-08-24): the track transient uses an FSAE-spec baseline (wb1620 / 480 kg),
+# matching the engine PRESETS compact wide-body; the old 2750/1420 passenger-car baseline
+# is retired along with the powertrain-envelope upgrade.
 _FRONT = {
     "LCA_F": [260, 140, 130], "LCA_R": [260, -120, 140], "UCA_F": [350, 110, 340],
     "UCA_R": [350, -100, 350], "LBJ": [640, 10, 150], "UBJ": [590, -15, 410],
@@ -54,7 +64,7 @@ def _body(track, **over):
 
 
 def test_transient_straight_line():
-    """直线加速：对称性 + 速度控制。"""
+    """直线加速：对称性 + 速度控制。"""  # English: straight-line acceleration: symmetry + speed control.
     track = [{"x": 0, "y": 0, "target_speed": 15.0},
              {"x": 60, "y": 0, "target_speed": 15.0},
              {"x": 120, "y": 0, "target_speed": 15.0}]
@@ -63,19 +73,19 @@ def test_transient_straight_line():
     b = r.json()
     assert b["status"] == "VALID"
     tr = b["trace"]
-    # 对称性：不走偏、不侧倾、左右轮载相等
+    # 对称性：不走偏、不侧倾、左右轮载相等 — symmetry: no path drift, no roll, equal left/right wheel loads
     assert max(abs(p["y"]) for p in tr) < 0.5
-    assert max(abs(p["ay"]) for p in tr[2:]) < 0.5          # 初段转向暂态后 ay≈0
+    assert max(abs(p["ay"]) for p in tr[2:]) < 0.5          # 初段转向暂态后 ay≈0 — ay≈0 after the initial steering transient
     for p in tr[3:]:
         assert abs(p["fz_FR"] - p["fz_FL"]) < 1.0
         assert abs(p["fz_RR"] - p["fz_RL"]) < 1.0
-    # 速度收敛
+    # 速度收敛 — speed convergence
     assert tr[-1]["vx"] > 14.0
     assert b["summary"]["path_length_m"] > 80.0
 
 
 def test_transient_circle_steady_state():
-    """圆环 r=30m @12m/s：轨迹贴圆 + 横摆率 ≈ v/R + 摩擦圆预算。"""
+    """圆环 r=30m @12m/s：轨迹贴圆 + 横摆率 ≈ v/R + 摩擦圆预算。"""  # English: circle r=30m @12m/s: trajectory hugging the circle + yaw rate ≈ v/R + friction-circle budget.
     R = 30.0
     track = [{"x": R * math.cos(th), "y": R * math.sin(th), "target_speed": 12.0}
              for th in np.linspace(0, 2 * math.pi, 65)[:-1]]
@@ -83,20 +93,23 @@ def test_transient_circle_steady_state():
                     json=_body(track, sim_time=20.0, start_speed=12.0))
     assert r.status_code == 200
     b = r.json()
-    tr, _t = b["trace"], np.array(b["t"])   # _t: 平行时间轴，本用例不直接用
-    # 稳态段（跳过入弯暂态）：半径与横摆率中位数
+    tr, _t = b["trace"], np.array(b["t"])   # _t: 平行时间轴，本用例不直接用 — _t: parallel time axis, unused directly in this case
+    # 稳态段（跳过入弯暂态）：半径与横摆率中位数 — steady section (corner-entry transient skipped): median radius and yaw rate
     d = np.array([math.hypot(p["x"], p["y"]) for p in tr])
     r_yaw = np.abs(np.array([p["r"] for p in tr]))
     steady = slice(len(tr) // 4, None)
-    assert 27.0 < np.median(d[steady]) < 33.0               # 贴圆（±3m 走廊）
-    assert 0.33 < np.median(r_yaw[steady]) < 0.47           # ≈ v/R = 0.40（含猎振容差）
-    # 外侧加载（纯追踪绕行方向恒定）：任一时刻左右轮载差显著
+    assert 27.0 < np.median(d[steady]) < 33.0               # 贴圆（±3m 走廊） — hugging the circle (±3 m corridor)
+    assert 0.33 < np.median(r_yaw[steady]) < 0.47           # ≈ v/R = 0.40（含猎振容差） — ≈ v/R = 0.40 (with hunting-oscillation tolerance)
+    # 外侧加载（纯追踪绕行方向恒定）：任一时刻左右轮载差显著 — outer-side loading (pure pursuit keeps a constant circling direction): notable left/right wheel-load difference at some instant
     assert any(abs(p["fz_FR"] - p["fz_FL"]) > 400 for p in tr[steady])
-    # 侧倾与 ay 同号量级：ay ≈ 4.8 m/s²，roll 在 0.2~1.5°
+    # 侧倾与 ay 同号量级：ay ≈ 4.8 m/s²，roll 在 0.2~1.5° — roll shares sign and scale with ay: ay ≈ 4.8 m/s², roll 0.2–1.5°
     assert any(0.15 < abs(p["roll"]) < 2.0 for p in tr[steady])
-    # 摩擦圆预算：√(Fx²+Fy²) ≤ μ·Fz（μ=Fy0/FzNom，留 5% 数值余量）
+    # 摩擦圆预算：√(Fx²+Fy²) ≤ μ·Fz（μ=Fy0/FzNom，留 5% 数值余量） — friction-circle budget: √(Fx²+Fy²) ≤ μ·Fz (μ = Fy0/FzNom, with 5% numerical headroom)
     # G24：不再把 μ 写死为 8000/3500——那会把断言与库缺省解耦，改了缺省后断言
     # 会静默退化成“用旧 μ 校验新仿真”的空检查。直接从 TireParams 缺省取。
+    # G24: μ is no longer hard-coded to 8000/3500 — that would decouple the assertion from the library default and,
+    # once the default changed, silently turn it into a hollow check that validates the new sim with the old μ.
+    # Take μ directly from the TireParams defaults.
     from src.api.v3models import TireParams
     _tp = TireParams()
     mu = _tp.Fy0 / _tp.FzNom
@@ -104,11 +117,11 @@ def test_transient_circle_steady_state():
     worst = max(math.hypot(p[f"fx_{w}"], p[f"fy_{w}"]) / (mu * p[f"fz_{w}"])
                 for p in tr for w in ("FR", "FL", "RR", "RL") if p[f"fz_{w}"] > 10)
     assert worst < 1.05
-    assert b["summary"]["path_length_m"] > 150.0            # 大半圈以上
+    assert b["summary"]["path_length_m"] > 150.0            # 大半圈以上 — more than half a lap
 
 
 def test_transient_kc_lut_toe_effect():
-    """K&C 查表作用链：前轴常数前束 LUT → 直线被拉偏。"""
+    """K&C 查表作用链：前轴常数前束 LUT → 直线被拉偏。"""  # English: K&C LUT action chain: constant front-toe LUT on the front axle → straight line pulled off.
     track = [{"x": 0, "y": 0, "target_speed": 10.0},
              {"x": 80, "y": 0, "target_speed": 10.0}]
     base = client.post("/api/v3/chassis/simulate_track",
@@ -119,24 +132,24 @@ def test_transient_kc_lut_toe_effect():
                                      kc_luts=lut)).json()
     y_base = max(abs(p["y"]) for p in base["trace"])
     y_lut = max(abs(p["y"]) for p in withlut["trace"])
-    assert y_base < 0.3                                      # 无 LUT 走直
-    assert y_lut > 0.5                                       # 前束拉出横向漂移
+    assert y_base < 0.3                                      # 无 LUT 走直 — without the LUT the car runs straight
+    assert y_lut > 0.5                                       # 前束拉出横向漂移 — toe pulls out a lateral drift
     assert y_lut > y_base + 0.5
 
 
 def test_transient_braking_load_transfer():
-    """急刹段：前轴加载、后轴卸载（守恒方向检查）。"""
+    """急刹段：前轴加载、后轴卸载（守恒方向检查）。"""  # English: hard-braking segment: front axle loads up, rear axle unloads (conservation-direction check).
     track = [{"x": 0, "y": 0, "target_speed": 20.0},
-             {"x": 200, "y": 0, "target_speed": 4.0}]        # 远端低速 → 全程刹车需求
+             {"x": 200, "y": 0, "target_speed": 4.0}]        # 远端低速 → 全程刹车需求 — low speed at the far end → braking demanded the whole run
     r = client.post("/api/v3/chassis/simulate_track",
                     json=_body(track, sim_time=8.0, start_speed=20.0))
     tr = r.json()["trace"]
-    # 找减速段（vx 下降）比较前后轴载荷变化方向
+    # 找减速段（vx 下降）比较前后轴载荷变化方向 — find the decelerating segment (vx decreasing) and compare the front/rear axle load-change direction
     f0 = tr[2]["fz_FR"] + tr[2]["fz_FL"]
     f_peak = max(p["fz_FR"] + p["fz_FL"] for p in tr)
     r_peak = max(p["fz_RR"] + p["fz_RL"] for p in tr)
-    assert f_peak > f0 + 300                                 # 前轴明显加载
-    assert f_peak > r_peak                                   # 制动重心前移
+    assert f_peak > f0 + 300                                 # 前轴明显加载 — front axle clearly loads up
+    assert f_peak > r_peak                                   # 制动重心前移 — braking moves the effective CG forward
 
 
 def test_transient_invalid_input_422():
@@ -150,7 +163,7 @@ def test_transient_invalid_input_422():
     assert client.post("/api/v3/chassis/simulate_track", json=bad2).status_code == 422
 
 def test_aero_downforce_adds_front_load_and_drag():
-    """S3-1 升级·气动：k_down↑ → 前轮 Fz 增加；k_drag↑ → v_end 降低。"""
+    """S3-1 升级·气动：k_down↑ → 前轮 Fz 增加；k_drag↑ → v_end 降低。"""  # English: S3-1 upgrade · aero: k_down↑ → front-wheel Fz increases; k_drag↑ → v_end drops.
     track = [{"x": 0, "y": 0, "target_speed": 15.0},
              {"x": 80, "y": 0, "target_speed": 15.0},
              {"x": 160, "y": 0, "target_speed": 15.0}]
@@ -165,13 +178,15 @@ def test_aero_downforce_adds_front_load_and_drag():
     a_fz = float(aero["trace"][-1]["fz_FR"])
     assert a_fz > b_fz * 1.05, (b_fz, a_fz)
     assert aero["summary"]["v_end"] < base["summary"]["v_end"] - 0.2, (
-        aero["summary"]["v_end"], base["summary"]["v_end"])   # 阻力减速（7s 段实测 ~0.35m/s）
+        aero["summary"]["v_end"], base["summary"]["v_end"])   # 阻力减速（7s 段实测 ~0.35m/s） — drag deceleration (~0.35 m/s measured over the 7 s segment)
     assert aero["summary"]["aero_n"] > 250.0
 
 
 def test_aero_ge_ground_effect_boost_front():
     """P2a·cl(h)：急刹低头（前轴净高减）→ ge_f 增强前轴 cl ⇒ 前轴载荷显著高于
-    ge_gain=0 同工况（平面模型 h = 名义 ± a/b·tan(pitch)）。"""
+    ge_gain=0 同工况（平面模型 h = 名义 ± a/b·tan(pitch)）。
+
+    English: P2a · cl(h): hard braking dips the nose (front-axle net height drops) → ge_f boosts the front-axle cl ⇒ front-axle load significantly above the ge_gain=0 same-case run (planar model h = nominal ± a/b·tan(pitch))."""
     track = [{"x": 0, "y": 0, "target_speed": 20.0},
              {"x": 240, "y": 0, "target_speed": 4.0}]
     aero_ge = {"k_down_f": 2.2, "k_down_r": 1.8, "k_drag": 1.4,
@@ -197,7 +212,9 @@ def test_aero_ge_ground_effect_boost_front():
 
 def test_aero_drs_straight_reduces_drag():
     """P2a·DRS：长直道高速自动开翼（直道判定 + vx>drs_v_ms）→ 总阻力 ×0.72 ⇒
-    尾速提升、后轴 cl ×0.90 ⇒ 后轴载荷占比下降；drs_frac 反映开翼时长。"""
+    尾速提升、后轴 cl ×0.90 ⇒ 后轴载荷占比下降；drs_frac 反映开翼时长。
+
+    English: P2a · DRS: a long straight at high speed opens the wing automatically (straight detection + vx>drs_v_ms) → total drag ×0.72 ⇒ higher end speed; rear-axle cl ×0.90 ⇒ rear-axle load share drops; drs_frac reflects the deploy duration."""
     track = [{"x": 0, "y": 0, "target_speed": 32.0},
              {"x": 700, "y": 0, "target_speed": 32.0},
              {"x": 1400, "y": 0, "target_speed": 32.0}]
@@ -229,6 +246,10 @@ def test_slip_relaxation_lags_kinematic():
     alphaL 的瞬时值可小幅超过当前目标（正确物理：滞后不放大稳态，但目标
     下降段滞后值 > 当前目标）。改用**稳态段中位数**断言：中位数比值应接近
     1（1±0.15），符号一致率 ≥90%（稳态侧偏方向恒定）。
+
+    English: S3-1 upgrade · relaxation: in circle steady state alphaL (relaxed) converges into the neighborhood of |alpha| with the same sign; the friction-circle budget is never exceeded.
+
+    2026-08-30 fix (F-22/F-24 companion): the original assertion compared point-by-point at "the first row with alpha>0.3 in the second half" — that row often lands inside the steering/acceleration transient where the target alpha changes quickly and the first-order-lag alphaL can slightly exceed the current target (correct physics: the lag does not amplify steady state, but in a falling segment the lagged value > current target). The assertion now uses the median over the steady section: the median ratio should be near 1 (1±0.15) and the sign-agreement rate ≥90% (steady-state slip direction is constant).
     """
     R = 30.0
     track = [{"x": R * math.cos(th), "y": R * math.sin(th), "target_speed": 12.0}
@@ -237,7 +258,7 @@ def test_slip_relaxation_lags_kinematic():
                     json=_body(track, sim_time=12.0, start_speed=12.0)).json()
     assert r["status"] == "VALID"
     rows = r["trace"]
-    # 稳态段：取后 1/4（绕行至少大半圈后）
+    # 稳态段：取后 1/4（绕行至少大半圈后） — steady section: take the final quarter (after lapping at least most of the circle)
     seg = rows[len(rows) * 3 // 4:]
     assert len(seg) >= 20, f"稳态段过短: {len(seg)}"
     for w in ("FR", "RR"):
@@ -245,9 +266,9 @@ def test_slip_relaxation_lags_kinematic():
         assert pts, f"{w}: 无侧偏样本"
         a_med = float(np.median([abs(p[f"alpha_{w}"]) for p in pts]))
         al_med = float(np.median([abs(p[f"alphaL_{w}"]) for p in pts]))
-        # 松弛收敛于运动学目标邻域：中位数比值 ∈ (0.85, 1.15)
+        # 松弛收敛于运动学目标邻域：中位数比值 ∈ (0.85, 1.15) — relaxation converges into the kinematic-target neighborhood: median ratio ∈ (0.85, 1.15)
         assert 0.05 < al_med < a_med * 1.15, (w, a_med, al_med)
-        # 同向：稳态圆环侧偏方向恒定，alphaL 与 alpha 符号一致
+        # 同向：稳态圆环侧偏方向恒定，alphaL 与 alpha 符号一致 — same sign: the steady-state circle slip direction is constant, alphaL and alpha agree in sign
         same = sum(1 for p in pts if p[f"alpha_{w}"] * p[f"alphaL_{w}"] >= 0)
         assert same >= len(pts) * 0.9, (w, same, len(pts))
     assert max(max(float(p[f"mu_{w}"]) for w in ("FR", "FL", "RR", "RL")) for p in rows) <= 1.001
@@ -255,7 +276,7 @@ def test_slip_relaxation_lags_kinematic():
 
 
 def test_transient_drive_split_front_wheels():
-    """drive_split_f=1 纯前驱：前轮输出驱动力、后轮不输出（审计 P1-2）。"""
+    """drive_split_f=1 纯前驱：前轮输出驱动力、后轮不输出（审计 P1-2）。"""  # English: drive_split_f=1 pure FWD: front wheels output drive force, rear wheels none (audit P1-2).
     track = [{"x": 0, "y": 0, "target_speed": 15.0},
              {"x": 80, "y": 0, "target_speed": 15.0}]
     pt4 = {"T_max": 250.0, "P_kw": 80.0, "brake_split_f": 0.6, "drive_split_f": 1.0}
@@ -266,9 +287,9 @@ def test_transient_drive_split_front_wheels():
     assert b["status"] == "VALID"
     acc = [p for p in b["trace"] if p["throttle"] > 0.5 and p["vx"] < 10.0]
     assert len(acc) > 5
-    assert max(p["fx_FR"] for p in acc) > 50.0          # 前轮有驱动力
-    assert max(abs(p["fx_RR"]) for p in acc) < 1.0      # 后轮无驱动力
-    # 对照：纯后驱同工况下后轮输出、前轮无
+    assert max(p["fx_FR"] for p in acc) > 50.0          # 前轮有驱动力 — front wheels carry drive force
+    assert max(abs(p["fx_RR"]) for p in acc) < 1.0      # 后轮无驱动力 — rear wheels carry no drive force
+    # 对照：纯后驱同工况下后轮输出、前轮无 — control: pure RWD in the same case — rear wheels drive, front wheels none
     pt0 = {"T_max": 250.0, "P_kw": 80.0, "brake_split_f": 0.6, "drive_split_f": 0.0}
     base = client.post("/api/v3/chassis/simulate_track",
                        json=_body(track, sim_time=8.0, start_speed=5.0,
@@ -278,7 +299,7 @@ def test_transient_drive_split_front_wheels():
     assert max(abs(p["fx_FR"]) for p in accb) < 1.0
 
 # ═══════════════════════════════════════════════════════════════════════════
-# M19（2026-09-20）· 轮自由度（准稳态代数解）验收 —— R-0931 计划步骤 1
+# M19（2026-09-20）· 轮自由度（准稳态代数解）验收 —— R-0931 计划步骤 1 — M19 (2026-09-20) · wheel DOF (quasi-steady algebraic solution) acceptance — R-0931 plan step 1
 # ═══════════════════════════════════════════════════════════════════════════
 def _wd_track():
     return [{"x": 0.0, "y": 0.0, "target_speed": 30.0},
@@ -286,13 +307,13 @@ def _wd_track():
 
 
 def _wd_body(**over):
-    """一条直道、全油门（目标速度给高）、12 m/s 起步。"""
+    """一条直道、全油门（目标速度给高）、12 m/s 起步。"""  # English: one straight, full throttle (high target speed), starting from 12 m/s.
     return _body(_wd_track(), sim_time=over.pop("sim_time", 1.5),
                  start_speed=over.pop("start_speed", 12.0), dt=0.01, **over)
 
 
 def test_wheel_dof_default_off_is_bit_identical():
-    """验收 ④：开关关闭时改 kappa_peak **不得**影响任何结果（证明开关真的隔离）。"""
+    """验收 ④：开关关闭时改 kappa_peak **不得**影响任何结果（证明开关真的隔离）。"""  # English: acceptance ④: with the switch off, changing kappa_peak must NOT affect any result (proof the switch really isolates).
     a = client.post("/api/v3/chassis/simulate_track",
                     json=_wd_body(tire={"kappa_peak": 0.05})).json()
     b = client.post("/api/v3/chassis/simulate_track",
@@ -303,7 +324,7 @@ def test_wheel_dof_default_off_is_bit_identical():
 
 
 def test_wheel_dof_off_reports_zero_outputs():
-    """验收 ④（输出面）：关闭时 kappa_*/omega_* 恒为 0。"""
+    """验收 ④（输出面）：关闭时 kappa_*/omega_* 恒为 0。"""  # English: acceptance ④ (output surface): with the switch off, kappa_*/omega_* are identically 0.
     b = client.post("/api/v3/chassis/simulate_track", json=_wd_body()).json()
     assert b["status"] == "VALID"
     keys = [f"{p}_{w}" for p in ("kappa", "omega") for w in ("FL", "FR", "RL", "RR")]
@@ -314,7 +335,7 @@ def test_wheel_dof_off_reports_zero_outputs():
 
 
 def test_wheel_dof_on_produces_physical_slip_and_spin():
-    """开启后：驱动轮出现**正滑移**与合理轮速，κ 落在 [−κ_peak, κ_peak]（验收 ①②）。"""
+    """开启后：驱动轮出现**正滑移**与合理轮速，κ 落在 [−κ_peak, κ_peak]（验收 ①②）。"""  # English: switched on: driven wheels show positive slip and sensible wheel speeds, κ within [−κ_peak, κ_peak] (acceptance ①②).
     b = client.post("/api/v3/chassis/simulate_track",
                     json=_wd_body(wheel_dof=True, tire={"kappa_peak": 0.12})).json()
     assert b["status"] == "VALID"
@@ -323,7 +344,7 @@ def test_wheel_dof_on_produces_physical_slip_and_spin():
     assert any(abs(k) > 1e-6 for k in kappas), "全油门直道上驱动轮滑移率不应恒为 0"
     assert all(-0.12 - 1e-9 <= k <= 0.12 + 1e-9 for k in kappas), "κ 必须落在 ±kappa_peak 内"
     assert all(x["omega_RL"] > 0.0 for x in rows), "前进时轮速必须为正"
-    # ω 与 κ 自洽：ω = vx(1+κ)/Re（后胎半径 310mm）
+    # ω 与 κ 自洽：ω = vx(1+κ)/Re（后胎半径 310mm） — ω consistent with κ: ω = vx(1+κ)/Re (rear tire radius 310 mm)
     for x in rows:
         if x["vx"] > 3.0:
             expect = x["vx"] * (1.0 + x["kappa_RL"]) / 0.310
@@ -335,6 +356,10 @@ def test_wheel_dof_on_drives_no_slower_than_off():
 
     0.75 这个余量在代码里**出处未说明**；轮自由度模型下上限应由滑移曲线与附着共同决定。
     这是模型改进，不是放宽门限（差异量级见 DEVLOG/R-0933）。
+
+    English: deliberate difference (on record): with the wheel DOF on, the per-wheel longitudinal cap changes from the historical 0.75μFz to μFz ⇒ the end speed must not drop.
+    The 0.75 margin is explained nowhere in the code; under the wheel-DOF model the cap should be set jointly by the slip curve and adhesion.
+    This is a model improvement, not a relaxed gate (difference magnitude logged in DEVLOG/R-0933).
     """
     off = client.post("/api/v3/chassis/simulate_track", json=_wd_body()).json()
     on = client.post("/api/v3/chassis/simulate_track",
@@ -349,6 +374,10 @@ def test_wheel_dof_with_differential_end_to_end():
     这条测试是为一个真实 bug 加的：`wheel_force` 里轮半径 `t_r_mm` 只在
     `elif throttle > 0` 分支定义，而走差速器路径时该分支被跳过 ⇒ 引用它 UnboundLocalError。
     只开开关（不给差速器）的单测覆盖不到这个组合 —— **集成缺口比 bug 本身更值得记**。
+
+    English: integration-gap guard: switch ON + differential spec enabled together must run through and emit physical quantities.
+    This test was added for a real bug: in `wheel_force` the wheel radius `t_r_mm` was defined only in the `elif throttle > 0` branch, which is skipped on the differential path ⇒ referencing it raised UnboundLocalError.
+    Unit tests that only flip the switch (no differential) cannot cover this combination — the integration gap is worth recording even more than the bug itself.
     """
     spec = {"type": "lsd", "bias": 1.6, "lockNm": 25.0, "slipRefRadS": 8.0}
     b = _wd_body(wheel_dof=True, tire={"kappa_peak": 0.12},
@@ -362,5 +391,5 @@ def test_wheel_dof_with_differential_end_to_end():
     assert all(x["omega_RL"] > 0.0 for x in rows), "驱动轮轮速应为正"
     assert all(-0.12 - 1e-9 <= x["kappa_RL"] <= 0.12 + 1e-9 for x in rows), "κ 应在 ±kappa_peak 内"
     assert all(abs(x["fx_RL"]) < 1e6 and abs(x["fy_RL"]) < 1e6 for x in rows), "力必须有限且量级合理"
-    # 左右驱动扭矩不对称（LSD）：内外轮 fx 不应恒等
+    # 左右驱动扭矩不对称（LSD）：内外轮 fx 不应恒等 — left/right drive-torque asymmetry (LSD): inner/outer fx should not be identical
     assert any(abs(x["fx_RL"] - x["fx_RR"]) > 1e-6 for x in rows), "LSD 下左右驱动力不应恒等"

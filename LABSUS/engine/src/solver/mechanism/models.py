@@ -4,6 +4,17 @@ DOF 说明：双叉臂空间机构是超静定（overconstrained）空间连杆�
 "3N − Σ约束"的秩加和得到正确自由度（会得到负数/误导值）。本处 `dof()`
 定义为"传动自由度"= 轮跳 + 齿条转向 = 2（见 spec §5），其可实现性由
 求解器收敛测试（solver 的 drive_to 在 ±30mm 与 ±rack 下 residual<1e-5）验证。
+
+DWB-style mechanism data model: nodes / rigid links / axial-rotation
+clusters (hinge|rocker) / rigid-body clusters / mechanism.
+
+DOF note: the double-wishbone spatial mechanism is a statically
+indeterminate (overconstrained) spatial linkage; its correct DOF count
+cannot be obtained from the "3N − Σconstraints" rank sum (that yields
+negative / misleading numbers). Here `dof()` is defined as the
+"transmission DOF" = wheel travel + rack steering = 2 (see spec §5);
+its realizability is verified by the solver convergence tests (the
+solver's drive_to holds residual<1e-5 at ±30mm travel and ±rack).
 """
 from __future__ import annotations
 
@@ -21,7 +32,7 @@ class Node:
     pos: Vec
     prev: Vec
     vel: Vec
-    fix: bool  # 刚线/驱动不会移动车身点
+    fix: bool  # 刚线/驱动不会移动车身点 — rigid links/drivers do not move chassis points
     mass: float
 
 
@@ -30,7 +41,7 @@ class Link:
     id: str
     a: str
     b: str
-    kind: str  # 'R' 刚线 / 'E' 弹性线(子阶段②用)
+    kind: str  # 'R' 刚线 / 'E' 弹性线(子阶段②用) — 'R' rigid link / 'E' elastic link (used by sub-stage ②)
     L0: float
     Ld: float
 
@@ -39,23 +50,23 @@ class Link:
 class AxisCluster:
     kind: str            # 'hinge' | 'rocker'
     name: str
-    anchor: str          # hinge=轴线上某车身点(取 axA)；rocker=枢轴节点
+    anchor: str          # hinge=轴线上某车身点(取 axA)；rocker=枢轴节点 — hinge = some chassis point on the axis (uses axA); rocker = pivot node
     members: list[str]
-    rel: list[Vec]       # member.p0 - anchor.p0（设计位锁定）
+    rel: list[Vec]       # member.p0 - anchor.p0（设计位锁定） — member.p0 - anchor.p0 (locked at the design position)
     wt: list[float]
     axA: str | None = None  # noqa: N815
     axB: str | None = None  # noqa: N815
-    axis: Vec | None = None  # rocker: 固定轴(车架 X=forward)
+    axis: Vec | None = None  # rocker: 固定轴(车架 X=forward) — rocker: fixed axis (frame X = forward)
 
 
 @dataclass
 class BodyCluster:
     name: str
     ids: list[str]
-    rel: list[Vec]       # member.p0 - mass_center（设计位锁定）
+    rel: list[Vec]       # member.p0 - mass_center（设计位锁定） — member.p0 - mass_center (locked at the design position)
     wt: list[float]
     ws: float
-    q: Vec               # 四元数 [x,y,z,w]，热启动
+    q: Vec               # 四元数 [x,y,z,w]，热启动 — quaternion [x,y,z,w] for warm start
 
 
 @dataclass
@@ -66,6 +77,18 @@ class Mechanism:
     来算自由度——本机构含刚体簇与冗余铰链，是超静定约束系统，秩计算给出的是
     约束秩而非运动自由度（见模块 docstring）。
     旧版此处有 `dof()` 方法硬编码 `return 2`，无任何调用方，M5（2026-09-20）删除。
+
+    Mechanism model (nodes + rigid links + hinge clusters + the knuckle
+    rigid body + dual drivers).
+
+    DOF accounting: the number of drivers is always 2 (wheel travel Z +
+    rack FL1), but do **not** compute DOFs by taking the rank via
+    3N−Σconstraints — this mechanism contains rigid-body clusters and
+    redundant hinges; it is a statically indeterminate constraint system,
+    and the rank computation gives the constraint rank, not the kinematic
+    DOFs (see the module docstring).
+    An older version had a `dof()` method here hardcoded to `return 2`,
+    with no callers; removed in M5 (2026-09-20).
     """
 
     nodes: dict[str, Node]
@@ -73,10 +96,10 @@ class Mechanism:
     axis_clusters: list[AxisCluster]
     bodies: list[BodyCluster]
     free_ids: list[str]
-    wheel: str           # 轮心节点 id（轮跳驱动锚）
-    steer_anchor: Vec    # FL1 齿条线锚点（=FL1.p0）
-    steer_axis: Vec      # 单位向量，齿条平移方向（默认世界 −X 横向，右轮外侧）
-    strut_attach: str = "knuckle"  # STRUT_OUT 附着拓扑：knuckle|lca|uca（P2）
+    wheel: str           # 轮心节点 id（轮跳驱动锚） — wheel-center node id (the wheel-travel drive anchor)
+    steer_anchor: Vec    # FL1 齿条线锚点（=FL1.p0） — FL1 rack-line anchor (=FL1.p0)
+    steer_axis: Vec      # 单位向量，齿条平移方向（默认世界 −X 横向，右轮外侧） — unit vector, the rack translation direction (default world −X lateral, outboard of the right wheel)
+    strut_attach: str = "knuckle"  # STRUT_OUT 附着拓扑：knuckle|lca|uca（P2） — STRUT_OUT attach topology: knuckle|lca|uca (P2)
 
     def node(self, name: str) -> Node:
         return self.nodes[name]
@@ -117,6 +140,31 @@ def build_mechanism(
         "knuckle" → UP4 固定于转向节刚体（历史行为，保留兼容）；
         "lca"     → UP4 挂下臂铰链（前端 FRONT strutOutAttach:"lca" 推杆）；
         "uca"     → UP4 挂上臂铰链（前端 REAR  strutOutAttach:"uca" 拉杆）。
+
+    Build the mechanism from a per-side hardpoint dictionary.
+
+    - Lower-arm hinge ARM_LOWER (historically misnamed UCA): axis CH1–CH2,
+      main member [UP1=LBJ].
+    - Upper-arm hinge ARM_UPPER (historically misnamed LCA): axis CH3–CH4,
+      main member [UP2=UBJ].
+      Note: the engine points CH1/CH2 correspond to the frontend DWB
+      LCA_F/LCA_R, and CH3/CH4 correspond to UCA_F/UCA_R; early code
+      rotated UP1 about CH1-CH2 (the lower-arm axis) yet still called it
+      "UCA" — a naming misalignment, corrected 2026-08-22.
+    - Knuckle rigid-body cluster: by default 5 nodes [UP1..UP5]; when
+      strut_attach≠knuckle, UP4 is moved out and attached to an arm hinge
+      instead (same semantics as the frontend strutOutAttach:
+      lca=lower arm / uca=upper arm).
+    - Rocker: a fixed X axis about RK_PIVOT, members [CH5, RK_DAMPER].
+    - Rigid links: the tie rod UP3–FL1 and the pushrod UP4–CH5.
+
+    strut_attach (P2, 2026-08-22):
+        "knuckle" → UP4 fixed to the knuckle rigid body (historical
+        behavior, kept for compatibility);
+        "lca"     → UP4 attached to the lower-arm hinge (frontend FRONT
+        strutOutAttach:"lca" pushrod);
+        "uca"     → UP4 attached to the upper-arm hinge (frontend REAR
+        strutOutAttach:"uca" pullrod).
     """
     nodes = {}
     for key in sorted(points):
@@ -170,6 +218,15 @@ def build_mechanism(
     # A.3 残留清理（2026-08-30）：默认回退已由 (0,1,0) 改为 (−1,0,0)，
     # 与 v3service._new_mech 的显式传参一致，杜绝"未传 steer_axis 即掉回
     # 旧约定"的误用路径（legacy 快照目录为历史存档，保持原样）。
+    # Lecture-3 verdict (default aligned with the 2026-08-22 fix): the rack
+    # translates along world −X (outboard of the right wheel), same source
+    # as the frontend setChassis. The old default (0,1,0) was the old
+    # Y-direction convention, with 20.8× worse sensitivity.
+    # A.3 residual cleanup (2026-08-30): the default fallback was changed
+    # from (0,1,0) to (−1,0,0), matching the explicit parameter in
+    # v3service._new_mech, eliminating the misuse path of "falling back to
+    # the old convention when steer_axis is not passed" (the legacy
+    # snapshot directory is a historical archive and stays as-is).
     sa = steer_axis if steer_axis is not None else np.array([-1.0, 0.0, 0.0])
     return Mechanism(nodes=nodes, links=links, axis_clusters=axis_clusters, bodies=bodies,
                      free_ids=free_ids, wheel=wheel, steer_anchor=steer_anchor,

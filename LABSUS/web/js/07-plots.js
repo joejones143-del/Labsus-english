@@ -1,6 +1,6 @@
 "use strict";
 function plotXYMulti(cv,title,unit,series,xr,curx){
-  /* 多实线绘制（plotXYOverlay 的多线版本，供引擎结果面板使用） */
+  /* 多实线绘制（plotXYOverlay 的多线版本，供引擎结果面板使用） — multi-solid-line plotting (multi-line version of plotXYOverlay, for the engine results panel) */
   const dpr=Math.min(3,window.devicePixelRatio||1);
   const w=cv.clientWidth||300,h=cv.clientHeight||84;
   if(cv.width!==w*dpr||cv.height!==h*dpr){cv.width=w*dpr;cv.height=h*dpr;}
@@ -39,7 +39,7 @@ function plotXYMulti(cv,title,unit,series,xr,curx){
 
 function fitAll(){ VW.forEach(fitView); }
 
-/* ================================ 12. 读数更新与双线曲线绘制 ================================ */
+/* ================================ 12. 读数更新与双线曲线绘制 — 12. Readout updates and dual-curve plotting ================================ */
 function updateReadouts(){
   const isF = S.axis === 'front';
   const m = isF ? SIM.mFR : SIM.mRR;
@@ -53,7 +53,7 @@ function updateReadouts(){
   const wr = state.kS * mr * mr;
   const frq = sqrt(wr * 1000 / state.mS) / (2 * PI);
 
-  const archLabel = state.arch === "direct" ? "直连 (Direct Coilover)" : (state.arch === "pushrod" ? "推杆 (Pushrod)" : "拉杆 (Pullrod)");
+  const archLabel = state.arch === "direct" ? "Direct Coilover" : (state.arch === "pushrod" ? "Pushrod" : "Pullrod");
   setRO("roArch", archLabel);
   setRO("roRckDeg", state.arch === "direct" ? "--" : sfmt(m.rockerDeg, 2));
   setRO("roMR", fmt(mr, 3));
@@ -68,12 +68,12 @@ function updateReadouts(){
   setRO("roScrub", sfmt(m.scrub, 1));
   setRO("roTrail", sfmt(m.trail, 1));
   
-  /* 阿克曼计算 (仅前悬) */
+  /* 阿克曼计算 (仅前悬) — Ackermann calculation (front axle only) */
   const ak = ackermann('front');
   setRO("roAck", ak&&ak.pct!==null ? fmt(ak.pct, 0) : "--");
   setRO("roTrad", ak&&ak.R!==null ? fmt(abs(ak.R), 2) : "--");
   
-  /* ARB 刚度计算 */
+  /* ARB 刚度计算 — ARB stiffness calculation */
   const mra = sampleSweep(sw, m.tr, "mra") || 0.55;
   const ar = arbRate(mra, state);
   const track = abs(m.cp[0])*2;
@@ -88,7 +88,7 @@ function updateReadouts(){
   setRO("roArbTot", fmt(Ks+Ka, 0));
   setRO("roArbSh", fmt(100*Ka/Math.max(1e-6, Ks+Ka), 0));
 
-  /* 准静态分析结果读数 */
+  /* 准静态分析结果读数 — quasi-static analysis result readouts */
   const qs = SIM.qsRes;
   if(qs){
     setRO("roQsRoll", fmt(qs.rollDeg, 2));
@@ -99,7 +99,7 @@ function updateReadouts(){
     setRO("roFzFR", fmt(qs.fz.FR, 0));
     setRO("roFzRL", fmt(qs.fz.RL, 0));
     setRO("roFzRR", fmt(qs.fz.RR, 0));
-    /* US Gradient / 前后侧偏角 / Jacking（准静态新增，镜像引擎） */
+    /* US Gradient / 前后侧偏角 / Jacking（准静态新增，镜像引擎） — US gradient / front-rear slip angles / jacking (new in the quasi-static block, mirrors the engine) */
     setRO("roUsGrad", Math.abs(qs.usGrad) > 1e-9 ? fmt(qs.usGrad, 2) : "—");
     setRO("roAlphaF", fmt(qs.alphaF, 2));
     setRO("roAlphaR", fmt(qs.alphaR, 2));
@@ -108,25 +108,34 @@ function updateReadouts(){
     const tb=document.getElementById("tlltdBar");
     if(tb){
       tb.style.width=qs.tlltd.toFixed(1)+"%";
-      document.getElementById("tlltdLblF").textContent="前轴: "+qs.tlltd.toFixed(1)+"%";
-      document.getElementById("tlltdLblR").textContent="后轴: "+(100-qs.tlltd).toFixed(1)+"%";
+      document.getElementById("tlltdLblF").textContent="Front axle: "+qs.tlltd.toFixed(1)+"%";
+      document.getElementById("tlltdLblR").textContent="Rear axle: "+(100-qs.tlltd).toFixed(1)+"%";
     }
     /* M7（2026-09-20）：操稳倾向改为以**实测侧偏角差**（US 梯度 = αf − αr）为主判据。
        旧实现只看 TLLTD 的 54/47 阈值，与同屏的 US GRADIENT 直接冲突——实测
        TLLTD 45.5%（<47 ⇒ 判"过度转向"）而 US 梯度 +0.21 °/g（>0 ⇒ 明确不足转向：
        后胎 205 比前胎 175 宽、后轴更抓）。TLLTD 是"载荷转移分布"这一**间接代理量**，
        在前后胎/刚度不同时不再等价于平衡方向；故把它降为括号里的辅注，
-       两个数字不再互相打架（hero 卡 HANDLING BIAS 与本节读数同源）。 */
+       两个数字不再互相打架（hero 卡 HANDLING BIAS 与本节读数同源）。
+       (M7 (2026-09-20): handling bias now keys primarily on the measured slip-angle
+       difference (US gradient = alpha_f − alpha_r). The old code only checked the TLLTD
+       54/47 thresholds, directly conflicting with the US GRADIENT shown on screen - measured
+       TLLTD 45.5% (<47 => judged "oversteer") while the US gradient was +0.21 °/g (>0 =>
+       clearly understeer: the 205 rear tire is wider than the 175 front, so the rear axle
+       grips more). TLLTD is an INDIRECT proxy for load-transfer distribution and no longer
+       equals the balance direction when front/rear tires or stiffness differ; it is thus
+       demoted to a marginal note so the two numbers stop fighting (the hero card HANDLING
+       BIAS and this readout share one source).) */
     const usg = (typeof qs.usGrad === "number" && isFinite(qs.usGrad)) ? qs.usGrad : 0;
-    const bias = Math.abs(usg) < 0.05 ? "中性 (NEUTRAL)"
-      : (usg > 0 ? "倾向不足转向 (UNDERSTEER)" : "倾向过度转向 (OVERSTEER)");
+    const bias = Math.abs(usg) < 0.05 ? "Neutral"
+      : (usg > 0 ? "Understeer tendency" : "Oversteer tendency");
     setRO("roHandling", bias + " · US " + (usg >= 0 ? "+" : "") + usg.toFixed(2) + "°/g");
 
     document.getElementById("sbTLLTD").textContent = qs.tlltd.toFixed(1)+"%";
     document.getElementById("sbRollGrad").textContent = qs.rollGrad.toFixed(2)+" °/g";
   }
 
-  /* Baseline 差异读数 */
+  /* Baseline 差异读数 — baseline difference readouts */
   if(S.hasBaseline && S.baseline){
     const b_sw = isF ? S.baseline.swF : S.baseline.swR;
     const updateDiff = (id, key, scale)=>{
@@ -149,8 +158,8 @@ function updateReadouts(){
   setRO("roAnti", m.anti===null?"--":fmt(m.anti, 1));
   setRO("roFreq", fmt(frq, 2));
 
-  setRO("roNodes", M.n.length+" ("+M.nFree+" 自由)");
-  setRO("roRigLinks", M.nRig+" 条约束");
+  setRO("roNodes", M.n.length+" ("+M.nFree+" free)");
+  setRO("roRigLinks", M.nRig+" constraints");
   setRO("roRes", M.res<1e-4?M.res.toExponential(2):fmt(M.res,5), M.res>0.025);
   setRO("roSolveMs", fmt(M.ms,2));
 
@@ -160,14 +169,14 @@ function updateReadouts(){
   document.getElementById("sbRes").textContent=M.res<1e-4?M.res.toExponential(1):fmt(M.res,4);
   document.getElementById("sbResC").className="c "+(M.res<0.001?"ok":(M.res<0.025?"hl":"bad"));
   document.getElementById("sbMs").textContent=fmt(M.ms,2)+" ms";
-  document.getElementById("tbState").textContent=S.play?"运行":"暂停";
+  document.getElementById("tbState").textContent=S.play?"Running":"Paused";
   document.getElementById("tbStateBox").className=S.play?"g":"a";
   document.getElementById("tbStateDot").className="dot "+(S.play?"g":"a");
   
-  const archText = state.arch === "direct" ? "直连 DIRECT" : (state.arch === "pushrod" ? "推杆 PUSHROD" : "拉杆 PULLROD");
-  const archName = state.arch === "direct" ? "直连双叉臂" : (state.arch === "pushrod" ? "推杆摇臂" : "拉杆摇臂");
-  document.getElementById("tbArch").textContent = (isF ? "前 " : "后 ") + archText;
-  document.getElementById("sbArchName").textContent = (isF ? "前悬架 (" : "后悬架 (") + archName + ")";
+  const archText = state.arch === "direct" ? "Direct" : (state.arch === "pushrod" ? "Pushrod" : "Pullrod");
+  const archName = state.arch === "direct" ? "Direct double wishbone" : (state.arch === "pushrod" ? "Pushrod rocker" : "Pullrod rocker");
+  document.getElementById("tbArch").textContent = (isF ? "Front " : "Rear ") + archText;
+  document.getElementById("sbArchName").textContent = (isF ? "Front suspension (" : "Rear suspension (") + archName + ")";
 }
 
 function plotXYOverlay(cv,title,unit,seriesActive,seriesBase,xr,curx,seriesMeas){
@@ -193,7 +202,7 @@ function plotXYOverlay(cv,title,unit,seriesActive,seriesBase,xr,curx,seriesMeas)
   for(let i=0;i<=4;i++){const y=mt+ph*i/4;ctx.beginPath();ctx.moveTo(ml,y);ctx.lineTo(ml+pw,y);ctx.stroke();}
   for(let i=0;i<=5;i++){const x=ml+pw*i/5;ctx.beginPath();ctx.moveTo(x,mt);ctx.lineTo(x,mt+ph);ctx.stroke();}
 
-  // 1. 绘制 Baseline 基准曲线 (虚线)
+  // 1. 绘制 Baseline 基准曲线 (虚线) — draw the Baseline reference curve (dashed)
   if(seriesBase && seriesBase.pts.length){
     ctx.strokeStyle=C.base;ctx.lineWidth=1.3;ctx.setLineDash([4,3]);ctx.beginPath();let st=false;
     seriesBase.pts.forEach(p=>{if(p[1]===null||!isFinite(p[1])){st=false;return;}
@@ -201,7 +210,7 @@ function plotXYOverlay(cv,title,unit,seriesActive,seriesBase,xr,curx,seriesMeas)
     ctx.stroke();
   }
 
-  // 1.5 绘制台架实测曲线 (点划线，K&C 对拍，讲义 EP02“仿真预测↔台架验证”闭环)
+  // 1.5 绘制台架实测曲线 (点划线，K&C 对拍，讲义 EP02“仿真预测↔台架验证”闭环) — draw the rig-measured curve (dash-dot; K&C correlation closing the lecture EP02 simulation-prediction to rig-verification loop)
   if(seriesMeas && seriesMeas.pts.length){
     ctx.strokeStyle=seriesMeas.c||C.frc;ctx.lineWidth=1.2;ctx.setLineDash([6,2,1.5,2]);
     ctx.beginPath();let stm=false;
@@ -210,7 +219,7 @@ function plotXYOverlay(cv,title,unit,seriesActive,seriesBase,xr,curx,seriesMeas)
     ctx.stroke();ctx.setLineDash([]);
   }
 
-  // 2. 绘制 Active 活动曲线 (实线)
+  // 2. 绘制 Active 活动曲线 (实线) — draw the Active curve (solid)
   ctx.strokeStyle=seriesActive.c;ctx.lineWidth=seriesActive.w||1.4;ctx.setLineDash([]);ctx.beginPath();let st=false;
   seriesActive.pts.forEach(p=>{if(p[1]===null||!isFinite(p[1])){st=false;return;}
     const x=X(p[0]),y=Y(p[1]);if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y);});
@@ -230,7 +239,7 @@ function plotXYOverlay(cv,title,unit,seriesActive,seriesBase,xr,curx,seriesMeas)
   ctx.textAlign="left";
 }
 
-/* K&C 台架对拍：实测 vs 仿真 RMS 偏差（°，重叠行程区间，线性插值到仿真网格） */
+/* K&C 台架对拍：实测 vs 仿真 RMS 偏差（°，重叠行程区间，线性插值到仿真网格） — K&C rig correlation: measured-vs-simulated RMS deviation in degrees, over the overlapping travel range, linearly interpolated onto the simulation grid */
 function kcMeasuredRMS(axis,key){
   const meas = SIM.kcMeasured ? SIM.kcMeasured[axis] : null;
   const sw = axis==="front" ? SIM.swF : SIM.swR;
@@ -250,7 +259,7 @@ function kcMeasuredRMS(axis,key){
   return n>1?Math.sqrt(s2/n):null;
 }
 
-/* 不足转向特性 δ-ay 图（底盘开发汇报核心图；当前工况点红点标记） */
+/* 不足转向特性 δ-ay 图（底盘开发汇报核心图；当前工况点红点标记） — understeer characteristic delta-ay chart (the core chart of the chassis development report; the current load-case point is marked with a red dot) */
 function plotUsCurve(cv){
   const c=SIM.usCurve;if(!c||!c.gy||c.gy.length<3)return;
   const dpr=Math.min(3,window.devicePixelRatio||1);
@@ -266,14 +275,14 @@ function plotUsCurve(cv){
   ctx.strokeStyle=C.grid;ctx.lineWidth=1;
   for(let i=0;i<=4;i++){const y=mt+ph*i/4;ctx.beginPath();ctx.moveTo(ml,y);ctx.lineTo(ml+pw,y);ctx.stroke();}
   if(y0<0&&y1>0){ctx.strokeStyle=C.dim;ctx.setLineDash([2,2]);ctx.beginPath();ctx.moveTo(ml,Y(0));ctx.lineTo(ml+pw,Y(0));ctx.stroke();ctx.setLineDash([]);}
-  // 轮胎分量（虚线）——完整版 δ-ay = 轮胎 + 侧倾转向
+  // 轮胎分量（虚线）——完整版 δ-ay = 轮胎 + 侧倾转向 — tire component (dashed): full form delta-ay = tire + roll steer
   if(c.usTire){
     ctx.strokeStyle=C.base;ctx.lineWidth=1.2;ctx.setLineDash([4,3]);ctx.beginPath();let stt=false;
     c.gy.forEach((gv,i)=>{const v=c.usTire[i];if(!isFinite(v))return;
       const x=X(gv),y=Y(v);if(!stt){ctx.moveTo(x,y);stt=true;}else ctx.lineTo(x,y);});
     ctx.stroke();ctx.setLineDash([]);
   }
-  // 总线（实线）：轮胎 + 侧倾转向
+  // 总线（实线）：轮胎 + 侧倾转向 — total line (solid): tire + roll steer
   ctx.strokeStyle=C.strut;ctx.lineWidth=1.6;ctx.setLineDash([]);ctx.beginPath();let st=false;
   c.gy.forEach((gv,i)=>{const v=c.us[i];if(!isFinite(v))return;
     const x=X(gv),y=Y(v);if(!st){ctx.moveTo(x,y);st=true;}else ctx.lineTo(x,y);});
@@ -288,7 +297,7 @@ function plotUsCurve(cv){
   }
   ctx.strokeStyle=C.axis;ctx.lineWidth=1;ctx.strokeRect(ml+.5,mt+.5,pw,ph);
   ctx.fillStyle=C.txt2;ctx.font="10.5px ui-monospace,monospace";
-  ctx.fillText("不足转向特性 US CHARACTERISTIC · 实线=总 δ（轮胎+侧倾转向） · 虚线=轮胎项 · 红点=当前工况",ml+1,mt-3.5);
+  ctx.fillText("US Characteristic · solid = total δ (tire + roll steer) · dashed = tire term · red dot = current load case",ml+1,mt-3.5);
   ctx.fillStyle=C.txt3;ctx.textAlign="right";
   ctx.fillText(fmt(y1,1),ml-3,mt+7);ctx.fillText(fmt(y0,1),ml-3,mt+ph-1);
   ctx.fillText("0",ml,mt+ph+9);ctx.fillText("2g",ml+pw-8,mt+ph+9);
@@ -305,10 +314,10 @@ function drawPlots(){
   const S1=(obj,k,col)=>obj?{pts:obj.rows.map(r=>[r.tr,r[k]]),c:col}:null;
 
   const P=[
-    ["瞬态运动速比 MOTION RATIO","-","mr",C.ela],
-    ["外倾角变化 CAMBER","°","cam",C.knu],
-    ["摇臂旋转角 ROCKER DEG","°","rockerDeg",C.rocker],
-    ["前束角变化 (跳动转向) TOE","°","toe",C.tie]
+    ["Motion Ratio","-","mr",C.ela],
+    ["Camber","°","cam",C.knu],
+    ["Rocker Angle","°","rockerDeg",C.rocker],
+    ["Toe (bump steer)","°","toe",C.tie]
   ];
 
   const meas = SIM.kcMeasured ? (isF ? SIM.kcMeasured.front : SIM.kcMeasured.rear) : null;
@@ -318,10 +327,10 @@ function drawPlots(){
     const bas = S1(b_sw, p[2], C.base);
     const msr = (meas && meas.travel && meas[p[2]] && (p[2]==="cam"||p[2]==="toe"))
       ? {pts:meas.travel.map((t,k)=>[t,meas[p[2]][k]]), c:C.frc} : null;
-    plotXYOverlay(UI.plots[i], p[0]+"  ← 轮跳行程 [mm] →", p[1], act, bas, xr, cur, msr);
+    plotXYOverlay(UI.plots[i], p[0]+"  ← Wheel travel [mm] →", p[1], act, bas, xr, cur, msr);
   });
 
-  /* 不足转向特性 δ-ay（节流：参数 dirty 或每 800ms 重算一次） */
+  /* 不足转向特性 δ-ay（节流：参数 dirty 或每 800ms 重算一次） — understeer characteristic delta-ay (throttled: recompute when dirty or at most once per 800ms) */
   const nowT=performance.now();
   if(SIM.usCurveDirty!==false||!SIM.usCurve||nowT-(SIM.usCurveT||0)>800){
     if(typeof usSweepCompute==="function")usSweepCompute();

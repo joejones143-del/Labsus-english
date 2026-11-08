@@ -1,12 +1,16 @@
 """K&C 单点求解 CLI（S1 演示/回归入口）。
 
 用法：python scripts/kandc_run.py --travel 10 --fz 3000 --bush-k 500
+
+K&C single-point solve CLI (S1 demo/regression entry point).
+
+Usage: python scripts/kandc_run.py --travel 10 --fz 3000 --bush-k 500
 """
 import argparse
 import os
 import sys
 
-# 确保 engine/ 在 sys.path（F-74：不再挂 engine/src，统一 `src.` 导入根）
+# 确保 engine/ 在 sys.path（F-74：不再挂 engine/src，统一 `src.` 导入根） — Ensure engine/ is on sys.path (F-74: no longer mount engine/src; unified `src.` import root)
 _ENGINE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 if _ENGINE_ROOT not in sys.path:
     sys.path.insert(0, _ENGINE_ROOT)
@@ -31,12 +35,12 @@ PRO_POINTS = {
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="K&C 单点求解（S1）")
-    ap.add_argument("--travel", type=float, default=0.0, help="轮跳 mm")
-    ap.add_argument("--rack", type=float, default=0.0, help="齿条 mm")
-    ap.add_argument("--fz", type=float, default=3000.0, help="接地垂向力 N")
-    ap.add_argument("--fy", type=float, default=0.0, help="接地侧向力 N")
-    ap.add_argument("--bush-k", type=float, default=500.0, help="CH1 衬套垂向刚度 N/mm")
+    ap = argparse.ArgumentParser(description="K&C 单点求解（S1） — K&C single-point solve (S1)")
+    ap.add_argument("--travel", type=float, default=0.0, help="轮跳 mm (wheel travel, mm)")
+    ap.add_argument("--rack", type=float, default=0.0, help="齿条 mm (rack displacement, mm)")
+    ap.add_argument("--fz", type=float, default=3000.0, help="接地垂向力 N (contact-patch vertical force, N)")
+    ap.add_argument("--fy", type=float, default=0.0, help="接地侧向力 N (contact-patch lateral force, N)")
+    ap.add_argument("--bush-k", type=float, default=500.0, help="CH1 衬套垂向刚度 N/mm (CH1 bushing vertical stiffness, N/mm)")
     args = ap.parse_args()
 
     mech = build_mechanism(PRO_POINTS, wheel="UP5", tie_outer="UP3", tie_inner="FL1",

@@ -26,7 +26,7 @@ function buildMech(axis){
     {a:idx.RACK,b:idx.TRO,id:"TIEROD",type:"R",grp:"steer"}
   ];
 
-  /* 补全核心刚性拓扑网格，构成刚体力学传递路径 */
+  /* 补全核心刚性拓扑网格，构成刚体力学传递路径 — complete the core rigid link mesh; it forms the rigid-body force transmission path */
   const att = state.strutOutAttach || "lca";
   const baseF = att==="lca" ? idx.LCA_F : idx.UCA_F;
   const baseR = att==="lca" ? idx.LCA_R : idx.UCA_R;
@@ -44,7 +44,7 @@ function buildMech(axis){
     L.push(
       {a:idx.STRUT_OUT, b:idx.STRUT_IN, id:"STRUT_ROD", type:"R", grp:"strut"},
       {a:idx.RCK_DMP,  b:idx.DMP_BODY, id:"INBOARD_COIL", type:"E", grp:"damper"},
-      // Rocker 刚体成型
+      // Rocker 刚体成型 — the rocker is modeled as a rigid body
       {a:idx.RCK_AX_A, b:idx.STRUT_IN, id:"RA-SI", type:"R", grp:"rocker"},
       {a:idx.RCK_AX_B, b:idx.STRUT_IN, id:"RB-SI", type:"R", grp:"rocker"},
       {a:idx.RCK_AX_A, b:idx.RCK_DMP,  id:"RA-RD", type:"R", grp:"rocker"},
@@ -93,7 +93,7 @@ function buildMech(axis){
       iAxA:idx.RCK_AX_A, iAxB:idx.RCK_AX_B,
       iInNode:idx.STRUT_IN, iDmpNode:idx.RCK_DMP, iOutNode:idx.STRUT_OUT,
       relIn:relIn, relDmp:relDmp, rodL0:strutRod?strutRod.L0:100, angle:0,
-      lastTheta:null   /* F-04（2026-08-30）：摇臂根分支连续性——记录上一步 θ 选最近根 */
+      lastTheta:null   /* F-04（2026-08-30）：摇臂根分支连续性——记录上一步 θ 选最近根 — (F-04, 2026-08-30) rocker root branch continuity: remember the previous theta and pick the nearest root */
     };
   }
 
@@ -172,7 +172,12 @@ function projRockerStrut(M, rck){
   /* F-04（2026-08-30）：摇臂双根分支连续性——旧实现 `branch=phi>=0?1:-1`
      仅按当前相位选支，摇臂跨 φ=0 或近直线位形时 θ 瞬间跳支（STRUT_IN/
      RCK_DMP 突跳）。改为记录上一步 θ，从 θ=φ±ψ 两根中选**最近根**。
-     rck.lastTheta 初始化为 null（首帧用旧相位规则）。 */
+     rck.lastTheta 初始化为 null（首帧用旧相位规则）。
+     (F-04, 2026-08-30: rocker two-root branch continuity - the old `branch=phi>=0?1:-1`
+     picked a branch purely from the current phase, so theta jumped between branches the
+     instant the rocker crossed phi=0 or a near-straight configuration (STRUT_IN / RCK_DMP
+     jumped). Now the previous theta is remembered and the NEAREST of the two roots
+     theta=phi±psi is chosen. rck.lastTheta starts as null (first frame uses the old rule).) */
   const thA=phi-psi, thB=phi+psi;
   const refTheta = (rck.lastTheta !== null && rck.lastTheta !== undefined) ? rck.lastTheta : 0.0;
   const dA=Math.abs(((thA-refTheta+PI)%(2*PI)+2*PI)%(2*PI)-PI);
@@ -197,7 +202,10 @@ function residual(M,drvZ){
     const l=M.L[k];if(l.type!=="R"||!coreLinks.includes(l.id))continue;
     const d=abs(dst(M.n[l.a].p,M.n[l.b].p)-l.L0);
     if(!(d<=r))r=d;   /* F-01（2026-08-30）：NaN 安全写法——`if(d>r)` 对 NaN 恒 false，
-                         发散解曾以 res=0、ok=true 身份静默通过校验并全链路污染 */
+                         发散解曾以 res=0、ok=true 身份静默通过校验并全链路污染
+                         (F-01, 2026-08-30: NaN-safe form - `if(d>r)` is always false for NaN,
+                         so a diverged solution could silently pass validation as res=0 with
+                         ok=true and pollute the whole chain downstream) */
   }
   if(drvZ!==null&&drvZ!==undefined) r=Math.max(r,abs(M.n[M.idx.WC].p[2]-drvZ));
   return r;
@@ -218,7 +226,10 @@ function solveKin(M,drvZ,maxIt,tol){
   }
   res=residual(M,drvZ);
   if(!isFinite(res))res=Infinity;   /* F-01/F-05：NaN 残差显式升级为 ∞，
-                                       消费方（findLimits/报告）按"未收敛"处理 */
+                                       消费方（findLimits/报告）按"未收敛"处理
+                                       (F-01/F-05: a NaN residual is promoted explicitly to
+                                       infinity, so consumers (findLimits / the report) treat it
+                                       as not converged) */
   M.res=res;M.iter=it;M.ms=performance.now()-t0;M.ok=isFinite(res)&&res<0.025;
   return res;
 }
@@ -247,7 +258,7 @@ function driveTo(M,targetZ,rack,axis){
   return M.res;
 }
 
-/* ================================ 3. 悬架高阶几何与运动学指标 ================================ */
+/* ================================ 3. 悬架高阶几何与运动学指标 — 3. Advanced suspension geometry and kinematics metrics ================================ */
 function isect2(p1,d1,p2,d2){
   const den=d1[0]*d2[1]-d1[1]*d2[0];
   if(abs(den)<1e-12)return null;
@@ -256,7 +267,7 @@ function isect2(p1,d1,p2,d2){
 }
 function axisAtY(a,b,y){const t=(y-a[1])/((b[1]-a[1])||1e-9);return lerp3(a,b,t);}
 
-/* 横向稳定杆几何学解算 */
+/* 横向稳定杆几何学解算 — anti-roll bar geometry solver */
 function arbGeom(lbj, state){
   const F=state.hp.LCA_F, B=state.hp.LBJ, t=state.arb.t;
   const P0=lerp3(F,B,t);
@@ -282,13 +293,13 @@ function arbRate(mrArb, state){
   return{k:kt/(g.a*g.a)*mrArb*mrArb, J:J, kt:kt, a:g.a, L:L};
 }
 
-/* 阿克曼转向解算 */
+/* 阿克曼转向解算 — Ackermann steering solver */
 function ackermann(axis){
   const R = axis==='front' ? SIM.mFR : SIM.mRR;
   const L = axis==='front' ? SIM.mFL : SIM.mRL;
   if(!R) return null;
   const dR = -R.toe, dL = L ? L.toe : null;
-  const track = abs(R.cp[0]) * 2;   /* F-14（2026-08-30）：旧 `(L?2:2)` 恒为 2 的笔误，实为双侧轮距 */
+  const track = abs(R.cp[0]) * 2;   /* F-14（2026-08-30）：旧 `(L?2:2)` 恒为 2 的笔误，实为双侧轮距 — (F-14, 2026-08-30) the old `(L?2:2)` was a typo stuck at 2; it is actually the full both-side track width */
   let pct=null, rad=null, icr=null;
   if(L){
     const inner = dR>0 ? dR : dL, outer = dR>0 ? dL : dR;
@@ -354,17 +365,20 @@ function metrics(M, axis){
   };
 }
 
-/* ================================ 4. 扫掠分析与多维导数 ================================ */
+/* ================================ 4. 扫掠分析与多维导数 — 4. Sweep analysis and multi-dimensional derivatives ================================ */
 function findLimits(M,rack,axis){
   /* F-05（2026-08-30）：driveTo 返回残差，NaN 时 `>0.035` 恒 false → 扫满
-     ±120mm 把行程污染成全行程。显式 isFinite 判定，残差失稳即中断扫描。 */
+     ±120mm 把行程污染成全行程。显式 isFinite 判定，残差失稳即中断扫描。
+     (F-05, 2026-08-30: driveTo returns the residual; for NaN the `> 0.035` test is always
+     false, so the sweep ran the full ±120 mm and polluted the entire travel range.
+     Explicit isFinite checks now abort the sweep as soon as the residual blows up.) */
   const z0=M.n[M.idx.WC].p0[2];let up=0,dn=0,bad=false;
   resetMech(M);setChassis(M,rack,axis);
   for(let t=2;t<=120;t+=2){const r=driveTo(M,z0+t,rack,axis);if(!isFinite(r)||r>0.035){if(!isFinite(r))bad=true;break;}up=t;}
   resetMech(M);setChassis(M,rack,axis);
   for(let t=2;t<=120;t+=2){const r=driveTo(M,z0-t,rack,axis);if(!isFinite(r)||r>0.035){if(!isFinite(r))bad=true;break;}dn=t;}
   resetMech(M);setChassis(M,rack,axis);
-  if(bad)S.scanLimited={axis:axis,note:"行程扫描遇 NaN 残差，扫描中断"} ;
+  if(bad)S.scanLimited={axis:axis,note:"Travel sweep hit a NaN residual - sweep aborted"} ;
   return[-Math.max(40, dn-2), Math.max(40, up-2)];
 }
 
@@ -420,22 +434,32 @@ function sampleSweep(sw,tr,key){
   return R[R.length-1][key];
 }
 
-/* ================================ 5. 准静态载荷转移代数解算 ================================ */
+/* ================================ 5. 准静态载荷转移代数解算 — 5. Quasi-static load-transfer algebra ================================ */
 /* —— 稳态不足转向梯度（线性区，镜像引擎 chassis.quasi_loads）——
    α轴 = Fy轴 / ΣCα(各轮真实载荷)；Cα = B·C·D(Fz) 含 LS 载荷敏感性。
    TIRE_MF_QS 与引擎 TireParams 缺省值逐字同源（test_dom 钉死）；
-   轮胎实测标定（左坞站 TIRE CALIBRATION）成功后由 applyTireCalib() 覆写。 */
+   轮胎实测标定（左坞站 TIRE CALIBRATION）成功后由 applyTireCalib() 覆写。
+   (Steady-state understeer gradient, linear region, mirrors the engine chassis.quasi_loads:
+   alpha_axle = Fy_axle / SUM C_alpha (per tire at its true load); C_alpha = B·C·D(Fz) with
+   LS load sensitivity. TIRE_MF_QS mirrors the engine TireParams defaults verbatim (pinned
+   by test_dom) and is overwritten by applyTireCalib() once a measured-tire calibration
+   succeeds (left dock, TIRE CALIBRATION).) */
 /* G24：缺省胎 = 真实 GT3 光头胎量级，与引擎 v3models.TireParams 同源（双端对拍锚）。
    Fy0/FzNom = 5250/3500 = μ 1.50；By=20 ⇒ 峰值侧偏角 8.27°、峰值滑移率 12.1%。
-   旧值 8000/9（μ=2.29、峰值侧偏角 17.87°）是占位值，不真实，详见 TireParams 文档。 */
+   旧值 8000/9（μ=2.29、峰值侧偏角 17.87°）是占位值，不真实，详见 TireParams 文档。
+   (G24: the default tire matches a real GT3 slick in magnitude, same source as the engine
+   v3models.TireParams (a dual-side parity anchor). Fy0/FzNom = 5250/3500 = mu 1.50; By=20
+   gives peak slip angle 8.27 deg and peak slip ratio 12.1%. The old 8000/9 values
+   (mu=2.29, peak slip angle 17.87 deg) were an unrealistic placeholder - see the
+   TireParams docs.) */
 let TIRE_MF_QS = { Fy0: 5250, FzNom: 3500, By: 20, Cy: 1.2, LS: 0.10, Cg: 6.0 };
 function applyTireCalib(p){
   if(!p || typeof p !== "object") return;
-  /* M11：Cg（外倾推力系数）也进标定刷新链——P12 外倾→抓地耦合要用它 */
+  /* M11：Cg（外倾推力系数）也进标定刷新链——P12 外倾→抓地耦合要用它 — (M11) Cg, the camber-thrust coefficient, also joins the calibration refresh chain; the P12 camber-to-grip coupling needs it */
   ["Fy0","FzNom","By","Cy","LS","Cg"].forEach(k=>{ if(isFinite(p[k])) TIRE_MF_QS[k]=p[k]; });
-  if(isFinite(p.Ey)) SIM.tireCalibEy = p.Ey;   /* Ey 仅赛道瞬态用 */
+  if(isFinite(p.Ey)) SIM.tireCalibEy = p.Ey;   /* Ey 仅赛道瞬态用 — Ey is consumed by the circuit transient path only */
   SIM.tireCalib = Object.assign({}, TIRE_MF_QS);
-  SIM.qsRes = solveQuasiStatic();              /* 立即用实胎特性重算操稳指标 */
+  SIM.qsRes = solveQuasiStatic();              /* 立即用实胎特性重算操稳指标 — immediately re-solve the handling metrics with the real tire characteristics */
   if(typeof updateReadouts === "function") updateReadouts();
 }
 function solveQuasiStatic(gyOverride){
@@ -446,7 +470,11 @@ function solveQuasiStatic(gyOverride){
   
   /* a = CG→前轴、b = CG→后轴（讲义 ch10 §2.1：前轴权重 = b/L）。
      M5 2026-09-20 修复前后轴对调：旧式 b = L·m_r/(m_f+m_r) 把"后簧载份额"
-     当成 CG→后轴距，使前后轴静载整体反了（前轴拿到后轴的份额）。 */
+     当成 CG→后轴距，使前后轴静载整体反了（前轴拿到后轴的份额）。
+     (a = CG to front axle, b = CG to rear axle (lecture notes ch10 s2.1: front-axle weight
+     share = b/L). M5 2026-09-20 fixed a front/rear swap: the old b = L·m_r/(m_f+m_r)
+     treated the rear sprung-mass share as the CG-to-rear-axle distance, so the static
+     front/rear axle loads came out swapped (the front axle received the rear share).) */
   const b = L * (S.front.mS / (S.front.mS + S.rear.mS));
   const a = L - b;
   
@@ -456,7 +484,7 @@ function solveQuasiStatic(gyOverride){
   const hur = S.rear.tire.R / 1000;
   const hs = S.hs / 1000;
   
-  // 运动速比与轮端刚度初值（随行程迁移在迭代内更新）
+  // 运动速比与轮端刚度初值（随行程迁移在迭代内更新） — kinematic motion ratios and wheel-rate starting values (updated within the iteration as travel migrates)
   const mrF = SIM.mrRefF || 0.75, mrR = SIM.mrRefR || 0.78;
   const kwF0 = (S.front.kS * 1000) * mrF * mrF;
   const kwR0 = (S.rear.kS * 1000) * mrR * mrR;
@@ -473,11 +501,15 @@ function solveQuasiStatic(gyOverride){
 
   // —— 侧倾耦合迭代：RC 高度(zrc)取外侧压缩轮、侧倾刚度(kphi)取左右 kw 均值，均随行程迁移 ——
   // 迁移后 dFz_geo / dFz_elas 不再与 ay 线性齐次 → TLLTD 随 gy 真实变化（修复线性恒定观感）。
+  // (Roll-coupled iteration: the RC height zrc samples the outer compressed wheel and the
+  // roll stiffness kphi the mean of the left/right wheel rates - both migrate with travel.
+  // After migration dFz_geo / dFz_elas are no longer linear-homogeneous in ay, so TLLTD
+  // truly varies with gy (fixes the artificially constant look).)
   const rcHAt=(sw,tr,f0)=>{ if(!sw||!sw.rows||!sw.rows.length)return f0;
     const v=sampleSweep(sw,tr,"rcH"); return (v===null||v===undefined||!isFinite(v))?f0:v; };
   const kwAt=(sw,tr,k0)=>{ if(!sw||!sw.rows||!sw.rows.length)return k0;
     const v=sampleSweep(sw,tr,"kw"); return (v===null||v===undefined||!isFinite(v)||v<=0)?k0:v*1000; };
-  const zrcF0=((SIM.mFR?SIM.mFR.rcH:45)||45);   // mm @0 行程
+  const zrcF0=((SIM.mFR?SIM.mFR.rcH:45)||45);   // mm @0 行程 — mm at 0 travel
   const zrcR0=((SIM.mRR?SIM.mRR.rcH:65)||65);
   let zrc_f=zrcF0/1000, zrc_r=zrcR0/1000;
   let kphi_f=0.5*kwF0*(tf*tf)+kphi_arb_f, kphi_r=0.5*kwR0*(tr*tr)+kphi_arb_r;
@@ -487,9 +519,9 @@ function solveQuasiStatic(gyOverride){
     const hArm=Math.max(0.05,hs-hra);
     const denom=kphi_tot-mS*g*hArm;
     rollAngleRad=denom>100?(mS*ay*hArm)/denom:0;
-    const dtF=rollAngleRad*abs(S.front.hp.WC[0]);   // 滚转角×半轮距 = 轮行程差 mm
+    const dtF=rollAngleRad*abs(S.front.hp.WC[0]);   // 滚转角×半轮距 = 轮行程差 mm — roll angle × half track = wheel travel difference in mm
     const dtR=rollAngleRad*abs(S.rear.hp.WC[0]);
-    zrc_f=rcHAt(SIM.swF,dtF,zrcF0)/1000;            // 外侧（压缩侧）RC 高度
+    zrc_f=rcHAt(SIM.swF,dtF,zrcF0)/1000;            // 外侧（压缩侧）RC 高度 — outer (compressed-side) RC height
     zrc_r=rcHAt(SIM.swR,dtR,zrcR0)/1000;
     const kf=(kwAt(SIM.swF,dtF,kwF0)+kwAt(SIM.swF,-dtF,kwF0))/2;
     const kr=(kwAt(SIM.swR,dtR,kwR0)+kwAt(SIM.swR,-dtR,kwR0))/2;
@@ -518,7 +550,10 @@ function solveQuasiStatic(gyOverride){
   
   const sumTransfer = dFz_f_tot + dFz_r_tot;
   /* F-09（2026-08-30）：`sumTransfer>1` 使左转（gy<0，sum<0）恒 50%。
-     改 |sum|>1；50% 占位仅用于 ay≈0（讲义第九讲钦定约定，保留）。 */
+     改 |sum|>1；50% 占位仅用于 ay≈0（讲义第九讲钦定约定，保留）。
+     (F-09, 2026-08-30: `sumTransfer>1` forced a constant 50% for left turns (gy<0, sum<0).
+     Changed to |sum|>1; the 50% placeholder only applies near ay=0, a convention fixed by
+     lecture 9 and kept.) */
   const tlltd = Math.abs(sumTransfer) > 1 ? (dFz_f_tot / sumTransfer) * 100 : 50;
   const dFz_long = (mT * ax * (S.hcg / 1000)) / L;
   
@@ -533,7 +568,15 @@ function solveQuasiStatic(gyOverride){
      M5（2026-09-20）：Cα 再乘**按胎宽配平的轴系数** k = W_axle / mean(W_f, W_r)
      ——补上"后胎更宽 ⇒ 后轴更抓 ⇒ 不足转向"这条真车主平衡机制（此前 tire.W
      只被渲染层消费，模型对胎宽盲）。只放大刚度因子、不动峰值 D，故 μ 量级
-     标定（G24）不变；等宽或缺字段时 k≡1，旧行为逐位不变。 */
+     标定（G24）不变；等宽或缺字段时 k≡1，旧行为逐位不变。
+     (Steady-state understeer gradient, linear region, mirrors engine chassis.quasi_loads:
+     alpha_axle = Fy_axle / SUM C_alpha (true per-tire loads); C_alpha = B·C·D(Fz) incl. LS.
+     M5 (2026-09-20): C_alpha gains a tire-width-balanced axle factor k = W_axle /
+     mean(W_f, W_r), adding the real primary-balance mechanism "wider rear tire => more rear
+     grip => understeer" (before, tire.W was consumed only by the render layer, so the model
+     was blind to tire width). Only the stiffness factor is scaled while the peak D stays
+     untouched, so the mu-level calibration (G24) is unchanged; with equal widths or missing
+     fields k==1 and the old behavior stays bit-for-bit identical.) */
   const widthScale = (wA, wB) => {
     if (!(typeof wA === 'number' && isFinite(wA) && wA > 0)) return 1;
     if (!(typeof wB === 'number' && isFinite(wB) && wB > 0)) return 1;
@@ -550,7 +593,18 @@ function solveQuasiStatic(gyOverride){
      现在以**整车静轮载均值 mT·g/4**作参考（与引擎、11-stages 瞬态层同一个数，
      避免稳态/瞬态分叉），同一处杠杆约 +0.083 °/g。FzNom 仍管 D 的量级
      （μ_nom=Fy0/FzNom 标定不变）。`TIRE_MF_QS.FzRef`（轮胎工坊/请求显式给出）
-     优先于按静载导出的值。 */
+     优先于按静载导出的值。
+     (M8 (2026-09-20): load-sensitivity reference load (mirrors engine chassis.quasi_loads).
+     The old code always scaled LS relative to FzNom=3500 (GT3 scale) although a Formula SAE
+     wheel carries roughly 580 N, diluting dmu/dFz by about 6x: sweeping ARB diameter 0->30
+     moved front roll stiffness 470->3351 N·m/deg, TLLTD 45.5%->74.9% and roll gradient
+     0.456->0.119 deg/g, yet the US gradient only went 0.2104->0.2262 (+0.016 deg/g) - the
+     load-transfer levers (ARB / springs / ballast) were effectively dead. The reference is
+     now the mean static wheel load mT·g/4 (the same number as the engine and the 11-stages
+     transient layer, avoiding a steady/transient split); the same lever is worth about
+     +0.083 deg/g. FzNom still governs the scale of D (mu_nom=Fy0/FzNom calibration
+     unchanged). TIRE_MF_QS.FzRef, when given explicitly (tire workshop / request), takes
+     precedence over the static-load-derived value.) */
   const fzRefNow = (typeof TIRE_MF_QS.FzRef === 'number' && TIRE_MF_QS.FzRef > 0)
     ? TIRE_MF_QS.FzRef
     : Math.max(1, mT * 9.81 / 4);
@@ -572,7 +626,20 @@ function solveQuasiStatic(gyOverride){
          α_axle = (Fy_axle − ΣFy_cam) / ΣCα
        符号自检：外轮压缩、增益为负 ⇒ γ 更负 ⇒ (−γ)>0 ⇒ 贡献正侧向力（帮忙）；
        内轮反向。两侧之差 = "侧倾改变平衡"。只加推力项、不动 Cα（外倾对 Cα 是二阶量，
-       一起塞进来会让"这个数哪来的"不可审计）。 */
+       一起塞进来会让"这个数哪来的"不可审计）。
+       (M11 (2026-09-20), P12 camber-to-grip coupling (mirrors engine chassis.quasi_loads).
+       On a real car the primary ARB balance lever is roll -> wheel-travel difference ->
+       camber difference -> camber-thrust difference, whereas the old US gradient contained
+       only C_alpha(Fz), leaving the ARB to shift balance only indirectly via load
+       sensitivity. Model: dz = rollAngleRad · half track (outer wheel compressed positive);
+       gamma_w = state.cam0 + (camber gain per 25 mm) · dz_w (gain taken from this axle
+       sweep at 0 travel); Fy_cam = Cg · (−radians(gamma_w)) · Fz_w (positive toward the
+       corner); alpha_axle = (Fy_axle − ΣFy_cam) / ΣC_alpha. Sign check: outer wheel
+       compressed and a negative gain => gamma more negative => (−gamma) > 0 => positive
+       lateral force (helping); the inner wheel does the opposite. The side-to-side
+       difference = roll changing the balance. Only the thrust term is added; C_alpha stays
+       untouched (camber is a second-order effect on C_alpha, and folding it in would make
+       the numbers unauditable).) */
     const camGainF = sampleSweep(SIM.swF, 0, "cg"), camGainR = sampleSweep(SIM.swR, 0, "cg");
     const Cg = TIRE_MF_QS.Cg || 0;
     const dzF = rollAngleRad * (tf * 1000 / 2), dzR = rollAngleRad * (tr * 1000 / 2);  /* mm */
@@ -592,7 +659,7 @@ function solveQuasiStatic(gyOverride){
     }
   }
 
-  /* —— Jacking 效应：侧向力经 RC 的垂向分量（镜像引擎，讲义 EP10）—— */
+  /* —— Jacking 效应：侧向力经 RC 的垂向分量（镜像引擎，讲义 EP10）—— (Jacking effect: the vertical component of lateral force through the RC; mirrors the engine, lecture EP10) */
   const fJackF = (mS * ay * (b / L)) * (2 * zrc_f / tf);
   const fJackR = (mS * ay * (a / L)) * (2 * zrc_r / tr);
   const jackingN = fJackF + fJackR;
@@ -612,7 +679,7 @@ function solveQuasiStatic(gyOverride){
   };
 }
 
-/* —— 侧倾转向率 @0（°toe/mm，外轮，±10mm 轮跳插值差分，镜像引擎 _roll_steer_rate）—— */
+/* —— 侧倾转向率 @0（°toe/mm，外轮，±10mm 轮跳插值差分，镜像引擎 _roll_steer_rate）—— (Roll-steer rate at 0: deg toe per mm, outer wheel, central difference over ±10 mm of bump travel; mirrors engine _roll_steer_rate) */
 function rollSteerRate(sw){
   if(!sw||!sw.rows||sw.rows.length<3)return 0;
   const xs=sw.rows.map(r=>r.tr), ys=sw.rows.map(r=>r.toe);
@@ -628,7 +695,13 @@ function rollSteerRate(sw){
    完整版：δ_us = (αf−αr) [轮胎] + (δrs,f − δrs,r) [侧倾转向]；
    与引擎 chassis.solve 的 us_curve 严格同口径。分量分列供双线叠画；
    compliance 项在 K&C 力偏移工况另查，不在此伪造。
-   节流重算由 drawPlots 驱动（SIM.usCurveDirty / 800ms）。 */
+   节流重算由 drawPlots 驱动（SIM.usCurveDirty / 800ms）。
+   (Understeer characteristic delta-ay sweep - the core chart of the chassis development
+   report, lectures EP11/EP12. Full form: delta_us = (alpha_f − alpha_r) [tire] +
+   (delta_rs,f − delta_rs,r) [roll steer], strictly the same definition as the engine
+   chassis.solve us_curve. Components are kept separate for the two-line overlay; the
+   compliance term is looked up under the K&C force-offset load case and is deliberately
+   not faked here. Throttled recompute driven by drawPlots (SIM.usCurveDirty / 800 ms).) */
 function usSweepCompute(){
   const N=21, GYMAX=2.0;
   const halfF=abs(S.front.hp.WC[0]), halfR=abs(S.rear.hp.WC[0]);
@@ -648,6 +721,6 @@ function usSweepCompute(){
   SIM.usCurve={gy:gy,alphaF:alphaF,alphaR:alphaR,usTire:usTire,usRoll:usRoll,us:us,roll:roll};
 }
 
-/* ================================ 6. 动力学 (4-Post Rig 显式积分) ================================ */
+/* ================================ 6. 动力学 (4-Post Rig 显式积分) — 6. Dynamics (4-post rig explicit integration) ================================ */
 const FS=1000;
 function unsprungMass(axis){let s=0;HP_META.forEach(d=>{if(!d[4])s+=d[5];});return s;}

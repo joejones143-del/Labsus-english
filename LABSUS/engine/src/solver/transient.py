@@ -18,6 +18,41 @@
   开翼（直道 && vx>阈值 ⇒ 阻力 ×drs_cd_scale、后轴 cl ×drs_cl_scale）。
 - 载荷：每步 quasi_loads（上一步 ay/gx 破环），aero 下压力与分配比传入。
 - 驾驶员：纯追踪横向 + ★PI 速度纵向控制（消除稳态误差）。
+
+Full-vehicle planar transient dynamics (S3-1 upgraded · 2026-08-24).
+
+3-DOF body + four-wheel MF (combined slip + relaxation + camber term) +
+powertrain/aero + quasi-static load coupling.
+
+Model scope (upgrades over the first version marked ★):
+- Body: planar 6-state [X, Y, ψ, vx, vy, r]; roll/pitch are not states —
+  solved algebraically by the quasi-static kernel and passed through a ★
+  first-order lag filter (τ_roll/τ_pitch, modeling the roll/pitch
+  build-up time scale); the filtered values drive the K&C LUT travel
+  indexing and posture outputs.
+- Tires (★ combined-slip support + ★ relaxation length + ★ camber thrust
+  term):
+  - Relaxation: α_lat follows the kinematic slip angle through a
+    first-order lag (τ = L_σ / vx), making the transient response
+    realistic;
+  - Fy = MF(α_lat, Fz, γ) (camber term linear gain Cγ, an MF-subset
+    extension);
+  - Fx is given by the powertrain demand, constrained by the friction
+    circle lat_avail = √((μFz)² − Fx²), μ = Fy0/FzNom (same source as
+    the MF peak), and outputs each wheel's friction utilization
+    μ_use = |F|/(μFz).
+- Powertrain (★ PowertrainParams): peak-torque/constant-power envelope
+  Fx = min(T/R, P/v); drive split via drive_split_f (default 0 = pure
+  RWD); braking parametrized by brake_split_f (default 60:40).
+- Aero (★ aero): F_down_f/r = k_down·v² enters the quasi-static load
+  transfer directly; drag F_drag = k_drag·v².
+  P2a (2026-09-02): cl(h) ground effect (ge_gain defaults to 0 = off,
+  backward compatible) + DRS opening (straight && vx>threshold ⇒ drag
+  ×drs_cd_scale, rear-axle cl ×drs_cl_scale).
+- Loads: quasi_loads every step (uses the previous step's ay/gx to break
+  the loop); aero downforce and split ratios are passed in.
+- Driver: pure-pursuit lateral + ★PI longitudinal speed control (removes
+  steady-state error).
 """
 from __future__ import annotations
 
@@ -52,6 +87,22 @@ class TireState:
     纵向滑移反馈的占位残骸。本模型的纵向力由动力需求包络给出（见
     `wheel_force` 的 f_avail / 制动分支），**纵滑是开环量**：`slip_k` 每步算出
     仅用于观测，不进入 Kr 反馈。该缺口已在 INTENTIONAL_DIFFERENCES.md 登记。
+
+    Per-wheel transient lag state: slip-angle relaxation (rad).
+
+    alpha_st: this step's slip-angle target (rad), recorded by derivs and
+    integrated once at the end of step() — after the F-22 fix, derivs
+    stays a pure function and RK2 intermediate evaluations must not
+    pollute the lag state.
+
+    M5 (2026-09-20): the `kappa_dyn` field was deleted — it was only
+    initialized, never read or written; a placeholder leftover of
+    longitudinal slip feedback. This model's longitudinal force comes
+    from the powertrain demand envelope (see `wheel_force`'s f_avail /
+    brake branches); **longitudinal slip is an open-loop quantity**:
+    `slip_k` is computed every step for observation only and does not
+    enter Kr feedback. The gap is registered in
+    INTENTIONAL_DIFFERENCES.md.
     """
     __slots__ = ("alpha_lat", "alpha_st")
     def __init__(self):
@@ -75,6 +126,14 @@ def _ge_factor(h_m: float, gain: float, href_m: float, hmin_m: float,
 
     ge(h) = clamp(1 + gain·(href/max(h, hmin) − 1), floor, 1 + gain·(href/hmin − 1))
     h 越低（贴地）增强越强、直到 hmin 饱和；h > href 时衰减但不下 floor。
+
+    The cl(h) ground-effect enhancement factor (P2a, same shape as the
+    frontend's qs.ge*):
+
+    ge(h) = clamp(1 + gain·(href/max(h, hmin) − 1), floor, 1 +
+    gain·(href/hmin − 1))
+    The lower h (closer to the ground), the stronger the enhancement,
+    saturating at hmin; for h > href it decays but never below floor.
     """
     h = max(h_m, hmin_m)
     ge_max = 1.0 + gain * (href_m / hmin_m - 1.0)
@@ -85,6 +144,12 @@ def _curvature_radius(xy: np.ndarray) -> np.ndarray:
     """每点局部曲率半径 m（相邻 3 点外接圆；共线/退化解 → 1e6 ≈ 直线）。
 
     边界点沿用邻点；供 run_track_sim 的 DRS 直道判定用（一次性预处理 O(n)）。
+
+    Local curvature radius per point, in m (circumscribed circle of each
+    adjacent 3 points; collinear/degenerate → 1e6 ≈ straight line).
+
+    Boundary points reuse their neighbors; used by run_track_sim's DRS
+    straight-section detection (one-time O(n) pre-processing).
     """
     n = len(xy)
     out = np.full(n, 1e6)
@@ -105,7 +170,11 @@ def _curvature_radius(xy: np.ndarray) -> np.ndarray:
 
 
 class VehiclePlanar:
-    """平面 3-DOF 整车（升级版）：MF+复合滑移+松弛+外倾项+动力/气动条目。"""
+    """平面 3-DOF 整车（升级版）：MF+复合滑移+松弛+外倾项+动力/气动条目。
+
+    Planar 3-DOF full vehicle (upgraded): MF + combined slip + relaxation
+    + camber term + powertrain/aero entries.
+    """
 
     def __init__(self, vehicle: VehicleSpec, tire: TireParams,
                  kc_luts: dict, iz: float, powertrain, aero):
@@ -116,6 +185,15 @@ class VehiclePlanar:
         # （μ·Fz 与胎宽基本无关）。与 chassis.quasi_loads 的 Cα 配平同源，
         # 保证"准静态说不足转向 / 瞬态也真不足转向"两内核口径一致。
         # 任一轴缺 tire_width ⇒ k≡1，旧行为逐位不变（tphys_parity 锚安全）。
+        # ── Axle slip stiffness balanced by tire width (M5, 2026-09-20) ──
+        # k_axle = W_axle / mean(W_f, W_r) amplifies only MF's stiffness
+        # factor By, never the peak (μ·Fz is essentially independent of
+        # tire width). Same source as chassis.quasi_loads's Cα balancing,
+        # keeping the two kernels' conventions consistent ("what the
+        # quasi-static calls understeer, the transient also truly
+        # understeers").
+        # If either axle lacks tire_width ⇒ k≡1; old behavior bit-for-bit
+        # unchanged (safe for the tphys_parity anchor).
         _kf = vehicle.front.tire_width_scale(vehicle.rear)
         _kr = vehicle.rear.tire_width_scale(vehicle.front)
         self.tires = {}
@@ -131,13 +209,24 @@ class VehiclePlanar:
                                                           #   ⇒ 21 kN/rad @ FzNom=3500，真实量级）
                                                           # G24-S3：回退值随缺省同步 0.5→6.0，防 tire
                                                           # 缺属性时静默降级成旧占位量级
-        self.Ls = float(getattr(tire, "Ls", 0.35))       # 松弛长度 m
+        # Camber thrust coefficient 1/rad (default 6.0 ⇒ 21 kN/rad @
+        # FzNom=3500, a real magnitude). G24-S3: the fallback was synced
+        # with the default 0.5→6.0, preventing a silent downgrade to the
+        # old placeholder magnitude when tire lacks the attribute.
+        self.Ls = float(getattr(tire, "Ls", 0.35))       # 松弛长度 m — relaxation length m
         self.lut_f = kc_luts.get("front", {})
         self.lut_r = kc_luts.get("rear", {})
         self.iz = iz
         # M19（2026-09-20）：轮自由度开关。**默认关** ⇒ 状态仍为平面 6 状态、数值逐位不变。
         # 打开后：纵向力受 μFz 限制（而非历史的 0.75μFz 余量）、并输出准稳态滑移率与轮速，
         # 供差速器的 Δω 使用。开关由请求字段 TrackSimRequest.wheel_dof 控制（默认关）。
+        # M19 (2026-09-20): the wheel-DOF switch. **Off by default** ⇒ the state
+        # remains planar-6 and numbers are bit-for-bit unchanged.
+        # When on: the longitudinal force is limited by μFz (instead of the
+        # historical 0.75μFz margin), and the quasi-steady slip ratio and
+        # wheel speed are output for the differential's Δω. The switch is
+        # controlled by the request field TrackSimRequest.wheel_dof
+        # (default off).
         self.wheel_dof = False
         self.kappa_peak = float(getattr(tire, "kappa_peak", 0.12))
         self.pt = powertrain
@@ -165,10 +254,22 @@ class VehiclePlanar:
         # 是 显式 > mr_at_zero 推导 > 分轴常量，但 transient 无机构上下文，
         # 静态回退分轴常量保持 0.75/0.78（与准静态的最终回退相同，不再漂移）；
         # 显式输入依旧优先，差额登记"故意不同清单"（transient 无摇臂链）。
+        # F-19 (2026-08-30): the MR chain matches the quasi-static one — the
+        # engine-side chassis._resolve_mr_fb ordering is explicit >
+        # mr_at_zero derivation > per-axle constants, but transient has no
+        # mechanism context, so the static fallback keeps the per-axle
+        # constants 0.75/0.78 (the same final fallback as quasi-static; no
+        # more drift); explicit inputs still take priority, and the
+        # difference is registered in the "intentional differences list"
+        # (transient has no rocker chain).
         swf = axle_rc_sweep(vehicle.front)
         swr = axle_rc_sweep(vehicle.rear)
         def rc0(sw):
-            """travel=0 处的侧倾中心高（缺失点按 55mm 兜底）。"""
+            """travel=0 处的侧倾中心高（缺失点按 55mm 兜底）。
+
+            Roll-center height at travel=0 (missing points fall back to
+            55mm).
+            """
             return float(np.interp(0.0, sw["travel"],
                                    [v if v is not None else 55.0 for v in sw["rc_h"]]))
         self.rcH = {"FR": rc0(swf), "RR": rc0(swr)}
@@ -178,6 +279,9 @@ class VehiclePlanar:
 
         # P2a（2026-09-02）：cl(h)/DRS 参数缓存（缺省与 AeroParams 同源；
         # ge_gain 缺省 0 = 高度链路关闭，旧请求零行为变化）
+        # P2a (2026-09-02): cl(h)/DRS parameter cache (defaults same source
+        # as AeroParams; ge_gain defaults to 0 = the height chain is off,
+        # zero behavior change for old requests)
         ap = aero or {}
         self.ge_gain = float(ap.get("ge_gain", 0.0))
         self.ge_h0 = float(ap.get("ge_h0_mm", 100.0)) / 1000.0
@@ -186,14 +290,21 @@ class VehiclePlanar:
         self.ge_floor = float(ap.get("ge_floor", 0.80))
         self.drs_cd_scale = float(ap.get("drs_cd_scale", 0.72))
         self.drs_cl_scale = float(ap.get("drs_cl_scale", 0.90))
-        self._ge_f = 1.0                  # 最近步 ge 快照（trace 输出用，同 roll_ss 先例）
+        self._ge_f = 1.0                  # 最近步 ge 快照（trace 输出用，同 roll_ss 先例） — last-step ge snapshot (for trace output, following the roll_ss precedent)
         self._ge_r = 1.0
-        self._aero_down_n = 0.0           # 末步总下压快照（含 ge/DRS）
+        self._aero_down_n = 0.0           # 末步总下压快照（含 ge/DRS） — last-step total downforce snapshot (incl. ge/DRS)
 
     # ── 气动（★ + P2a cl(h)/DRS）────────────────────────────
+    # ── Aero (★ + P2a cl(h)/DRS) ────────────────────────────
     def _ride_h(self) -> tuple[float, float]:
         """本步车底净高估计 (h_f, h_r) m：名义 ge_h0 ± 姿态俯仰（抬头 → 前增后减，
-        与前端 0.11 + Z ± a/b·θ 同号；平面模型无 heave 状态，静态项即基准）。"""
+        与前端 0.11 + Z ± a/b·θ 同号；平面模型无 heave 状态，静态项即基准）。
+
+        This step's underbody clearance estimate (h_f, h_r) m: nominal
+        ge_h0 ± posture pitch (nose-up → front increases, rear decreases,
+        same sign as the frontend's 0.11 + Z ± a/b·θ; the planar model has
+        no heave state, so the static term is the baseline).
+        """
         p = math.radians(self.pitch_deg)
         return self.ge_h0 + self.a * math.tan(p), self.ge_h0 - self.b * math.tan(p)
 
@@ -203,6 +314,13 @@ class VehiclePlanar:
 
         h_f/h_r 车底净高 m（缺省名义 ge_h0）：ge_gain>0 时 cl 随 h 增强；
         drs=True 时总阻力 ×drs_cd_scale、后轴 cl ×drs_cl_scale（尾翼襟翼）。
+
+        Returns (F_down_f, F_down_r, F_drag) N (SI; k in N/(m/s)²).
+
+        h_f/h_r are the underbody clearances in m (default the nominal
+        ge_h0): with ge_gain>0, cl increases as h decreases;
+        with drs=True the total drag is ×drs_cd_scale and the rear-axle cl
+        ×drs_cl_scale (rear-wing flap).
         """
         v2 = vx * vx
         kf = float(self.aero_p.get("k_down_f", 0.55))
@@ -215,7 +333,7 @@ class VehiclePlanar:
             gr = _ge_factor(h_r, self.ge_gain, self.ge_href, self.ge_hmin, self.ge_floor)
         else:
             gf = gr = 1.0
-        self._ge_f, self._ge_r = gf, gr        # 快照（RK2 两次评估覆盖 → 终值 = k2）
+        self._ge_f, self._ge_r = gf, gr        # 快照（RK2 两次评估覆盖 → 终值 = k2） — snapshot (overwritten by the two RK2 evaluations → final value = k2)
         cd = self.drs_cd_scale if drs else 1.0
         clr = self.drs_cl_scale if drs else 1.0
         return kf * v2 * gf, kr * v2 * gr * clr, kd * v2 * cd
@@ -223,7 +341,15 @@ class VehiclePlanar:
     def drag_force(self, vx: float, drs: bool = False) -> float:
         """纵向气动阻力 N（CdA 与 h 无关，独立求值；不触碰 ge 快照——
         drag 的 aero_forces 调用若以名义高覆盖快照，trace 的 ge_f/ge_r
-        会恒为 1（P2a-4 调试实证），下压快照唯一来源 = wheel_loads）。"""
+        会恒为 1（P2a-4 调试实证），下压快照唯一来源 = wheel_loads）。
+
+        Longitudinal aerodynamic drag N (CdA is independent of h; evaluated
+        separately and does not touch the ge snapshots — if drag's
+        aero_forces call overwrote the snapshots with the nominal height,
+        the trace's ge_f/ge_r would be permanently 1 (verified while
+        debugging P2a-4); the only source of the downforce snapshot is
+        wheel_loads).
+        """
         v2 = vx * vx
         kd = float(self.aero_p.get("k_drag", 0.35))
         cd = self.drs_cd_scale if drs else 1.0
@@ -236,16 +362,26 @@ class VehiclePlanar:
         # 载荷——审查报告误把 dr 读成 drag；实际阻力在 derivs 中单独作用于 Fx，
         # 本函数物理正确，仅重命名消歧义。
         # P2a：h 用姿态估计（抬头 → 前净高增 / 后净高减），ge_gain>0 时生效。
+        # ★ Aero downforce injection (aero_force_n / aero_bias already have
+        # these semantics).
+        # Erratum (2026-08-30, re-checked under F-23): dfn_f/dfn_r are the
+        # front/rear axle downforces; drag does not enter the vertical
+        # loads — the review report misread dr as drag; drag actually acts
+        # on Fx separately in derivs. This function is physically correct;
+        # it was only renamed for disambiguation.
+        # P2a: h uses the posture estimate (nose-up → front clearance
+        # increases / rear decreases), effective when ge_gain>0.
         h_f, h_r = self._ride_h()
         dfn_f, dfn_r, _ = self.aero_forces(vx, h_f, h_r, drs)
-        self._aero_down_n = dfn_f + dfn_r      # 末步真实下压快照（含 ge/DRS，summary 用）
+        self._aero_down_n = dfn_f + dfn_r      # 末步真实下压快照（含 ge/DRS，summary 用） — last-step real downforce snapshot (incl. ge/DRS, for the summary)
         q.aero_force_n = dfn_f + dfn_r
         q.aero_bias = dfn_f / max(1.0, dfn_f + dfn_r)
         loads = quasi_loads(self.v, q, self.mr, self.rcH, self.rc_sw)
-        self.roll_ss = loads.roll_deg          # 准静态侧倾（滤波在 derivs 中做）
+        self.roll_ss = loads.roll_deg          # 准静态侧倾（滤波在 derivs 中做） — quasi-static roll (filtering happens in derivs)
         return dict(loads.fz)
 
     # ── 阿克曼分轮 ─────────────────────────────────────────────
+    # ── Ackermann per-wheel steering ───────────────────────────
     def steer_angles(self, delta: float) -> dict[str, float]:
         if abs(delta) < 1e-6:
             return {"FR": 0.0, "FL": 0.0}
@@ -258,6 +394,7 @@ class VehiclePlanar:
                 "FL": sgn * d_out if sgn > 0 else sgn * d_in}
 
     # ── 单轮力（★复合/松弛/外倾）────────────────────────────────
+    # ── Per-wheel force (★ combined/relaxation/camber) ──────────
     def wheel_force(self, w: str, vx_w: float, vy_w: float, delta: float,
                     fz: float, throttle: float, brake: float,
                     vx: float, dt: float,
@@ -276,32 +413,50 @@ class VehiclePlanar:
         # M19：轮自由度输出量的初值必须在**分支之前**统一给出 —— 本函数有
         # 「失活轮（speed<0.8 或 fz<=1）→ 早退」与「主路径」两条分支，
         # 只在主路径初始化会让失活轮的返回字典引用到未绑定变量（实测 UnboundLocalError）。
+        # M19: the wheel-DOF output variables must be initialized uniformly
+        # **before the branching** — this function has two branches ("deactivated
+        # wheel (speed<0.8 or fz<=1) → early return" and "main path"); initializing
+        # only on the main path would leave the deactivated wheel's return dict
+        # referencing unbound variables (observed UnboundLocalError).
         kappa_q = omega_q = 0.0
         if speed < 0.8 or fz <= 1.0:
             alpha_st, fy_w, fx_w, mu_use, slip_k = 0.0, 0.0, 0.0, 0.0, 0.0
-            ts.alpha_st = ts.alpha_lat    # 失活轮：松弛目标=当前值（不衰减，状态冻结）
+            ts.alpha_st = ts.alpha_lat    # 失活轮：松弛目标=当前值（不衰减，状态冻结） — deactivated wheel: relaxation target = current value (no decay, state frozen)
         else:
             alpha_st = math.atan2(vwy, max(abs(vwx), 0.5))
             # ★ 松弛（F-22/F-24 修复，2026-08-30）：derivs 保持纯函数——只记录
             #   侧偏目标，不推进状态（RK2 中间评估不得污染滞后状态）；推进在
             #   step() 末尾用解析精确解 1−e^(−dt·vx/σ) 每步积分一次（无条件稳定）。
+            # ★ Relaxation (F-22/F-24 fix, 2026-08-30): derivs stays a pure
+            #   function — it only records the slip-angle target and does not
+            #   advance the state (RK2 intermediate evaluations must not
+            #   pollute the lag state); the advance is integrated once per
+            #   step at the end of step() with the analytic exact solution
+            #   1−e^(−dt·vx/σ) (unconditionally stable).
             ts.alpha_st = alpha_st
             a_lat = ts.alpha_lat
             mu_fz = self.mu * fz
             # ★ 外倾推力项（线性增益，与 MF 峰值解耦采用 μ 归一）
+            # ★ Camber thrust term (linear gain, decoupled from the MF peak; normalized by μ)
             fy_w = -float(self.tires[w].fy(math.degrees(a_lat), fz))
-            fy_w += -self.Cg * cam_deg * fz              # ★ 外倾推力（cam_deg 为弧度，γ>0 产生反向 Fy）
+            fy_w += -self.Cg * cam_deg * fz              # ★ 外倾推力（cam_deg 为弧度，γ>0 产生反向 Fy） — ★ camber thrust (cam_deg in radians; γ>0 produces an opposite-sign Fy)
             # 纵向：动力包络（★ 恒扭矩-恒功率，前后分配 drive_split_f）或制动（参数化分配）
+            # Longitudinal: powertrain envelope (★ constant torque-constant power, front/rear split by drive_split_f) or braking (parametrized split)
             fx_w = 0.0
             if diff_force_n is not None:
                 # M16：轴级差速器已决定本轮该轮纵向力（N，含锁紧约束）
+                # M16: the axle-level differential has already decided this wheel's longitudinal force (N, including locking constraints)
                 fx_w = float(diff_force_n)
             elif throttle > 0:
                 # F-26（2026-08-30）：轮半径不再硬编码 0.30（默认 tire 325mm 却按
                 # 300mm 算力会虚高 ~8%）——取本轴 tire_radius 折算扭矩→力。
+                # F-26 (2026-08-30): the wheel radius is no longer hardcoded to
+                # 0.30 (the default tire is 325mm but computing force at 300mm
+                # inflates it by ~8%) — take this axle's tire_radius to convert
+                # torque→force.
                 is_f = w in ("FR", "FL")
                 t_r_mm = (self.v.front.tire_radius if is_f else self.v.rear.tire_radius) or 325.0
-                t_eff = self.pt.get("T_max", 250.0) / (t_r_mm / 1000.0)   # N·m→N（一档直驱近似）
+                t_eff = self.pt.get("T_max", 250.0) / (t_r_mm / 1000.0)   # N·m→N（一档直驱近似） — N·m→N (first-gear direct-drive approximation)
                 p_eff = (self.pt.get("P_kw", 80.0) * 1000.0) / max(0.8, vx)
                 f_avail = min(t_eff, p_eff) * throttle
                 split = float(self.pt.get("drive_split_f", 0.0))
@@ -309,6 +464,10 @@ class VehiclePlanar:
                 if share > 0.0:
                     # 历史路径用 0.75·μFz 作为单轮纵向余量（出处未说明）；轮自由度打开后
                     # 该余量由滑移曲线与附着共同决定 ⇒ 改用 μFz，并把差异登记为刻意差异。
+                    # The historical path used 0.75·μFz as the per-wheel longitudinal
+                    # margin (origin unstated); once the wheel DOF is on, that margin
+                    # is determined jointly by the slip curve and grip ⇒ switch to
+                    # μFz, and register the difference as an intentional difference.
                     cap = mu_fz if self.wheel_dof else 0.75 * mu_fz
                     fx_w = min(cap, f_avail * share) * 0.5
             if brake > 0:
@@ -316,17 +475,26 @@ class VehiclePlanar:
                 share = (sp_f / 2.0) if w in ("FR", "FL") else ((1.0 - sp_f) / 2.0)
                 fx_w = -math.copysign(min(mu_fz, brake * share * 14000.0), vwx)
             # M19：轮自由度打开时输出**准稳态**滑移率与轮速（代数解，不引入刚性）
+            # M19: with the wheel DOF on, output the **quasi-steady** slip ratio and wheel speed (algebraic solution; introduces no stiffness)
             kappa_q = omega_q = 0.0
             if self.wheel_dof:
                 # ⚠ 轮半径必须在此独立取：上方 `t_r_mm` 只在 `elif throttle > 0` 分支内定义，
                 # 而走差速器路径（`diff_force_n` 非 None）时该分支被跳过 ⇒ 引用它会
                 # UnboundLocalError。这是"开关开 + 差速器规格"的端到端集成测试当场抓出的，
                 # 单测（只开开关、不给差速器）覆盖不到 —— 集成缺口比 bug 本身更值得记。
+                # ⚠ The wheel radius must be read independently here: the `t_r_mm`
+                # above is only defined inside the `elif throttle > 0` branch, and
+                # the differential path (`diff_force_n` not None) skips that branch
+                # ⇒ referencing it raises UnboundLocalError. This was caught on the
+                # spot by the end-to-end integration test ("switch on + differential
+                # spec"); unit tests (switch on only, no differential) cannot cover
+                # it — the integration gap is worth recording more than the bug itself.
                 r_use_mm = (self.v.front.tire_radius if w in ("FR", "FL")
                             else self.v.rear.tire_radius) or 325.0
                 kappa_q = quasi_steady_slip(fx_w, mu_fz, self.kappa_peak)
                 omega_q = quasi_steady_omega(vx, kappa_q, r_use_mm / 1000.0)
             # ★ 摩擦圆 + 利用率输出
+            # ★ Friction circle + utilization output
             lat_avail = math.sqrt(max(0.0, mu_fz * mu_fz - fx_w * fx_w))
             fy_w = max(-lat_avail, min(lat_avail, fy_w))
             mu_use = min(1.0, math.hypot(fx_w, fy_w) / max(mu_fz, 1.0))
@@ -336,6 +504,7 @@ class VehiclePlanar:
                 "toe": toe_deg, "cam": math.degrees(cam_deg), "fz": fz,
                 "mu_use": mu_use, "slip_k": slip_k,
                 # M19：轮自由度输出（开关关闭时恒 0，不改变任何既有消费方）
+                # M19: wheel-DOF outputs (always 0 when the switch is off; no existing consumer's semantics change)
                 "kappa_qs": kappa_q, "omega_qs": omega_q}
 
     def _diff_shares(self, fz: dict, throttle: float, vx: float) -> dict:
@@ -353,6 +522,31 @@ class VehiclePlanar:
 
         差速器是**轴级**装置：左右分配必须先于逐轮受力计算，逐轮独立算必然退化成
         "每轮各自用满附着"（= 隐式锁死轴），这正是 M16 要修的东西。
+
+        Compute both axles' left/right drive forces from the differential
+        (N). Axles without a spec are not returned here ⇒ they keep the
+        historical per-wheel path.
+
+        **Two paths** (decided by `self.wheel_dof`):
+
+        · **Switch on (source-of-truth path)**: uses `distribute_axle`
+          (torque units, ported verbatim from the frontend
+          `web/js/16-powertrain.js::distributeAxle`). It needs the
+          left/right **wheel-speed difference Δω**, and in the quasi-steady
+          regime `ω_w = vx·(1+κ_w)/Re` while `κ_w` in turn depends on this
+          wheel's torque split ⇒ a small fixed point that converges with
+          two wheel iterations (first round starts from equal torque
+          splits). The T2 parity artifact
+          `engine/data/diff_parity_cases.json` guarantees this side matches
+          the frontend case-by-case (worst rel < 1e-9).
+        · **Switch off (historical path)**: no Δω is available ⇒ fall back
+          to the force-form quasi-static split `split_from_spec`, keeping
+          the behavior and numbers M16 introduced **bit-for-bit** unchanged.
+
+        The differential is an **axle-level** device: the left/right split
+        must precede the per-wheel force computation; computing per wheel
+        independently necessarily degenerates into "each wheel uses its
+        full grip" (= an implicitly locked axle) — exactly what M16 fixes.
         """
         out: dict = {}
         if throttle <= 0:
@@ -372,6 +566,7 @@ class VehiclePlanar:
             cap_r = 0.75 * self.mu * fz[wheels[1]]
             if self.wheel_dof:
                 # 真源路径：扭矩域分配 + 两轮不动点求 Δω
+                # Source-of-truth path: torque-domain split + a two-wheel fixed point for Δω
                 t_axle = f_avail * r_m
                 t_l, t_r = distribute_axle(t_axle, 0.0, 0.0,
                                            fz[wheels[0]], fz[wheels[1]], spec)
@@ -396,11 +591,21 @@ class VehiclePlanar:
         alpha_lat 等滞后状态——旧实现让 RK2 的 k1/k2 两次评估各推一次滞后，
         τ_eff 减半且中点状态被污染。滞后推进统一移到 step() 末尾。
 
-        P2a：drs 为步内常量输入（同 delta/throttle 语义，不影响纯函数性）。"""
+        P2a：drs 为步内常量输入（同 delta/throttle 语义，不影响纯函数性）。
+
+        Pure-function derivative (F-22 fix, 2026-08-30): no longer advances
+        the lag states such as roll_deg/pitch_deg/alpha_lat — the old
+        implementation let RK2's k1/k2 evaluations each advance the lag
+        once, halving τ_eff and polluting the midpoint state. Lag
+        advancement is now unified at the end of step().
+
+        P2a: drs is a constant-within-step input (same semantics as
+        delta/throttle; does not affect pure-function-ness)."""
         vx, vy, r = s[3], s[4], s[5]
         fz = self.wheel_loads(vx, drs)
         steer = self.steer_angles(delta)
         # M16：轴级差速器分配（无规格的轴不在字典里 ⇒ 该轴沿用历史逐轮路径）
+        # M16: axle-level differential allocation (an axle without a spec is not in the dict ⇒ that axle keeps the historical per-wheel path)
         dshare = self._diff_shares(fz, throttle, vx)
         Fx = Fy = Mz = 0.0
         diag = {}
@@ -415,6 +620,7 @@ class VehiclePlanar:
             Mz += lx * fw["fy"] - ly * fw["fx"]
             diag[w] = fw
         # ★ 气动阻力（P2a：独立求值，不覆盖 ge 快照）
+        # ★ Aero drag (P2a: evaluated separately; does not overwrite the ge snapshots)
         f_drag = self.drag_force(vx, drs)
         Fx -= f_drag * 1.0
         m = self.v.mass_kg
@@ -438,11 +644,15 @@ class VehiclePlanar:
         self.prev_ax = k2[3] - s2[5] * s2[4]
         self.prev_ay = k2[4] + s2[5] * s2[3]
         # —— 滞后状态推进（F-22 修复：移出 derivs，每个 RK2 步只积分一次）——
+        # —— Lag-state advancement (F-22 fix: moved out of derivs; integrated once per RK2 step) ——
         self.roll_deg += (self.roll_ss - self.roll_deg) * (dt / 0.18)
         pitch_ss = math.degrees(math.atan2(self.prev_ax, G)) * 0.55
         self.pitch_deg += (pitch_ss - self.pitch_deg) * (dt / 0.25)
         # —— 松弛滞后（F-24 修复：解析精确解，无条件稳定；显式欧拉在
         #    dt·vx/σ > 2 时发散，dt=0.05/vx=40/σ=0.3 时比率高达 6.7）——
+        # —— Relaxation lag (F-24 fix: analytic exact solution, unconditionally
+        # stable; explicit Euler diverges when dt·vx/σ > 2 — with dt=0.05,
+        # vx=40, σ=0.3 the ratio reaches 6.7) ——
         sigma = max(0.3, self.Ls)
         vx_now = max(float(s2[3]), 0.0)
         for w in _WHEELS:
@@ -454,6 +664,7 @@ class VehiclePlanar:
 
 
 # ── 纯追踪驾驶员 + ★PI 纵向 ─────────────────────────────────────
+# ── Pure-pursuit driver + ★PI longitudinal ──────────────────────
 
 def _closest_idx(track_xy: np.ndarray, p: np.ndarray, start: int) -> int:
     d = np.linalg.norm(track_xy[start:] - p, axis=1)
@@ -472,7 +683,11 @@ def _lookahead_point(track_xy: np.ndarray, idx: int, ld: float) -> np.ndarray:
 
 
 class DriverPI:
-    """纯追踪转向 + 纵向 PI。内部状态：积分误差。"""
+    """纯追踪转向 + 纵向 PI。内部状态：积分误差。
+
+    Pure-pursuit steering + longitudinal PI. Internal state: the integral
+    error.
+    """
     def __init__(self, kp_v=0.9, ki_v=0.12, gain=0.9):
         self.kp_v = kp_v
         self.ki_v = ki_v
@@ -494,6 +709,9 @@ class DriverPI:
         e = v_target - vx
         # F-27（2026-08-30）：积分按真实 dt 缩放（旧实现 e*0.05 隐含 dt=0.05，
         # 请求 dt 允许 0.0005~0.05 → 积分增益随步长漂移最多 100 倍）
+        # F-27 (2026-08-30): scale the integral by the real dt (the old
+        # e*0.05 implicitly assumed dt=0.05, while request dt allows
+        # 0.0005~0.05 → the integral gain drifted with step size by up to 100×)
         self.e_int = max(-2.0, min(2.0, self.e_int + e * dt))
         throttle = float(np.clip(self.kp_v * e + self.ki_v * self.e_int, 0.0, 1.0))
         brake = float(np.clip(-self.kp_v * e - 0.15, 0.0, 1.0)) if e < -0.5 else 0.0
@@ -508,6 +726,10 @@ def run_track_sim(req: TrackSimRequest) -> dict:
     L = v.wheelbase_mm / 1000.0
     # M15（2026-09-20）：缺省不再一律用均质矩形板近似（对 FSAE 偏高 41%），
     # 改走 mass_properties.resolve_yaw_inertia 三档（显式 > FSAE 部件清单 > 矩形近似）
+    # M15 (2026-09-20): the default no longer always uses the uniform
+    # rectangular-plate approximation (41% high for FSAE); it now goes
+    # through mass_properties.resolve_yaw_inertia's three tiers (explicit >
+    # FSAE parts list > rectangular approximation)
     from src.api.mass_properties import resolve_yaw_inertia
     iz, _iz_src = resolve_yaw_inertia(req.iz_kg_m2, v.mass_kg, v.wheelbase_mm)
     _iz_source = _iz_src
@@ -516,23 +738,32 @@ def run_track_sim(req: TrackSimRequest) -> dict:
     # 缺省（None 或无 ice）保持旧 T_max/P_kw 路径逐位不变（对拍锚）。
     # 旧路径把 T_max 视为**轮上扭矩** N·m（wheel_force 内按每轮 tire_radius 折力），
     # 故此处只给“曲轴扭矩×变速箱比×主减速×效率”的轮端扭矩，不再除半径。
+    # G31-P7: when the request carries powertrain.ice, override T_max with its
+    # equivalent wheel-torque cap (first gear); the default (None or no ice)
+    # keeps the old T_max/P_kw path bit-for-bit unchanged (the parity anchor).
+    # The old path treats T_max as **wheel torque** N·m (wheel_force converts
+    # it to force per each wheel's tire_radius), so here we only set the
+    # wheel-end torque "crank torque × gearbox ratio × final drive ×
+    # efficiency" and no longer divide by the radius.
     if req.powertrain is not None and req.powertrain.ice is not None:
         _ps = req.powertrain
-        _t_crank = max((p[1] for p in _ps.ice.map), default=0.0)      # 曲轴峰值扭矩 N·m
+        _t_crank = max((p[1] for p in _ps.ice.map), default=0.0)      # 曲轴峰值扭矩 N·m — crank peak torque N·m
         _gb = _ps.gearbox
-        _ratio = _gb.ratios[0] if (_gb and _gb.ratios) else 1.0        # 一档传动比
-        _final = _gb.finalDrive if _gb else 1.0                        # 主减速
-        _eff = _gb.eff if _gb else 1.0                                 # 传动效率
+        _ratio = _gb.ratios[0] if (_gb and _gb.ratios) else 1.0        # 一档传动比 — first-gear ratio
+        _final = _gb.finalDrive if _gb else 1.0                        # 主减速 — final drive
+        _eff = _gb.eff if _gb else 1.0                                 # 传动效率 — transmission efficiency
         _t_wheel = _t_crank * _ratio * _final * _eff
         if _t_wheel > 0.0:
             pt["T_max"] = _t_wheel
         # 峰值功率由 map 估算：P[kW] = max(T×n)/9550（保留恒功率包络高速上限）
+        # Peak power estimated from the map: P[kW] = max(T×n)/9550 (keeps the constant-power envelope's high-speed cap)
         _p_kw = max((p[0] * p[1] for p in _ps.ice.map), default=0.0) / 9550.0
         if _p_kw > 0.0:
             pt["P_kw"] = _p_kw
     aero = req.aero.model_dump() if req.aero else {}
     car = VehiclePlanar(v, req.tire, req.kc_luts, iz, pt, aero)
     # M19：轮自由度开关（默认关 ⇒ 历史数值逐位不变）
+    # M19: the wheel-DOF switch (off by default ⇒ historical numbers bit-for-bit unchanged)
     car.wheel_dof = bool(getattr(req, "wheel_dof", False))
     drv = DriverPI(gain=req.lookahead_gain)
 
@@ -551,6 +782,9 @@ def run_track_sim(req: TrackSimRequest) -> dict:
     max_ay = 0.0
     # P2a DRS：局部曲率半径 > 阈值（直道）&& vx > 阈值 ⇒ 开翼（无轨道 DRS 区
     # 标记，直道判定替代；drs_v_ms 高阈值/ge_gain=0 ⇒ 旧请求零变化）
+    # P2a DRS: local curvature radius > threshold (straight) && vx > threshold ⇒
+    # open the wing (no track DRS-zone markers; straight-detection as substitute;
+    # a high drs_v_ms threshold / ge_gain=0 ⇒ zero change for old requests)
     drs_v_ms = float(aero.get("drs_v_ms", 40.0))
     drs_r_min = float(aero.get("drs_curve_radius_m", 300.0))
     curv = _curvature_radius(track_xy)
@@ -582,8 +816,9 @@ def run_track_sim(req: TrackSimRequest) -> dict:
                 row[f"fy_{w}"] = round(diag[w]["fy"], 1)
                 row[f"fx_{w}"] = round(diag[w]["fx"], 1)
                 row[f"mu_{w}"] = round(diag[w]["mu_use"], 3)
-                row[f"slip_{w}"] = round(diag[w]["slip_k"], 4)   # M5：纵滑可观（原算出即丢）
+                row[f"slip_{w}"] = round(diag[w]["slip_k"], 4)   # M5：纵滑可观（原算出即丢） — M5: longitudinal slip now observable (was computed then dropped)
                 # M19：轮自由度可观（关闭时恒 0，不改变既有输出语义）
+                # M19: wheel-DOF observables (always 0 when off; existing output semantics unchanged)
                 row[f"kappa_{w}"] = round(diag[w]["kappa_qs"], 5)
                 row[f"omega_{w}"] = round(diag[w]["omega_qs"], 4)
                 row[f"cam_{w}"] = round(diag[w]["cam"], 2)

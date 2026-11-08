@@ -1,12 +1,15 @@
 """/api/v3 服务层验收测试（S2）。
 
 覆盖：健康检查 / 单点求解 / K&C 四工况 / 衬套装配 / 非法输入 / 未知工况。
+
+English: /api/v3 service-layer acceptance tests (S2).
+Coverage: health check / single-point pose solve / the four K&C cases / bushing assembly / invalid input / unknown cases.
 """
 import sys
 
 import pytest
 from fastapi.testclient import TestClient
-from server import app  # noqa: E402  (sys.path 注入由 server 完成)
+from server import app  # noqa: E402  (sys.path 注入由 server 完成) — sys.path injection is done by server
 
 client = TestClient(app)
 
@@ -32,7 +35,7 @@ def test_solve_pose_baseline():
     assert body["status"] == "VALID"
     assert body["residual_mm"] < 0.02
     m = body["metrics"]
-    # 基线前悬 推杆：静态 cam ≈ -1.2°（PRESETS cam0），travel+10 后外倾向负/小变化
+    # 基线前悬 推杆：静态 cam ≈ -1.2°（PRESETS cam0），travel+10 后外倾向负/小变化 — baseline front pushrod suspension: static cam ≈ -1.2° (PRESETS cam0); after travel+10 the camber drifts negative / small change
     assert -3.0 < m["cam"] < 0.0
     assert "kpi" in m and "cast" in m and "scrub" in m and "trail" in m
     assert "UP5" in body["pose"] and "RK_PIVOT" in body["pose"]
@@ -72,7 +75,7 @@ def test_bump_curves_and_gains():
     assert len(b["curves"]["travel"]) == 17
     assert len(b["curves"]["cam"]) == 17
     assert len(b["curves"]["toe"]) == 17
-    # 外倾曲线单调有物理量级（前悬推杆：压缩行程 cam 越负）
+    # 外倾曲线单调有物理量级（前悬推杆：压缩行程 cam 越负） — camber curve monotonic with a physical magnitude (front pushrod: more compression → cam more negative)
     assert all(v is not None for v in b["curves"]["cam"])
     assert abs(b["curves"]["cam"][0] - b["curves"]["cam"][-1]) > 0.5
     assert "camber_gain_deg_per_25" in b["gains"]
@@ -91,13 +94,13 @@ def test_bump_with_bushing():
     b = r.json()
     assert b["status"] in ("VALID", "APPROXIMATE")
     assert b["bushing_deltas"] is not None and "bLCA_F" in b["bushing_deltas"]
-    # 衬套形变 dz 应有限（万 3mm 量级：3000N 分配后 < 6mm）
+    # 衬套形变 dz 应有限（万 3mm 量级：3000N 分配后 < 6mm） — bushing deflection dz should be bounded (order of 3mm: after distributing 3000N it is < 6mm)
     dz = b["bushing_deltas"]["bLCA_F"][2]
     assert abs(dz) < 10.0
 
 
 def test_bump_no_bushing_matches_pose_consistency():
-    """服务层内部一致性：bump 无衬套在某点应与单点 solve_pose 同（travel=7）。"""
+    """服务层内部一致性：bump 无衬套在某点应与单点 solve_pose 同（travel=7）。"""  # English: service-layer internal consistency: a bushing-free bump at one point should match the single-point solve_pose (travel=7).
     b_r = client.post("/api/v3/kandc/bump",
                       json={"sweep": {"min": 7, "max": 7, "n": 3}})
     p_r = client.post("/api/v3/solve/pose", json={"travel": 7.0, "rack": 0.0})
@@ -121,6 +124,11 @@ def test_roll_both_sides():
     # 逐点相等——机构镜像精确。旧断言 cam_l[i]≈cam_r[i] 比较的是不同行程，
     # 物理上不成立（差值=外倾增益×2t）；其曾以 <0.3° 通过是因左角设计轮轴
     # 未镜像的缺陷恰好污染抵消（见 r2 研究报告发现 B）。
+    # symmetry invariant (tightened after the 2026-08-22 P0 fix): left travel = -t → cam_l[i] (left at -t) must equal
+    # cam_r[n-1-i] (right at -t) at the reversed-travel index — an exact mechanism mirror. The old assertion
+    # cam_l[i]≈cam_r[i] compared different travels, physically invalid (difference = camber gain × 2t); its earlier
+    # pass below 0.3° was accidental cancellation of the unmirrored left-corner design wheel-axis defect (see r2
+    # research report finding B).
     cam_r = b["curves"]["cam_r"]
     cam_l = b["curves"]["cam_l"]
     n = len(cam_r)
@@ -140,10 +148,14 @@ def test_steer_sweep():
     # （齿条整体沿世界 −X 平移，与前端 setChassis RACK.x −= rack 逐位一致）：
     # rack+ → FR toe 负向（实测 ±8mm ≈ ±3.9°，灵敏度 ~0.39°/mm，旧横拉杆式
     # 轴向模型仅 ~0.019°/mm，差 20.8:1 —— 旧值不可信）。
+    # rack input → sensible toe/steer direction. 2026-08-22 steer_axis corrected to (-1,0,0) (the rack translates along
+    # the world −X axis, bit-identical to the frontend setChassis RACK.x −= rack): rack+ → FR toe negative (measured
+    # ±8mm ≈ ±3.9°, sensitivity ~0.39°/mm; the old tie-rod-style axial model gave only ~0.019°/mm, off by 20.8:1 —
+    # the old values are not trustworthy).
     toe = b["curves"]["toe"]
     span = abs(toe[-1] - toe[0])
     assert 1.0 < span < 20.0
-    assert toe[-1] < toe[0]                      # rack+ → toe−（方向一致性）
+    assert toe[-1] < toe[0]                      # rack+ → toe−（方向一致性） — rack+ → toe− (direction consistency)
     assert "steer" in b["curves"]
     assert "toe_gain_per_unit" in b["gains"]
 
@@ -154,8 +166,8 @@ def test_compliance_no_bushing_warns():
                           "compliance_axis": "fy"})
     assert r.status_code == 200
     b = r.json()
-    assert any("无衬套" in w for w in b["warnings"])
-    # 纯几何：力扫掠不影响姿态 → toe 恒定
+    assert any("no bushings defined" in w for w in b["warnings"])
+    # 纯几何：力扫掠不影响姿态 → toe 恒定 — pure geometry: the force sweep does not affect the pose → toe constant
     toe = b["curves"]["toe"]
     assert len(set(round(v, 4) for v in toe)) == 1
 
@@ -186,7 +198,7 @@ def test_invalid_bushing_node_422():
 
 
 def test_bushing_rck_ax_b_422_clear_message():
-    """RCK_AX_B 未建模（摇臂单枢轴）：422 且错误信息明确，而非裸 KeyError。"""
+    """RCK_AX_B 未建模（摇臂单枢轴）：422 且错误信息明确，而非裸 KeyError。"""  # English: RCK_AX_B is unmodeled (single-pivot rocker): 422 with a clear error message rather than a bare KeyError.
     r = client.post("/api/v3/kandc/bump", json={
         "bushings": [{"name": "bRck", "node": "RCK_AX_B"}]})
     assert r.status_code == 422
@@ -199,10 +211,10 @@ def test_invalid_compliance_axis_422():
                     json={"sweep": {"min": 0, "max": 1, "n": 3},
                           "compliance_axis": "fx",
                           "points": {"LCA_F": [1, 2, 3]}})
-    assert r.status_code == 422  # 缺硬点键 → 422
+    assert r.status_code == 422  # 缺硬点键 → 422 — missing hardpoint key → 422
 
 
-# ── G31-P7：Python 端可选 PowertrainSpec（缺省 None，不污染对拍锚）──
+# ── G31-P7：Python 端可选 PowertrainSpec（缺省 None，不污染对拍锚）── — ( G31-P7: optional Python-side PowertrainSpec (default None, does not pollute the parity anchor) )
 
 _PT_FRONT = {
     "LCA_F": [260, 140, 130], "LCA_R": [260, -120, 140], "UCA_F": [350, 110, 340],
@@ -221,7 +233,7 @@ _PT_REAR = {
 
 
 def _pt_min_body(**over):
-    """最小合法 TrackSimRequest 构造字典（vehicle 全 15 键 + ≥2 track 点）。"""
+    """最小合法 TrackSimRequest 构造字典（vehicle 全 15 键 + ≥2 track 点）。"""  # English: minimal valid TrackSimRequest construction dict (vehicle with all 15 keys + ≥2 track points).
     b = {
         "vehicle": {
             "wheelbase_mm": 2750.0, "mass_kg": 1420.0, "sprung_mass_kg": 1260.0,
@@ -238,7 +250,7 @@ def _pt_min_body(**over):
 
 def test_powertrain_optional_field():
     from src.api.v3models import PowertrainSpec, TrackSimRequest  # noqa: F401
-    # 带 powertrain：架构/齿轮比嵌套解析
+    # 带 powertrain：架构/齿轮比嵌套解析 — with powertrain: architecture/gear-ratio nested parsing
     req = TrackSimRequest(**_pt_min_body(powertrain={
         "architecture": "ice",
         "ice": {"map": [[800, 1200], [9000, 1200]]},
@@ -246,12 +258,12 @@ def test_powertrain_optional_field():
     assert req.powertrain.architecture == "ice"
     assert req.powertrain.gearbox.ratios == [3, 2, 1]
     assert req.powertrain.ice is not None
-    # 向后兼容：旧 T_max/P_kw 标量键仍被识别（PowertrainSpec 继承 PowertrainParams）
+    # 向后兼容：旧 T_max/P_kw 标量键仍被识别（PowertrainSpec 继承 PowertrainParams） — backward compatibility: the legacy T_max/P_kw scalar keys are still recognized (PowertrainSpec inherits PowertrainParams)
     req2 = TrackSimRequest(**_pt_min_body(
         powertrain={"T_max": 320.0, "P_kw": 120.0, "drive_split_f": 1.0}))
     assert req2.powertrain.T_max == 320.0
     assert req2.powertrain.drive_split_f == 1.0
-    # 缺省不污染对拍：未下发 powertrain → model_dump 中该键为 None
+    # 缺省不污染对拍：未下发 powertrain → model_dump 中该键为 None — defaults do not pollute parity: no powertrain sent → the key is None in model_dump
     d = TrackSimRequest(**_pt_min_body()).model_dump()
     assert d.get("powertrain") is None
 
@@ -261,10 +273,12 @@ def test_powertrain_frontend_shape_extra_ignored():
 
     fricA/fricB/fricC/throttleTau（IceSpec）、autoUpFrac/autoDownFrac（GearboxSpec）、
     diff/centerDiff（PowertrainSpec）均为 Python 不消费的 JS 字段，extra=ignore 吸收
-    ——防全局 strict 化后 422；同时验证 transient 消费门控依赖的 ice 嵌套完整可达。"""
+    ——防全局 strict 化后 422；同时验证 transient 消费门控依赖的 ice 嵌套完整可达。
+
+    English: G31-P10-4: the shape sent down by the frontend 09-track.js (scalars + nested + JS-specific fields) is accepted. fricA/fricB/fricC/throttleTau (IceSpec), autoUpFrac/autoDownFrac (GearboxSpec), diff/centerDiff (PowertrainSpec) are JS fields Python does not consume — extra=ignore absorbs them, guarding against a 422 after any global strictening — while also verifying the ice nesting that the transient consumption gating depends on remains fully reachable."""
     from src.api.v3models import TrackSimRequest
     req = TrackSimRequest(**_pt_min_body(powertrain={
-        "T_max": 250, "P_kw": 80, "brake_split_f": 0.6,       # 标量共存（继承）
+        "T_max": 250, "P_kw": 80, "brake_split_f": 0.6,       # 标量共存（继承） — scalars coexist (inheritance)
         "architecture": "ice", "drive": "rwd", "splitFront": 0.0,
         "ice": {"cyl": 8, "layout": "V8", "map": [[800, 520], [6500, 520]],
                  "redlineRpm": 8500, "fuelCutRpm": 8700,
@@ -273,42 +287,45 @@ def test_powertrain_frontend_shape_extra_ignored():
                      "finalDrive": 3.9, "shiftTimeMs": 120, "eff": 0.97,
                      "autoUpFrac": 0.92, "autoDownFrac": 0.55},
         "diff": {"type": "lsd", "bias": 3, "lockNm": 120, "slipRefRadS": 8}}))
-    assert getattr(req.powertrain.ice, "fricA", None) is None   # extra=ignore：静默丢弃（非 422）
+    assert getattr(req.powertrain.ice, "fricA", None) is None   # extra=ignore：静默丢弃（非 422） — extra=ignore: silently dropped (not 422)
     assert req.powertrain.gearbox.ratios[0] == 3.0
     assert req.powertrain.drive == "rwd"
-    # transient 门控可达：ice is not None → 等效轮上扭矩覆盖生效路径可用
+    # transient 门控可达：ice is not None → 等效轮上扭矩覆盖生效路径可用 — transient gating reachable: ice is not None → the effective wheel-torque override path is usable
     assert req.powertrain.ice.map[0][1] == 520
 
 
 # ── G31-P7 审查修复：IceSpec.map 边界校验（畸形输入 → ValidationError/422，
 #    而非 transient 内 p[0]/p[1] 触发的 IndexError/500）。语义对齐前端
 #    16-powertrain.js validate 的 ice.map / ice.map(ascending)。──
+# G31-P7 review fix: IceSpec.map boundary validation (malformed input → ValidationError/422, not the IndexError/500
+# that transient p[0]/p[1] would trigger). Semantics aligned with the frontend 16-powertrain.js validate ice.map /
+# ice.map(ascending).
 
 def test_icespec_map_malformed_raises_validation_error():
-    """三条畸形 map 各自触发 pydantic ValidationError（模型层）。"""
+    """三条畸形 map 各自触发 pydantic ValidationError（模型层）。"""  # English: three malformed maps each raise a pydantic ValidationError (model layer).
     from pydantic import ValidationError
 
     from src.api.v3models import IceSpec
-    # (1) 每项长度 != 2（缺扭矩分量）——transient 会 p[1] → IndexError
+    # (1) 每项长度 != 2（缺扭矩分量）——transient 会 p[1] → IndexError — (1) per-item length != 2 (missing torque component) — transient would hit p[1] → IndexError
     with pytest.raises(ValidationError):
         IceSpec(map=[[800]])
-    # (2) rpm 非严格递增（重复 800 → 插值分母为零/负）
+    # (2) rpm 非严格递增（重复 800 → 插值分母为零/负） — (2) rpm not strictly increasing (repeated 800 → zero/negative interpolation denominator)
     with pytest.raises(ValidationError):
         IceSpec(map=[[800, 1], [800, 2]])
-    # (3) 含 NaN（pydantic 默认 allow_inf_nan=True → 需显式拒绝）
+    # (3) 含 NaN（pydantic 默认 allow_inf_nan=True → 需显式拒绝） — (3) contains NaN (pydantic default allow_inf_nan=True → must be explicitly rejected)
     with pytest.raises(ValidationError):
         IceSpec(map=[[800, float("nan")], [9000, 1200]])
-    # 附加：空 map 亦拒绝（断言 map 非空）
+    # 附加：空 map 亦拒绝（断言 map 非空） — additionally: an empty map is also rejected (map asserted non-empty)
     with pytest.raises(ValidationError):
         IceSpec(map=[])
 
 
 def test_icespec_map_valid_passes():
-    """合法 map（非空 + 每项长度 2 + 全有限 + rpm 严格递增）通过校验。"""
+    """合法 map（非空 + 每项长度 2 + 全有限 + rpm 严格递增）通过校验。"""  # English: a valid map (non-empty + per-item length 2 + all finite + strictly increasing rpm) passes validation.
     from src.api.v3models import IceSpec
     ice = IceSpec(map=[[800, 1200], [5000, 1400], [9000, 1100]])
     assert ice.map == [[800, 1200], [5000, 1400], [9000, 1100]]
-    # 缺省 map 亦合法（[[800,1200],[9000,1200]]，rpm 严格递增）
+    # 缺省 map 亦合法（[[800,1200],[9000,1200]]，rpm 严格递增） — the default map is also valid ([[800,1200],[9000,1200]], rpm strictly increasing)
     assert IceSpec().map == [[800, 1200], [9000, 1200]]
 
 
@@ -320,7 +337,13 @@ def test_icespec_map_malformed_422_not_500():
     `p[1] for p in ice.map` 触发 IndexError（500）的用例。NaN 已在
     test_icespec_map_malformed_raises_validation_error 模型层证实：它的
     HTTP 回路会被 Starlette 阻断——JSONResponse.render 用 allow_nan=False
-    序列化 422 详情（回显非法输入），与引擎无关的框架限制。"""
+    序列化 422 详情（回显非法输入），与引擎无关的框架限制。
+
+    English: end-to-end: a malformed ice.map through the simulate_track endpoint → 422 (ValidationError), not 500 (IndexError).
+    That is the core acceptance criterion of this fix. Only the two JSON-renderable malformations run: [[800]] is exactly the case
+    where the old path raised IndexError (500) inside transient `p[1] for p in ice.map`. NaN was verified at the model layer in
+    test_icespec_map_malformed_raises_validation_error: its HTTP round trip is blocked by Starlette — JSONResponse.render
+    serializes the 422 details (echoing the invalid input) with allow_nan=False: a framework limitation unrelated to the engine."""
     for bad_map in ([[800]], [[800, 1], [800, 2]]):
         r = client.post("/api/v3/chassis/simulate_track",
                         json=_pt_min_body(powertrain={
@@ -331,7 +354,9 @@ def test_icespec_map_malformed_422_not_500():
 
 def test_server_error_handling_500_on_crash(monkeypatch):
     """验证 server.py 错误分流：非客户端输入异常（如内部 ZeroDivisionError）
-    返回 HTTP 500（脱敏详情），而非错误地归为 422 客户端错误。"""
+    返回 HTTP 500（脱敏详情），而非错误地归为 422 客户端错误。
+
+    English: verify the server.py error triage: non-client-input exceptions (e.g. an internal ZeroDivisionError) return HTTP 500 with sanitized details, rather than being wrongly classified as 422 client errors."""
     from src.api import v3service
 
     def _crash_run_pose(req):
@@ -342,11 +367,11 @@ def test_server_error_handling_500_on_crash(monkeypatch):
     r = client.post("/api/v3/solve/pose", json=body)
     assert r.status_code == 500
     assert "ZeroDivisionError" in r.text
-    assert "simulated internal calculation bug" not in r.text  # F-46 脱敏验证
+    assert "simulated internal calculation bug" not in r.text  # F-46 脱敏验证 — F-46 sanitized-detail verification
 
 
 def test_server_error_handling_422_on_value_error(monkeypatch):
-    """验证 server.py 错误分流：数值或输入异常（ValueError）返回 HTTP 422。"""
+    """验证 server.py 错误分流：数值或输入异常（ValueError）返回 HTTP 422。"""  # English: verify the server.py error triage: numeric or input exceptions (ValueError) return HTTP 422.
     from src.api import v3service
 
     def _value_err_run_pose(req):

@@ -1080,9 +1080,11 @@ assert(T("POWERTRAIN.activateCustom('不存在的条目').ok") === false, "7.5 a
 /* ── 7.6 localStorage 持久化往返 ── */
 assert(T("POWERTRAIN.MAX_CUSTOMS") === 20, "7.6 MAX_CUSTOMS = 20");
 assert(T("POWERTRAIN.LS_KEY") === "labsus-powertrain-customs", "7.6 localStorage key 前缀 labsus-");
+/* (c) 中文键名「持久化条目」等为测试自有数据（仅经 localStorage 往返，两侧皆为测试所建；非 UI 文案），保留中文 —
+   Chinese key 持久化条目 is test-owned data (created and consumed by the test itself, round-trips through localStorage); kept Chinese by policy */
 T(`POWERTRAIN.customs = {};
-   POWERTRAIN.customs["持久化条目"] = JSON.parse(JSON.stringify(POWERTRAIN_PRESETS["GT3 V8 RWD 6MT"]));
-   POWERTRAIN.persistCustoms();`);
+ POWERTRAIN.customs["持久化条目"] = JSON.parse(JSON.stringify(POWERTRAIN_PRESETS["GT3 V8 RWD 6MT"]));
+ POWERTRAIN.persistCustoms();`);
 const lsRaw = T('localStorage.getItem("labsus-powertrain-customs")');
 assert(typeof lsRaw === "string" && lsRaw.indexOf("持久化条目") >= 0, "7.6 persistCustoms 写入 localStorage");
 T("POWERTRAIN.customs = {}; POWERTRAIN.loadCustoms();");
@@ -1107,9 +1109,11 @@ assert(T("!POWERTRAIN.customs['首条']"), "7.6 deleteCustom 解除上限死锁"
 T('POWERTRAIN.customs = {}; POWERTRAIN.persistCustoms();');
 
 /* ── 7.7 refreshPresetSelect + loadVehiclePreset 分流 ── */
+/* (c) 「下拉条目」为测试自有键名（经 refreshPresetSelect → option.value/textContent 往返，两侧皆为测试所建），保留中文 —
+   下拉条目 is a test-owned key (round-trips through refreshPresetSelect into option.value/textContent); kept Chinese by policy */
 T(`POWERTRAIN.customs = {};
-   POWERTRAIN.customs["下拉条目"] = JSON.parse(JSON.stringify(POWERTRAIN_PRESETS["FSAE I4 RWD 5MT"]));
-   POWERTRAIN.refreshPresetSelect();`);
+ POWERTRAIN.customs["下拉条目"] = JSON.parse(JSON.stringify(POWERTRAIN_PRESETS["FSAE I4 RWD 5MT"]));
+ POWERTRAIN.refreshPresetSelect();`);
 T(`(function(){var s=document.getElementById("topVehSelect");var f=null;
      for(var i=0;i<s.children.length;i++){ if(String(s.children[i].id)==="optgroup") f=s.children[i]; }
      window.__ptGrp=f;})()`);
@@ -2002,6 +2006,10 @@ T("POWERTRAIN.setSpec(POWERTRAIN.defaultSpec());");
 
 // ── 12.2 三处「未标定」标注守卫：② 预设字段注释 + ① 面板 UI 渲染（③ 说明给 Lead 写进 DEVLOG）──
 {
+  /* (b) 「⚠ 未标定」徽标已被波1译为实文 "⚠ Not calibrated"（16-powertrain.js 面板）；
+     上方 7.6/7.7 的「持久化条目」「首条」「下拉条目」等中文键名为测试自有数据，保留不动。
+     — the "⚠ 未标定" badge was translated by wave-1 to "⚠ Not calibrated" (actual rendered text);
+     Chinese keys like 持久化条目/首条/下拉条目 are test-owned data, kept as-is. */
   const pSrc12 = fs.readFileSync(path.join(__dirname, "..", "js", "16-powertrain.js"), "utf8");
   const nMark12 = (pSrc12.match(/未标定/g) || []).length;
   assert(nMark12 >= 2, `12.2 ② 源码含 ≥2 处「未标定」标注（实得 ${nMark12} 处）`);
@@ -2015,10 +2023,14 @@ T("POWERTRAIN.setSpec(POWERTRAIN.defaultSpec());");
   const right12 = T("POWERTRAIN._el('ptRight').innerHTML");
   assert(typeof right12 === "string" && right12.length > 100,
     "12.2 ① 前置：右栏渲染出非空 HTML（renderForm 真的写了 ptRight）");
-  assert(right12.indexOf("未标定") >= 0, "12.2 ① 面板 UI：差速器栏渲染出「⚠ 未标定」提示");
+  /* (b) 徽标实文为 "⚠ Not calibrated"（16-powertrain.js:1010）；UI 内已无中文「未标定」 —
+     actual badge text is "⚠ Not calibrated"; no Chinese remains in the rendered panel */
+  assert(right12.indexOf("⚠ Not calibrated") >= 0, "12.2 ① 面板 UI：差速器栏渲染出「⚠ Not calibrated」提示");
   assert(right12.indexOf("1.4~2.0") >= 0 && right12.indexOf("20~50") >= 0,
     "12.2 ① UI tooltip 带文献区间（TBR 1.4~2.0 / 预载 20~50 N·m）");
-  assert(/title="[^"]*未标定|未标定[\s\S]{0,400}title="/.test(right12) || right12.indexOf("cursor:help") >= 0,
+  /* (b) title 提示同被译为英文（"...not calibrated against real hardware..."）；cursor:help 分支保留 —
+     hover title now English; kept the cursor:help alternative branch */
+  assert(/title="[^"]*not calibrated/i.test(right12) || right12.indexOf("cursor:help") >= 0,
     "12.2 ① UI 提示带 title 悬停说明（回填口径）");
 }
 

@@ -2,6 +2,12 @@
 pushrod/pullrod 拓扑下 _estimate_rotation 必须只用 KNUCKLE 刚体簇节点。
 旧实现硬编码 5 点（含挂臂的 UP4），姿态被拉偏——守卫方式：
 主销矢量 (UBJ−LBJ) 是转向节刚体向量，Kabsch 恢复的 R 应精确保持其方向。
+
+English: regression guard (found 2026-09-07 by cross-checking against an independent analytic
+baseline): under pushrod/pullrod topology, _estimate_rotation must use only the KNUCKLE
+rigid-cluster nodes. The old implementation hardcoded 5 points (including the arm's UP4)
+and skewed the pose — guard: the kingpin vector (UBJ-LBJ) is a knuckle rigid-body vector,
+and the R recovered by Kabsch must preserve its direction exactly.
 """
 import numpy as np
 
@@ -17,13 +23,13 @@ def _kingpin_preserved(points, arch, travel):
     kp0 = m.node("UP2").p0 - m.node("UP1").p0
     kp1 = m.node("UP2").pos - m.node("UP1").pos
     a = R @ kp0
-    # 方向余弦误差（对长度缩放不敏感）
+    # 方向余弦误差（对长度缩放不敏感） — direction-cosine error (insensitive to length scaling)
     cos_err = 1.0 - float(np.dot(a, kp1) / (np.linalg.norm(a) * np.linalg.norm(kp1)))
     return cos_err
 
 
 def test_rotation_rigid_for_pushrod_front():
-    # pushrod → strut_attach=lca：UP4 挂下臂（旧 bug 触发拓扑）
+    # pushrod → strut_attach=lca：UP4 挂下臂（旧 bug 触发拓扑） — pushrod -> strut_attach=lca: UP4 hangs on the lower arm (the topology that triggered the old bug)
     for tr in (40.0, 90.0, -90.0):
         assert _kingpin_preserved(DEFAULT_DWB_POINTS, "pushrod", tr) < 1e-9, \
             f"travel={tr}: _estimate_rotation 不再保持 knuckle 刚体性（UP4 污染回归？）"

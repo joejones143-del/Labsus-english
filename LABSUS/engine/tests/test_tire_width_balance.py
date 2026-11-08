@@ -11,6 +11,25 @@
 与胎宽无关）⇒ G24 的轮胎量级标定（μ=1.50 / 峰值侧偏角 8.27°）不被改动。
 等宽或缺字段 ⇒ k≡1，旧行为逐位不变（tphys_parity 锚安全，见本文件末测试）。
 
+English: axle cornering-stiffness balancing by tire width (M5 B3, 2026-09-20).
+Background: after this round's fix of the swapped front/rear static loads, the default
+presets flipped from understeer to neutral / slight oversteer. Root cause — the presets
+distinguish front/rear tire widths (formula 175/205, gt3 265/285, baja 180/230), but
+`tire.W` was only consumed by the render layer (`web/js/05-scene3d.js`, `14-tire-lab.js`)
+and never entered cornering stiffness, so the real vehicle-balance mechanism "wider rear
+tire => rearer axle grips more => understeer" was missing and the model could only fake
+understeer via front-heavy ballast (measured: 58-60% front axle share needed to reach the
+0.2 deg/g window — unphysical).
+Fix convention (same at both ends): axle stiffness factor k = W_axle / mean(W_f, W_r);
+it scales only the cornering-stiffness factor (By in the engine's C-alpha and By in the
+frontend MF) and does NOT touch the peak force D (mu-Fz is basically width-independent
+for the same compound and pressure) => G24's tire magnitude calibration (mu = 1.50 /
+peak slip angle 8.27 deg) is untouched. Equal widths or missing fields => k == 1 and the
+old behavior is bit-identical (tphys_parity anchor stays safe; see the test at the end of
+this file).
+This test necessarily FAILs on old code built "without tire-width balancing" (the default
+width difference would be ignored).
+
 本测试在"未实现胎宽配平"的旧代码下必然 FAIL（default 宽窄差会被忽略）。
 """
 import pytest
@@ -37,28 +56,28 @@ def _vehicle(w_f, w_r, f_ms=330.0, r_ms=330.0) -> VehicleSpec:
 
 
 def _us(v: VehicleSpec) -> dict:
-    # gy=1.0：US 梯度在 |gy|<0.02 有除零保护（置 0），必须给非零侧向工况
+    # gy=1.0：US 梯度在 |gy|<0.02 有除零保护（置 0），必须给非零侧向工况 — gy=1.0: the US gradient has divide-by-zero protection at |gy|<0.02 (zeroed), so a non-zero lateral case must be given
     out = solve_chassis(ChassisRequest(
         vehicle=v, quasi=QuasiInputs(gy=1.0, gx=0.0, aero_force_n=0.0, aero_bias=0.5)))
     return {"us": out.loads.us_grad_deg_per_g, "af": out.loads.alpha_f_deg,
             "ar": out.loads.alpha_r_deg}
 
 
-# ── 系数语义 ────────────────────────────────────────────────────────────
+# ── 系数语义 ──────────────────────────────────────────────────────────── ( coefficient semantics )
 
 def test_scale_is_normalized_by_axle_mean():
     a = AxleSpec(points=DEFAULT_DWB_POINTS, tire_width=175.0)
     b = AxleSpec(points=DEFAULT_DWB_POINTS, tire_width=205.0)
     assert a.tire_width_scale(b) == pytest.approx(175.0 / 190.0)
     assert b.tire_width_scale(a) == pytest.approx(205.0 / 190.0)
-    # 等宽 ⇒ 1（旧行为）
+    # 等宽 ⇒ 1（旧行为） — equal widths => 1 (old behavior)
     c = AxleSpec(points=DEFAULT_DWB_POINTS, tire_width=200.0)
     d = AxleSpec(points=DEFAULT_DWB_POINTS, tire_width=200.0)
     assert c.tire_width_scale(d) == pytest.approx(1.0)
 
 
 def test_scale_is_neutral_when_width_missing():
-    """缺 tire_width（旧 payload / 对拍 fixture）⇒ k≡1，不得改变任何数值。"""
+    """缺 tire_width（旧 payload / 对拍 fixture）⇒ k≡1，不得改变任何数值。"""  # English: missing tire_width (old payload / parity fixture) => k==1; no number may change.
     a = AxleSpec(points=DEFAULT_DWB_POINTS)
     b = AxleSpec(points=DEFAULT_DWB_POINTS, tire_width=205.0)
     assert a.tire_width_scale(b) == 1.0
@@ -66,10 +85,10 @@ def test_scale_is_neutral_when_width_missing():
     assert a.tire_width_scale(None) == 1.0
 
 
-# ── 物理方向 ────────────────────────────────────────────────────────────
+# ── 物理方向 ──────────────────────────────────────────────────────────── ( physical direction )
 
 def test_wider_rear_increases_understeer():
-    """后胎更宽 ⇒ 后轴侧偏角更小 ⇒ US 梯度上升（本机制的核心断言）。"""
+    """后胎更宽 ⇒ 后轴侧偏角更小 ⇒ US 梯度上升（本机制的核心断言）。"""  # English: wider rear tire => smaller rear-axle slip angle => US gradient rises (this mechanism's core assertion).
     same = _us(_vehicle(200.0, 200.0, f_ms=350.0, r_ms=310.0))
     wide_r = _us(_vehicle(200.0, 240.0, f_ms=350.0, r_ms=310.0))
     assert wide_r["ar"] < same["ar"], (wide_r, same)
@@ -77,7 +96,7 @@ def test_wider_rear_increases_understeer():
 
 
 def test_wider_front_reduces_understeer():
-    """前胎更宽 ⇒ 前轴更抓 ⇒ US 下降（对称性锚，防符号写反）。"""
+    """前胎更宽 ⇒ 前轴更抓 ⇒ US 下降（对称性锚，防符号写反）。"""  # English: wider front tire => front axle grips more => US drops (symmetry anchor guarding against a flipped sign).
     same = _us(_vehicle(200.0, 200.0, f_ms=350.0, r_ms=310.0))
     wide_f = _us(_vehicle(240.0, 200.0, f_ms=350.0, r_ms=310.0))
     assert wide_f["af"] < same["af"], (wide_f, same)
@@ -85,15 +104,15 @@ def test_wider_front_reduces_understeer():
 
 
 def test_width_ratio_only_shifts_balance_not_level():
-    """整车平均刚度不变：等比例放大两侧胎宽，平衡与各轴 α 基本不动。"""
+    """整车平均刚度不变：等比例放大两侧胎宽，平衡与各轴 α 基本不动。"""  # English: whole-vehicle average stiffness unchanged: scaling both tire widths by the same factor leaves the balance and per-axle alpha basically untouched.
     a = _us(_vehicle(180.0, 220.0, f_ms=350.0, r_ms=310.0))
-    b = _us(_vehicle(360.0, 440.0, f_ms=350.0, r_ms=310.0))   # 同比例 ×2
+    b = _us(_vehicle(360.0, 440.0, f_ms=350.0, r_ms=310.0))   # 同比例 ×2 — the same factor, x2
     assert abs(a["us"] - b["us"]) < 1e-6, (a, b)
     assert abs(a["af"] - b["af"]) < 1e-6, (a, b)
 
 
 def test_missing_width_reproduces_legacy_numbers():
-    """回归安全锚：不带 tire_width 的请求结果与带「等宽」请求完全一致。"""
+    """回归安全锚：不带 tire_width 的请求结果与带「等宽」请求完全一致。"""  # English: regression safety anchor: a request without tire_width is exactly identical to an equal-width request.
     legacy = _us(_vehicle(None, None, f_ms=350.0, r_ms=310.0))
     equal = _us(_vehicle(200.0, 200.0, f_ms=350.0, r_ms=310.0))
     assert legacy["us"] == pytest.approx(equal["us"], abs=1e-12)
@@ -102,7 +121,7 @@ def test_missing_width_reproduces_legacy_numbers():
 
 
 def test_transient_tire_construction_uses_width_scale():
-    """瞬态（平面 3-DOF）也吃同一条口径：构造后 sy 系数按轴放大。"""
+    """瞬态（平面 3-DOF）也吃同一条口径：构造后 sy 系数按轴放大。"""  # English: the transient (planar 3-DOF) consumes the same convention: after construction, the sy coefficients are scaled per axle.
     from src.api.v3models import QuasiInputs, TireParams  # noqa: F401
     from src.solver.transient import VehiclePlanar
     car_eq = VehiclePlanar(_vehicle(200.0, 200.0), TireParams(), {"front": {}, "rear": {}},
@@ -111,7 +130,7 @@ def test_transient_tire_construction_uses_width_scale():
                            iz=1800.0, powertrain=None, aero=None)
     assert car_eq.kW_F == pytest.approx(1.0) and car_eq.kW_R == pytest.approx(1.0)
     assert car_wr.kW_R > 1.0 > car_wr.kW_F
-    # 后轴 MF 的 By 被放大（峰值不变）
+    # 后轴 MF 的 By 被放大（峰值不变） — the rear MF's By is scaled up (peak unchanged)
     tp_eq = car_eq.tires["RR"]
     tp_wr = car_wr.tires["RR"]
     fy_eq = tp_eq.fy(3.0, 3000.0)

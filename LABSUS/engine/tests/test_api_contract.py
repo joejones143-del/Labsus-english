@@ -12,6 +12,20 @@
 
 注意：这些是**键存在性**断言，不是数值断言——数值正确性由
 test_v3_chassis / test_v3_api / test_tphys_parity 等承担。
+
+English: frontend/backend API contract guard (M5, 2026-09-20).
+Motivation: `web/js/06-ui-panels.js` and `web/js/09-track.js` read engine responses via
+hardcoded key names (`d.curves["cam_r"]`, `L.tlltd_pct`, `d.loads.fz.FL` ...). A backend
+key rename raises no error — the frontend silently goes blank. This file pins that
+cross-language contract as executable assertions.
+Covers:
+1. /api/v3/chassis/simulate_track response key set == TrackSimResponse field set (the only
+   endpoint returning a bare dict; response_model bound since M5);
+2. every key the frontend actually reads exists in the responses of the K&C / full-vehicle
+   endpoints;
+3. TrackSimResponse.summary may be None (washed by `_wash_json`); key names stay pinned.
+Note: these are KEY-existence assertions, not value assertions — numeric correctness is
+owned by test_v3_chassis / test_v3_api / test_tphys_parity etc.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -27,7 +41,7 @@ from src.api.v3models import (
 
 client = TestClient(app)
 
-# ── 前端实际读取的键（2026-09-20 逐行核对 web/js/06-ui-panels.js）────────
+# ── 前端实际读取的键（2026-09-20 逐行核对 web/js/06-ui-panels.js）──────── — keys the frontend actually reads (cross-checked line by line against web/js/06-ui-panels.js, 2026-09-20)
 FE_KANDC_CURVES = {
     "bump": ("travel", "cam", "toe", "cast"),
     "steer": ("rack", "cam", "toe", "cast"),
@@ -49,7 +63,7 @@ def _vehicle() -> dict:
     return {"front": {"points": DEFAULT_DWB_POINTS}, "rear": {"points": DEFAULT_DWB_POINTS}}
 
 
-# ── 1. simulate_track 裸 dict 键集 == 模型字段集 ────────────────────────
+# ── 1. simulate_track 裸 dict 键集 == 模型字段集 ──────────────────────── — 1. simulate_track bare-dict key set == model field set
 
 def test_simulate_track_keys_match_model():
     track = [{"x": 0, "y": 0, "target_speed": 15.0},
@@ -64,7 +78,7 @@ def test_simulate_track_keys_match_model():
         sorted(set(body) ^ set(TrackSimResponse.model_fields)))
     # 前端 09-track.js 回放读取的 trace 行键。
     # 注意：行内**没有** "t" —— run_track_sim 用 `row.pop("t")` 把时间抽到
-    # 与 trace 等长的平行数组 `t` 里（索引对齐），故此处同时断言长度一致。
+    # 与 trace 等长的平行数组 `t` 里（索引对齐），故此处同时断言长度一致。 — trace-line keys read by the frontend 09-track.js replay. Note: rows have NO "t" — run_track_sim uses row.pop("t") to move time into a parallel array `t` aligned with trace (index-aligned), so this also asserts equal lengths.
     assert len(body["t"]) == len(body["trace"])
     if body["trace"]:
         row = body["trace"][0]
@@ -81,6 +95,11 @@ def test_track_summary_keys_survive_wash():
 
     行为断言（替代原先的纯类型反射）：真实跑一次 simulate_track，检查
     ① `summary` 键集稳定；② 每个值都是 float 或 None（`_wash_json` 洗刷的契约）。
+
+    English: the summary KEYS must survive a divergent case; values may be washed to None (F-25 x M5
+    compatibility point). Behavioral assertion (replacing the earlier pure type reflection):
+    actually run simulate_track once and check 1) the summary key set is stable; 2) every value
+    is float or None (the _wash_json contract).
     """
     track = [{"x": 0, "y": 0, "target_speed": 15.0},
              {"x": 60, "y": 0, "target_speed": 15.0}]
@@ -96,7 +115,7 @@ def test_track_summary_keys_survive_wash():
         assert v is None or isinstance(v, (int, float)), (k, type(v))
 
 
-# ── 2. 前端读取键的存在性 ──────────────────────────────────────────────
+# ── 2. 前端读取键的存在性 ────────────────────────────────────────────── — 2. existence of frontend-read keys
 
 @pytest.mark.parametrize("case", ["bump", "steer", "compliance", "roll"])
 def test_kandc_curves_contain_frontend_keys(case):
@@ -121,7 +140,7 @@ def test_chassis_solve_contains_frontend_load_keys():
     assert set(d["loads"]["fz"]) == {"FL", "FR", "RL", "RR"}
     for k in FE_CHASSIS_SOLVE_ATTITUDE:
         assert k in d["attitude"], (k, sorted(d["attitude"]))
-    # 前端「核心结论」还读 mr 与 us_curve
+    # 前端「核心结论」还读 mr 与 us_curve — the frontend "core conclusions" also reads mr and us_curve
     assert d["mr"], "mr 为空会让前端 MR 读数静默留空"
     for k in ("gy", "us_angle_deg", "alpha_f_deg", "alpha_r_deg"):
         assert k in d["us_curve"], (k, sorted(d["us_curve"]))
@@ -134,7 +153,7 @@ def test_chassis_sweep_contains_frontend_keys():
     assert r.status_code == 200, r.text[:400]
     d = r.json()
     assert set(d) == set(ChassisSweepResponse.model_fields)
-    # 前端按 d.case 选横轴键：roll → roll_deg，其余 → travel/rack
+    # 前端按 d.case 选横轴键：roll → roll_deg，其余 → travel/rack — the frontend picks the x-axis key by d.case: roll -> roll_deg, otherwise travel/rack
     xk = "roll_deg" if d["case"] == "roll" else "travel"
     assert xk in d["curves"], (xk, sorted(d["curves"]))
     missing = [k for k in FE_CHASSIS_SWEEP_CURVES if k not in d["curves"]]
@@ -142,7 +161,7 @@ def test_chassis_sweep_contains_frontend_keys():
 
 
 def test_pose_response_shape_is_declared():
-    """/solve/pose 前端未调用，但模型仍须与返回一致（防契约腐化）。"""
+    """/solve/pose 前端未调用，但模型仍须与返回一致（防契约腐化）。"""  # English: /solve/pose is not called by the frontend, but the model must still match the response (guards against contract rot).
     r = client.post("/api/v3/solve/pose", json={"travel": 0.0, "rack": 0.0})
     assert r.status_code == 200, r.text[:400]
     assert set(r.json()) == set(PoseResponse.model_fields)

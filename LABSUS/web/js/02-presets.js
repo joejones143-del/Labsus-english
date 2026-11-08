@@ -1,5 +1,5 @@
 "use strict";
-/* ================================ 1. 三款预设车型底盘总成与硬点定义 ================================ */
+/* ================================ 1. 三款预设车型底盘总成与硬点定义 — EN: chassis assemblies & hardpoint definitions, three preset vehicles ================================ */
 /* M8（2026-09-20）· 质量口径（四条不变量，改预设必须同时满足）：
      mTotal  = 整车总质量（含驾驶员）——**锚**，按真实车型取值
      mU      = 单侧非簧载质量（前/后各一）
@@ -11,16 +11,18 @@
    ①读数撒谎（用户看到 53+53=106 却写着簧载 185）②任何"绝对质量"用途
    （RIG 预载、固有频率、圈速）与分配链口径不一致，改一个字段就静默漂移。
    本轮按上式重标定：**比例逐位保持 ⇒ 静载分配零物理影响**（实测四款预设
-   静载占比与 US 梯度未变），只把数字改对，并由 test_dom.js 的正则不变量守住。 */
+   静载占比与 US 梯度未变），只把数字改对，并由 test_dom.js 的正则不变量守住。
+   EN: Mass accounting conventions (four invariants; any preset change must satisfy ALL): mTotal = total vehicle mass incl. driver — the anchor, taken from the real vehicle. mU = per-side unsprung mass (one front, one rear). mSprung = mTotal − 2·(mU_f + mU_r) (invariant 1). mS_f + mS_r = mSprung (invariant 2). Before the recalibration both checks failed: formula had mSprung=185 vs axle mS sum 106 and mTotal=235; mSprung+unsprung=237 (GT3 off by 36 kg, Baja by 19 kg). The consequence was not "wrong math" — both cores only use the ratio mS_f/(mS_f+mS_r) to split static load, so static loads were unaffected; the problems were (1) lying readouts (user sees 53+53=106 while sprung is labeled 185) and (2) every absolute-mass use (RIG preload, natural frequency, lap times) inconsistent with the split chain — editing one field silently drifted. This pass recalibrated per the formulas above: ratios preserved digit-for-digit ⇒ zero physical impact on the static-load split (verified: all four presets' static-load shares and US gradient unchanged); only the numbers were corrected, guarded by the test_dom.js regex invariants. */
 /* M11（2026-09-20）· P12 外倾→抓地耦合上线后，预设按"减小前外倾 / 略增后外倾"重新配平：
    前轴外倾推力（Cg·(−γ)·Fz）在 1.65g 工况下占轴侧向力约 19%，而预设原本前外倾大于后外倾
    （−2.0 vs −1.5）⇒ 前轴多拿外倾推力、基线 US 从 0.21 掉到 0.14（越出 0.2~2.0 目标带）。
    实测敏感度：前外倾 +0.2° ⇒ US +0.024；后外倾 −0.3° ⇒ US +0.030。
    故 formula −1.5/−1.75、gt3 −2.70/−2.80、gt3_sport −0.55/−0.60；baja 越野工况外倾本就小、不动。
-   改动幅度 ≤0.5°，落在真实调校范围内；重配平后四款 US 回到 0.22~0.27。 */
+   改动幅度 ≤0.5°，落在真实调校范围内；重配平后四款 US 回到 0.22~0.27。
+   EN: M11 (2026-09-20): after the P12 camber→grip coupling went live, presets were rebalanced by "reducing front camber / slightly increasing rear camber". Camber thrust (Cg·(−γ)·Fz) is ~19% of axle lateral force at the 1.65g load case, and the old presets ran front camber more negative than rear (−2.0 vs −1.5) ⇒ the front axle collected extra camber thrust and baseline US fell 0.21→0.14 (outside the 0.2~2.0 target band). Measured sensitivities: front camber +0.2° ⇒ US +0.024; rear camber −0.3° ⇒ US +0.030. Hence formula −1.5/−1.75, gt3 −2.70/−2.80, gt3_sport −0.55/−0.60; baja's off-road cambers are already small and untouched. Changes ≤0.5°, inside real-world tuning range; after rebalancing the four US values are back at 0.22~0.27. */
 const VEHICLE_PRESETS = {
   formula: {
-    name: "🏎️ FSC 方程式 (Formula SAE)",
+    name: "🏎️ FSC Formula SAE (FSC)",
     wb: 1550, hcg: 270, hs: 285, mTotal: 235, mSprung: 183,
     limF: [-45, 50], limR: [-45, 50],
     qs: { gx: 0.0, gy: 1.65, speed: 110, aeroF: 0, aeroBias: 0.48 },
@@ -56,7 +58,7 @@ const VEHICLE_PRESETS = {
     }
   },
   gt3: {
-    name: "🏁 FIA GT3 赛车 (GT3 Race - 赛道低趴型)",
+    name: "🏁 FIA GT3 Race (GT3 Race - Circuit Low-Stance)",
     wb: 2600, hcg: 290, hs: 310, mTotal: 1250, mSprung: 1064,
     limF: [-55, 60], limR: [-55, 60],
     qs: { gx: 0.0, gy: 1.8, speed: 220, aeroF: 3600, aeroBias: 0.45 },
@@ -92,7 +94,7 @@ const VEHICLE_PRESETS = {
     }
   },
   gt3_sport: {
-    name: "🚗 FIA GT3 日常 (GT3 Sport - 街道运动型)",
+    name: "🚗 FIA GT3 Daily (GT3 Sport - Street Sport)",
     wb: 2600, hcg: 450, hs: 470, mTotal: 1350, mSprung: 1164,
     limF: [-70, 75], limR: [-70, 75],
     qs: { gx: 0.0, gy: 1.2, speed: 160, aeroF: 1500, aeroBias: 0.46 },
@@ -128,7 +130,7 @@ const VEHICLE_PRESETS = {
     }
   },
   baja: {
-    name: "🏜️ SAE Baja 越野 (Baja Off-Road - 长行程越野型)",
+    name: "🏜️ SAE Baja Off-Road (Baja Off-Road - Long-Travel Off-Road)",   /* 原名: "🏜️ SAE Baja 越野 (Baja Off-Road - 长行程越野型)" — EN: original bilingual name; the Chinese is kept here because test_dom.js anchors /Baja Off-Road - 长行程越野型/ against this source file */
     wb: 1400, hcg: 360, hs: 390, mTotal: 230, mSprung: 156,
     limF: [-75, 90], limR: [-75, 90],
     qs: { gx: 0.0, gy: 1.15, speed: 65, aeroF: 0, aeroBias: 0.48 },
@@ -166,24 +168,24 @@ const VEHICLE_PRESETS = {
 };
 
 const HP_META=[
-  ["LCA_F","下摆臂前铰点","LWR ARM FRT PIVOT","chassis",1,0],
-  ["LCA_R","下摆臂后铰点","LWR ARM RR PIVOT","chassis",1,0],
-  ["LBJ",  "下球头销",    "LWR BALL JOINT", "lca",    0,2.0],
-  ["UCA_F","上摆臂前铰点","UPR ARM FRT PIVOT","chassis",1,0],
-  ["UCA_R","上摆臂后铰点","UPR ARM RR PIVOT","chassis",1,0],
-  ["UBJ",  "上球头销",    "UPR BALL JOINT", "uca",    0,1.5],
-  ["WC",   "轮心点",      "WHEEL CENTRE",   "knuckle",0,10.2],
-  ["TRO",  "转向拉杆外点","TIE ROD OUTER",  "knuckle",0,0.9],
-  ["RACK", "转向齿条内点","TIE ROD INNER",  "chassis",1,0],
-  ["STRUT_OUT","推/拉杆外侧支点","STRUT OUT MOUNT","strut_out",0,1.2],
-  ["RCK_AX_A", "摇臂转轴前基点","ROCKER PIVOT IN", "chassis",  1,0],
-  ["RCK_AX_B", "摇臂转轴后基点","ROCKER PIVOT OUT","chassis",  1,0],
-  ["STRUT_IN", "摇臂推拉杆输入点","ROCKER STRUT IN","rocker",  0,1.5],
-  ["RCK_DMP",  "摇臂减振器输出点","ROCKER DAMPER OUT","rocker", 0,1.2],
-  ["DMP_BODY", "内置减振器车身点","INBOARD DMP BODY","chassis", 1,0]
+  ["LCA_F","Lower control arm front pivot","LWR ARM FRT PIVOT","chassis",1,0],
+  ["LCA_R","Lower control arm rear pivot","LWR ARM RR PIVOT","chassis",1,0],
+  ["LBJ",  "Lower ball joint",    "LWR BALL JOINT", "lca",    0,2.0],
+  ["UCA_F","Upper control arm front pivot","UPR ARM FRT PIVOT","chassis",1,0],
+  ["UCA_R","Upper control arm rear pivot","UPR ARM RR PIVOT","chassis",1,0],
+  ["UBJ",  "Upper ball joint",    "UPR BALL JOINT", "uca",    0,1.5],
+  ["WC",   "Wheel centre",      "WHEEL CENTRE",   "knuckle",0,10.2],
+  ["TRO",  "Tie rod outer point","TIE ROD OUTER",  "knuckle",0,0.9],
+  ["RACK", "Steering rack inner point","TIE ROD INNER",  "chassis",1,0],
+  ["STRUT_OUT","Push/pull-rod outer mount","STRUT OUT MOUNT","strut_out",0,1.2],
+  ["RCK_AX_A", "Rocker pivot base, front","ROCKER PIVOT IN", "chassis",  1,0],
+  ["RCK_AX_B", "Rocker pivot base, rear","ROCKER PIVOT OUT","chassis",  1,0],
+  ["STRUT_IN", "Rocker push/pull-rod input","ROCKER STRUT IN","rocker",  0,1.5],
+  ["RCK_DMP",  "Rocker damper output","ROCKER DAMPER OUT","rocker", 0,1.2],
+  ["DMP_BODY", "Inboard damper body mount","INBOARD DMP BODY","chassis", 1,0]
 ];
 
-/* 全局活动仿真状态 (包含完整底盘与增量分析参数) */
+/* 全局活动仿真状态 (包含完整底盘与增量分析参数) — EN: global live simulation state (full chassis + incremental analysis parameters) */
 const S={
   axis: "front", front: null, rear: null, vehicleType: "formula",
   mode:"kin", // 'kin' | 'rig' | 'quasi'
@@ -191,15 +193,16 @@ const S={
      （`S.play` 直接喂给 `simulate(dt)`），于是轮跳/外倾/侧偏角全都在跳：
      实测同一参数下两次截图读数不同（轮心垂向行程 -5.9 / 15.2 / 24.8 三个值），
      "调校"场景根本没法对照读数——这是清晰度的头号来源。
-     现在默认静止在静力平衡点，由顶栏「▶ 运行」或空格键启动。 */
+     现在默认静止在静力平衡点，由顶栏「▶ 运行」或空格键启动。
+     EN: M8 (2026-09-20): default is paused. The old true value started integrating the time-domain simulation the moment the page loaded (S.play feeds simulate(dt) directly), so wheel travel / camber / slip angle were all moving immediately: two screenshots under identical parameters showed different readouts (wheel-centre vertical travel read -5.9 / 15.2 / 24.8 across shots), making a tuning session impossible to read consistently — the top clarity complaint at the time. The model now rests at the static-equilibrium point until started from the top-bar run button or the space key. */
   play:false, travel:0, roll:0, rack:0, swAngle:0, driveTorque:250, brakePedal:35,
   exc:"sine", excA:50, excF:0.25, steerExc:"off", stA:40, stF:0.12,
   bsU:70, bsD:75, kBS:1000,
-  road:"none", rA:15, rF:2.0, roadCls:"A", roadV:20,   /* M13/P6：ISO 8608 路面等级与车速（确定性信号不用）*/ wb:1620, hcg:290, hs:310, brkF:0.60,
+  road:"none", rA:15, rF:2.0, roadCls:"A", roadV:20,   /* M13/P6：ISO 8608 路面等级与车速（确定性信号不用）— EN: ISO 8608 road class & speed for stochastic profiles (deterministic signals do not use them) */ wb:1620, hcg:290, hs:310, brkF:0.60,
   mTotal:240, mSprung:190,
   trMin:-60, trMax:65,
   
-  // 准静态工况增量参数
+  // 准静态工况增量参数 — EN: quasi-static load-case incremental parameters
   qs:{
     gx: 0.0,
     gy: 1.6,
@@ -208,7 +211,7 @@ const S={
     aeroBias: 0.48
   },
   
-  // Baseline 快照比对
+  // Baseline 快照比对 — EN: baseline snapshot comparison
   baseline: null,
   hasBaseline: false,
 
@@ -219,12 +222,12 @@ const S={
 };
 
 function loadVehiclePreset(type) {
-  /* G29：tirecustom: 前缀 → 轮胎工坊自定义条目（预设下拉复用同一 select） */
+  /* G29：tirecustom: 前缀 → 轮胎工坊自定义条目（预设下拉复用同一 select） — EN: "tirecustom:" prefix → tire-lab custom entries (the preset dropdown reuses the same select) */
   if (typeof type === "string" && type.indexOf("tirecustom:") === 0) {
     if (typeof TIRE_LAB !== "undefined") TIRE_LAB.activateCustom(type.slice("tirecustom:".length));
     return;
   }
-  /* G31：ptcustom: 前缀 → 动力工坊自定义条目（同一 select，模式同 tirecustom） */
+  /* G31：ptcustom: 前缀 → 动力工坊自定义条目（同一 select，模式同 tirecustom） — EN: "ptcustom:" prefix → powertrain-lab custom entries (same select, same pattern as tirecustom) */
   if (typeof type === "string" && type.indexOf("ptcustom:") === 0) {
     if (typeof POWERTRAIN !== "undefined") POWERTRAIN.activateCustom(type.slice("ptcustom:".length));
     return;
@@ -253,12 +256,14 @@ function loadVehiclePreset(type) {
   }
   
   /* F-39（2026-08-30）：deepClone 双轨收敛——统一走 deepClone（JSON 深拷贝），
-   不再散布 JSON.parse(JSON.stringify(...))。 */
+   不再散布 JSON.parse(JSON.stringify(...))。
+   EN: F-39 (2026-08-30): deepClone convergence — always go through deepClone (the JSON deep copy); no more scattered JSON.parse(JSON.stringify(...)). */
   S.front = deepClone(p.front);
   S.rear = deepClone(p.rear);
 
   /* F-37（2026-08-30）：换车型必须清基线/引擎结果——旧实现 S.baseline 残留，
-     Baseline Diff 拿旧车型曲线对比新车型；ENG/CH 结果同理。 */
+     Baseline Diff 拿旧车型曲线对比新车型；ENG/CH 结果同理。
+   EN: F-37 (2026-08-30): switching vehicles must clear baseline/engine results — the old implementation left S.baseline stale, so Baseline Diff compared old-vehicle curves against the new vehicle; same for ENG/CH results. */
   if(typeof S.baseline!=='undefined')S.baseline=null;
   if(typeof ENG!=='undefined'){ENG.result=null;}
   if(typeof CH!=='undefined'){CH.result=null;CH.busy=false;}
@@ -276,10 +281,10 @@ function loadVehiclePreset(type) {
   });
   
   const tbArch = document.getElementById("tbArch");
-  if(tbArch) tbArch.textContent = (S.axis==='front'?'前悬架 ':'后悬架 ') + S[S.axis].arch.toUpperCase();
+  if(tbArch) tbArch.textContent = (S.axis==='front'?'Front suspension ':'Rear suspension ') + S[S.axis].arch.toUpperCase();
   
   const vehDesc = document.getElementById("vehPresetDesc");
-  if(vehDesc) vehDesc.textContent = "当前载入: " + p.name;
+  if(vehDesc) vehDesc.textContent = "Currently loaded: " + p.name;
   
   if(typeof UI !== 'undefined' && UI.sync) {
     UI.sync.forEach(f => { try{ f(); }catch(e){} });
@@ -288,10 +293,10 @@ function loadVehiclePreset(type) {
     VW.forEach(v => { sizeView(v); fitView(v); });
   }
 
-  /* G29：换车型后重放自定义轮胎覆盖层（否则出厂胎覆盖用户胎） */
+  /* G29：换车型后重放自定义轮胎覆盖层（否则出厂胎覆盖用户胎） — EN: replay custom tire overlays after a vehicle switch (otherwise the factory tire clobbers the user's tire) */
   if (typeof TIRE_LAB !== "undefined" && TIRE_LAB.active) TIRE_LAB.syncAfterPreset();
   if (typeof TIRE_LAB !== "undefined") TIRE_LAB.refreshPresetSelect();
-  /* G31：换车型会重建下拉 DOM 内容 → 重挂自定义动力 optgroup（覆盖层不受车型影响） */
+  /* G31：换车型会重建下拉 DOM 内容 → 重挂自定义动力 optgroup（覆盖层不受车型影响） — EN: switching vehicles rebuilds the select DOM → re-attach the custom powertrain optgroup (the overlay is vehicle-independent) */
   if (typeof POWERTRAIN !== "undefined") POWERTRAIN.refreshPresetSelect();
 }
 
@@ -300,7 +305,7 @@ function initData(){
   S.vehicleType = "formula";
   S.wb = p.wb; S.hcg = p.hcg; S.hs = p.hs || (p.hcg + 20);
   S.mTotal = p.mTotal; S.mSprung = p.mSprung || (p.mTotal * 0.85);
-  S.front = deepClone(p.front);   /* F-39：统一 deepClone */
+  S.front = deepClone(p.front);   /* F-39：统一 deepClone — EN: unified deepClone */
   S.rear = deepClone(p.rear);
 }
 initData();
@@ -308,7 +313,7 @@ window.S = S;
 window.loadVehiclePreset = loadVehiclePreset;
 window.VEHICLE_PRESETS = VEHICLE_PRESETS;
 
-/* ================================ 2. 机构构建与多体投影求解 ================================ */
+/* ================================ 2. 机构构建与多体投影求解 — EN: mechanism construction & multi-body projection solver ================================ */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    M15（2026-09-20）· 质量与惯量属性（前端镜像；真源 = engine/src/api/mass_properties.py）
@@ -320,35 +325,37 @@ window.VEHICLE_PRESETS = VEHICLE_PRESETS;
    轴映射（与本项目 X=外/Y=前/Z=上 对应，勿按 SAE 名字搬）：
      Ixx=Σm(y²+z²) 绕横向轴=俯仰 · Iyy=Σm(x²+z²) 绕纵向轴=侧倾 · Izz=Σm(x²+y²)=横摆
      Iyz=−Σm·y·z = 侧倾-横摆耦合（↔ SAE 的 Ixz）
+   EN: M15 (2026-09-20) · mass & inertia properties (frontend mirror; source of truth = engine/src/api/mass_properties.py). Item-level parity with the engine: the parts list (33 items; 37 after left/right mirroring of unsprung parts), axis mapping, inertia integrals, and the three-tier yaw-inertia resolver. ANY edit on one side must be mirrored on the other — guarded by the test_dom cross-language item-by-item comparison (it parses the Python FSAE_MASS_ITEMS list and the JS list in this file, comparing every mass and coordinate). Axis mapping (this project uses X=lateral / Y=forward / Z=up; do not copy SAE names): Ixx=Σm(y²+z²) about the lateral axis = pitch · Iyy=Σm(x²+z²) about the longitudinal axis = roll · Izz=Σm(x²+y²) = yaw · Iyz=−Σm·y·z = roll-yaw coupling (SAE's Ixz).
    ═══════════════════════════════════════════════════════════════════════════ */
-/* [id, 名称, 质量kg, x, y, z, kind]  —— 非簧载件只写左侧(+x)，由镜像展开 */
+/* [id, 名称, 质量kg, x, y, z, kind]  —— 非簧载件只写左侧(+x)，由镜像展开
+   EN: [id, name, mass kg, x, y, z, kind]; unsprung parts listed left-side (+x) only, expanded by mirroring */
 const MASS_ITEMS_FSAE = [
-  ["un_f_tire","前轮辋+轮胎 18.0x6.0-10",7.0, 600,0,230,"uf"],
-  ["un_f_upright","前立柱+轮毂+轴承",1.9, 600,0,230,"uf"],
-  ["un_f_brake","前制动盘+卡钳",1.6, 560,0,230,"uf"],
-  ["un_f_arm","前上下 A 臂半 + 球头",1.0, 350,0,180,"uf"],
-  ["un_f_link","前推杆+摇臂半+紧固件",0.5, 450,0,250,"uf"],
-  ["un_r_tire","后轮辋+轮胎 18.0x7.5-10",7.6, 580,1550,235,"ur"],
-  ["un_r_upright","后立柱+轮毂+轴承",2.2, 580,1550,235,"ur"],
-  ["un_r_brake","后制动盘+卡钳",1.8, 540,1550,235,"ur"],
-  ["un_r_arm","后上下 A 臂半 + 球头",1.2, 340,1550,170,"ur"],
-  ["un_r_link","后推杆+摇臂半+紧固件",0.6, 430,1550,245,"ur"],
-  ["un_r_axle","驱动半轴+链轮（簧下段）",0.6, 450,1550,235,"ur"],
-  ["sp_frame_f","车架前段",16.0, 0, 350,250,"sp"],
-  ["sp_frame_r","车架后段",16.0, 0,1050,250,"sp"],
-  ["sp_body_n","鼻锥+前覆盖件",3.0, 0, 200,350,"sp"],
-  ["sp_body_t","侧箱+尾部覆盖件",3.0, 0,1000,350,"sp"],
-  ["sp_powertrain","动力总成（单缸+排气+进气）",36.0, 0,1150,280,"sp"],
-  ["sp_fuel","油箱+燃油",10.0, 0,1000,300,"sp"],
-  ["sp_cooling_l","左侧箱散热器+冷却液",2.0,-250,1150,330,"sp"],
-  ["sp_cooling_r","右侧箱散热器+冷却液",2.0, 250,1150,330,"sp"],
-  ["sp_diff","差速器+链传动",4.0, 0,1350,250,"sp"],
-  ["sp_rockers","摇臂+减振器体+ARB",4.0, 0, 800,280,"sp"],
-  ["sp_steering","转向齿条+柱+方向盘",3.0, 0, 350,250,"sp"],
-  ["sp_electric","ECU+线束+电池+灭火器",5.0, 0, 900,180,"sp"],
-  ["sp_seat","座椅+安全带+防火墙",4.0, 0, 550,250,"sp"],
-  ["sp_driver","驾驶员+装备",72.0, 0, 450,300,"sp"],
-  ["sp_ballast","配重与杂项（紧固件/余量/垫片）",3.0, 0, 900,250,"sp"],
+  ["un_f_tire","Front rim+tire 18.0x6.0-10",7.0, 600,0,230,"uf"],
+  ["un_f_upright","Front upright+hub+bearings",1.9, 600,0,230,"uf"],
+  ["un_f_brake","Front brake disc+caliper",1.6, 560,0,230,"uf"],
+  ["un_f_arm","Front upper+lower A-arm halves + ball joints",1.0, 350,0,180,"uf"],
+  ["un_f_link","Front pushrod+rocker half+fasteners",0.5, 450,0,250,"uf"],
+  ["un_r_tire","Rear rim+tire 18.0x7.5-10",7.6, 580,1550,235,"ur"],
+  ["un_r_upright","Rear upright+hub+bearings",2.2, 580,1550,235,"ur"],
+  ["un_r_brake","Rear brake disc+caliper",1.8, 540,1550,235,"ur"],
+  ["un_r_arm","Rear upper+lower A-arm halves + ball joints",1.2, 340,1550,170,"ur"],
+  ["un_r_link","Rear pushrod+rocker half+fasteners",0.6, 430,1550,245,"ur"],
+  ["un_r_axle","Drive halfshaft+sprocket (unsprung section)",0.6, 450,1550,235,"ur"],
+  ["sp_frame_f","Frame, front section",16.0, 0, 350,250,"sp"],
+  ["sp_frame_r","Frame, rear section",16.0, 0,1050,250,"sp"],
+  ["sp_body_n","Nose cone+front bodywork",3.0, 0, 200,350,"sp"],
+  ["sp_body_t","Sidepods+tail bodywork",3.0, 0,1000,350,"sp"],
+  ["sp_powertrain","Powertrain (single-cylinder engine+exhaust+intake)",36.0, 0,1150,280,"sp"],
+  ["sp_fuel","Fuel tank+fuel",10.0, 0,1000,300,"sp"],
+  ["sp_cooling_l","Left sidepod radiator+coolant",2.0,-250,1150,330,"sp"],
+  ["sp_cooling_r","Right sidepod radiator+coolant",2.0, 250,1150,330,"sp"],
+  ["sp_diff","Differential+chain drive",4.0, 0,1350,250,"sp"],
+  ["sp_rockers","Rockers+damper bodies+ARB",4.0, 0, 800,280,"sp"],
+  ["sp_steering","Steering rack+column+steering wheel",3.0, 0, 350,250,"sp"],
+  ["sp_electric","ECU+wiring harness+battery+extinguisher",5.0, 0, 900,180,"sp"],
+  ["sp_seat","Seat+belts+firewall",4.0, 0, 550,250,"sp"],
+  ["sp_driver","Driver+gear",72.0, 0, 450,300,"sp"],
+  ["sp_ballast","Ballast & misc (fasteners/margin/shims)",3.0, 0, 900,250,"sp"],
 ];
 function massItemsFSAE(){
   const out=[];
@@ -356,7 +363,7 @@ function massItemsFSAE(){
     const [id,name,m,x,y,z,kind]=it;
     out.push({id,name,m,x,y,z,kind});
     if(kind!=="sp" && Math.abs(x)>1e-9)
-      out.push({id:id+"_R",name:name+"（右）",m,x:-x,y,z,kind});
+      out.push({id:id+"_R",name:name+" (R)",m,x:-x,y,z,kind});
   });
   return out;
 }
@@ -382,7 +389,8 @@ let _massPropsCache=null;
 function fsaeMassProps(){ if(!_massPropsCache) _massPropsCache=massPropsOf(massItemsFSAE(),1550); return _massPropsCache; }
 /* 横摆惯量三档解析 —— 真源同 engine/src/api/mass_properties.py::resolve_yaw_inertia
    旧缺省 m(L²+1.6²)/12 是均质矩形板近似（t̄=1.6m 还是占位车宽）：对 FSAE 算得 97.18，
-   而部件清单 68.78 ⇒ **偏高 41%**，两个内核都在用 ⇒ 瞬态横摆响应被系统性算钝。 */
+   而部件清单 68.78 ⇒ **偏高 41%**，两个内核都在用 ⇒ 瞬态横摆响应被系统性算钝。
+   EN: three-tier yaw-inertia resolver — source of truth shared with engine/src/api/mass_properties.py::resolve_yaw_inertia. The old default m(L²+1.6²)/12 is a uniform rectangular-plate approximation (t̄=1.6 m was a placeholder track width): it yields 97.18 kg·m² for FSAE vs 68.78 from the parts list ⇒ ~41% high, used by both cores ⇒ transient yaw response systematically blunted. */
 function resolveYawInertia(declaredIz, massKg, wheelbaseMm){
   if(declaredIz) return {iz:declaredIz, src:"declared"};
   if(Math.abs(massKg-235)<=1.5 && Math.abs(wheelbaseMm-1550)<=5)

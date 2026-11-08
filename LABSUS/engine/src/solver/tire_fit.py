@@ -11,6 +11,28 @@
 - 输入曲线为 (α[°], |Fy|[N]) 单边扫掠（对称假设，取绝对值拟合）；
 - 残差以各层级最大 |Fy| 归一，RMS% 可直接横向比较不同轮胎；
 - 失败/欠定输入走 MetricResult 风格显式状态，禁止静默给默认值。
+
+Measured tire data → Pacejka MF parameter identification (the first
+station of the real race-car development data chain).
+
+Lecture mapping:
+- EP08 Tires & Grip — race-car development must use tire characteristics
+  measured by the team itself (Fy-α @ several Fz levels), not generic
+  default parameters; this module identifies bench/real-car sweep data
+  into an MF subset parameter set (By/Cy/Ey/Fy0/LS) shared by the engine
+  and the frontend, strictly same-sourced as tire_mf.MagicFormulaSub.
+- Load sensitivity LS: needs ≥2 distinct load levels to identify (fixed
+  at 0 with an explicit note for a single level); this is exactly the
+  calibration channel for "μ decreasing under heavy load (the Jensen
+  effect)".
+
+Conventions:
+- input curves are single-sided sweeps of (α[°], |Fy|[N]) (symmetry
+  assumed; fit on absolute values);
+- residuals are normalized by each level's max |Fy|, so RMS% can be
+  compared laterally across different tires;
+- failed/underdetermined inputs return MetricResult-style explicit
+  statuses; silently returning defaults is forbidden.
 """
 from __future__ import annotations
 
@@ -23,7 +45,11 @@ from src.tire_mf import evaluate_magic_formula_fy
 
 
 def _mf_fy(params: np.ndarray, a_rad: np.ndarray, fz: float) -> np.ndarray:
-    """委托 tire_mf.evaluate_magic_formula_fy，保证全系统 MF 计算单一真源。"""
+    """委托 tire_mf.evaluate_magic_formula_fy，保证全系统 MF 计算单一真源。
+
+    Delegate to tire_mf.evaluate_magic_formula_fy to keep a single source
+    of truth for MF computation system-wide.
+    """
     d0, b, c, e, ls = (float(v) for v in params)
     return evaluate_magic_formula_fy(
         a_rad, fz, Fy0=d0, By=b, Cy=c, Ey=e, LS=ls, FzNom=3500.0
@@ -35,8 +61,16 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
 
     返回 {status, params{Fy0,By,Cy,Ey,FzNom,LS}, rms_pct, per_load_rms_pct,
           n_points, n_loads, note}。status ∈ VALID / SOLVER_FAILED / NOT_APPLICABLE。
+
+    Identify MF subset parameters from multiple sets of measured (Fz, α[],
+    Fy[]) curves.
+
+    Returns {status, params{Fy0,By,Cy,Ey,FzNom,LS}, rms_pct,
+    per_load_rms_pct, n_points, n_loads, note}; status ∈ VALID /
+    SOLVER_FAILED / NOT_APPLICABLE.
     """
     # ── 输入清洗 ──────────────────────────────────────────────
+    # ── Input sanitization ────────────────────────────────────
     loads: list[tuple[float, np.ndarray, np.ndarray]] = []
     for cv in curves or []:
         try:
@@ -50,12 +84,12 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
         m = np.isfinite(alpha) & np.isfinite(fy)
         alpha, fy = alpha[m], fy[m]
         if len(alpha) < 5 or float(fy.max()) < 10.0:
-            continue  # 点数/量程不足，该层级不可用
+            continue  # 点数/量程不足，该层级不可用 — not enough points / range; this level is unusable
         loads.append((fz, np.deg2rad(alpha), fy))
     if not loads:
         return {"status": "NOT_APPLICABLE", "params": None, "rms_pct": None,
                 "per_load_rms_pct": {}, "n_points": 0, "n_loads": 0,
-                "note": "无有效实测曲线（每层级需 ≥5 点且 |Fy| 峰值 ≥10N）"}
+                "note": "无有效实测曲线（每层级需 ≥5 点且 |Fy| 峰值 ≥10N） / no valid measured curves (each level needs ≥5 points and a peak |Fy| ≥ 10N)"}
     fz_vals = [ld[0] for ld in loads]
     n_loads = len(loads)
     n_points = sum(len(ld[1]) for ld in loads)
@@ -63,6 +97,7 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
     use_ls = bool(fit_ls) and not single_load
 
     # ── 初值：峰值与线性段斜率给出解析起点 ──────────────────
+    # ── Initial values: the peak and the linear-region slope give an analytic starting point ──
     d0_0 = max(float(fy.max()) for _, _, fy in loads)
     a_all = np.concatenate([a for _, a, _ in loads])
     f_all = np.concatenate([f for _, _, f in loads])
@@ -81,6 +116,11 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
 
     # LS 仅在多层级时参与辨识；单层级固定 0（显式标注，禁止伪造）。
     # scipy 要求 lb < ub 严格不等 → 不拟合的 LS 不进优化向量。
+    # LS participates in the identification only with multiple levels; for a
+    # single level it is fixed at 0 (explicitly noted; fabricating is
+    # forbidden).
+    # scipy requires lb < ub strictly → the non-fitted LS stays out of the
+    # optimization vector.
     if use_ls:
         x0 = np.array([d0_0, b0, 1.2, -0.5, 0.10])
         lb = np.array([500.0, 2.0, 1.0, -2.0, 0.0])
@@ -95,11 +135,11 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"status": "SOLVER_FAILED", "params": None, "rms_pct": None,
                 "per_load_rms_pct": {}, "n_points": n_points, "n_loads": n_loads,
-                "note": f"least_squares 失败：{exc.__class__.__name__} {exc}"}
+                "note": f"least_squares 失败：{exc.__class__.__name__} {exc} / least_squares failed: {exc.__class__.__name__} {exc}"}
     if not sol.success and 2.0 * float(sol.cost) / n_points > 0.25 ** 2:
         return {"status": "SOLVER_FAILED", "params": None, "rms_pct": None,
                 "per_load_rms_pct": {}, "n_points": n_points, "n_loads": n_loads,
-                "note": f"拟合未收敛且残差过大：{sol.message}"}
+                "note": f"拟合未收敛且残差过大：{sol.message} / fit did not converge and the residual is too large: {sol.message}"}
 
     b, c, e = float(sol.x[1]), float(sol.x[2]), float(sol.x[3])
     d0, ls = float(sol.x[0]), (float(sol.x[4]) if use_ls else 0.0)
@@ -115,7 +155,7 @@ def fit_tire_params(curves: list[dict], fit_ls: bool = True) -> dict:
     params = {"Fy0": round(d0, 1), "By": round(b, 4), "Cy": round(c, 4),
               "Ey": round(e, 4), "FzNom": 3500.0,
               "LS": round(ls, 4) if use_ls else 0.0}
-    note = ("单层级载荷：LS 不可辨识，固定 0（载荷敏感性需 ≥2 个载荷层级）"
+    note = ("单层级载荷：LS 不可辨识，固定 0（载荷敏感性需 ≥2 个载荷层级） / single load level: LS not identifiable, fixed at 0 (load sensitivity needs ≥2 load levels)"
             if single_load and fit_ls else "")
     return {"status": "VALID", "params": params, "rms_pct": round(rms_pct, 2),
             "per_load_rms_pct": per_load, "n_points": n_points,

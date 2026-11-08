@@ -16,6 +16,36 @@ side_view_ic / anti_dive / anti_squat / pitch_center / _anti_pct_svic）
 在生产与测试中均零引用，已随本次整理删除。
 
 约定（P2-0 冻结）：坐标系 X 前 / Y 右 / Z 上；Toe-in 正；Camber 负=内倾。
+
+Kinematics metrics of the V1 frozen line (P2-2 design doc §6) — **not
+reachable from production; gate/comparison use only**.
+
+This module originally lived at `src/metrics/kinematics.py`. The M5
+structural cleanup (2026-09-20) confirmed that the whole chain
+`legacy.models → legacy.metrics → legacy.kinematics` has **zero
+consumers** on the `/api/v3` production path — production metrics go
+through `src/api/chassis.py` (quasi-static) and `src/metrics/kandc.py`
+(the source of truth for the central-difference kernel). It was therefore
+moved into `src/legacy/` together with the other 4 V1 modules, kept for
+two purposes:
+
+1. **S1 gate hand-calculation comparison** (`tests/test_s1_gate.py`,
+   `tests/test_w4_consistency.py`);
+2. the **F-12 "single central-difference implementation" guard**: this
+   state-machine version must be bit-identical with the `kandc` float
+   version.
+
+Therefore the following 4 functions are referenced by tests and **must not
+be deleted**:
+`motion_ratio` / `jacking` / `bump_steer_deg_per_25` /
+`camber_gain_deg_per_25`.
+The other 8 functions (steering_camber_gain / roll_center_height /
+svic_point / side_view_ic / anti_dive / anti_squat / pitch_center /
+_anti_pct_svic) had zero references in both production and tests and were
+removed in that cleanup.
+
+Conventions (frozen at P2-0): coordinate system X forward / Y right / Z
+up; toe-in positive; camber negative = wheel top leaning inward.
 """
 from __future__ import annotations
 
@@ -30,18 +60,29 @@ def bump_steer_deg_per_25(toe_curve, travel_curve, at_travel: float) -> MetricRe
 
     F-12（2026-08-30）：数值内核委托 metrics/kandc.slope_at_travel（最近邻
     中央差分单一实现），不再维护第二份 _slope_at 差分逻辑。
+
+    Bump Steer: Δtoe/Δtravel, normalized to deg/25mm.
+
+    F-12 (2026-08-30): the numeric kernel is delegated to
+    metrics/kandc.slope_at_travel (the single nearest-neighbor
+    central-difference implementation); a second _slope_at differencing
+    implementation is no longer maintained.
     """
     slope = slope_at_travel(toe_curve, travel_curve, at_travel)
     if slope is None:
-        return solver_failed("bump_steer", "deg/25mm", "扫掠曲线不足以计算导数")
+        return solver_failed("bump_steer", "deg/25mm", "扫掠曲线不足以计算导数 / sweep curve insufficient to compute a derivative")
     return ok(slope[0] * 25.0, "deg/25mm")
 
 
 def camber_gain_deg_per_25(camber_curve, travel_curve, at_travel: float) -> MetricResult:
-    """Camber Gain：Δcamber/Δtravel，归一化 °/25mm（内核同 bump steer）。"""
+    """Camber Gain：Δcamber/Δtravel，归一化 °/25mm（内核同 bump steer）。
+
+    Camber Gain: Δcamber/Δtravel, normalized to deg/25mm (same kernel as
+    bump steer).
+    """
     slope = slope_at_travel(camber_curve, travel_curve, at_travel)
     if slope is None:
-        return solver_failed("camber_gain", "deg/25mm", "扫掠曲线不足以计算导数")
+        return solver_failed("camber_gain", "deg/25mm", "扫掠曲线不足以计算导数 / sweep curve insufficient to compute a derivative")
     return ok(slope[0] * 25.0, "deg/25mm")
 
 
@@ -50,10 +91,17 @@ def motion_ratio(damper_travel_curve, travel_curve, at_travel: float) -> MetricR
 
     取代 analyze.py 硬编码的 mr_f=0.7 / mr_r=0.6。
     F-12/F-13：数值内核委托 metrics/kandc.slope_at_travel（单一中央差分内核）。
+
+    Geometric Motion Ratio: |Δdamper / Δwheel| (rockers sweep, central
+    difference).
+
+    Replaces the mr_f=0.7 / mr_r=0.6 hardcoded in analyze.py.
+    F-12/F-13: the numeric kernel is delegated to
+    metrics/kandc.slope_at_travel (the single central-difference kernel).
     """
     slope = slope_at_travel(damper_travel_curve, travel_curve, at_travel)
     if slope is None:
-        return solver_failed("motion_ratio", "-", "rockers 扫掠数据不足")
+        return solver_failed("motion_ratio", "-", "rockers 扫掠数据不足 / insufficient rockers sweep data")
     return ok(abs(slope[0]), "-")
 
 
@@ -69,12 +117,31 @@ def jacking(fy_sprung_n: float, rc_h_mm: float, track_mm: float) -> MetricResult
         F_jack = F_y · 2·z_RC / T
     正 RC → 抬升簧载（千斤顶效应）；负 RC → 下拉。抬升量由调用方除以
     轴垂向刚度得到。与讲义 EP10 拓展同源。
+
+    Jacking vertical force: the vertical component that arises when the
+    lateral force is transmitted through the suspension links to the roll
+    center (RC).
+
+    ⚠️ The production path does not call this function: `quasi_loads` in
+    `src/api/chassis.py` expands the same formula in place per axle
+    (`f_jack_f = mS·ay·(b/L)·(2·zrc_f/tf)`). This function is the test-only
+    single-point reference implementation (`tests/test_v3_chassis.py`
+    cross-checks the two).
+
+    Side view: each side's lateral force at the contact patch is
+    transmitted along the contact-patch→IC line; combining both sides
+    gives the force acting at the RC; the equivalent vertical component
+    (symmetric axle, RC on the centerline) is:
+        F_jack = F_y · 2·z_RC / T
+    Positive RC → lifts the sprung mass (jacking effect); negative RC →
+    pulls it down. The caller obtains the lift by dividing by the axle
+    vertical stiffness. Same source as the EP10 lecture extension.
     """
     if not math.isfinite(fy_sprung_n):
-        return solver_failed("jacking", "N", "Fy 非有限")
+        return solver_failed("jacking", "N", "Fy 非有限 / Fy is not finite")
     if track_mm <= 0 or not math.isfinite(track_mm):
-        return solver_failed("jacking", "N", "轮距无效")
+        return solver_failed("jacking", "N", "轮距无效 / track width is invalid")
     if not math.isfinite(rc_h_mm):
-        return not_applicable("jacking", "N", "RC 高度不可用")
+        return not_applicable("jacking", "N", "RC 高度不可用 / RC height is unavailable")
     return ok(fy_sprung_n * (2.0 * rc_h_mm / track_mm), "N",
-              note="正=抬升簧载；抬升量需除以轴垂向刚度")
+              note="正=抬升簧载；抬升量需除以轴垂向刚度 / positive = lifts the sprung mass; the ride-height gain requires dividing by the axle vertical stiffness")

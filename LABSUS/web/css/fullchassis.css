@@ -3,25 +3,29 @@
    G12（2026-08-31）UI 优化：克制小圆角 / 毛玻璃面板 / 柔和投影 /
    三级层级（hero 指标 → 常规读数 → 辅助信息）/ 左暖右冷色语义。
    设计理念：精密 × 呼吸感 × 安静可读。
+   LABSUS suspension lab · modern precision-instrument bench (Precision Instrument)
+   G12 (2026-08-31) UI refinement: restrained small radii / frosted-glass panels /
+   soft shadows / three-tier hierarchy (hero metrics → regular readings → auxiliary info) /
+   warm-left, cool-right color semantics. Design philosophy: precision × breathing room × quiet readability.
    ============================================================ */
 :root{
   color-scheme:dark;
-  /* 圆角体系：克制的小圆角，精密但不生硬 */
+  /* 圆角体系：克制的小圆角，精密但不生硬 — Radius system: restrained small radii, precise but not stiff */
   --r-xl:10px; --r-lg:8px; --r-md:6px; --r-sm:4px; --r-xs:3px; --r-pill:999px;
-  /* 专属分类色（两套模式共享色相，深浅随主题微调，见 JS PAL） */
+  /* 专属分类色（两套模式共享色相，深浅随主题微调，见 JS PAL） — Dedicated category colors (both mode sets share hues; tone depth tuned per theme, see JS PAL) */
   --s-prus:#405A78; --s-terra:#A66B58; --s-sage:#7A8C7E; --s-mist:#637B94;
   --s-copper:#C98C65; --s-honey:#C99C65; --s-lav:#8B7A9E; --s-tea:#8F988A;
   --s-wine:#943948; --s-oat:#E8D4BF;
-  /* 左右色语义：INPUT 暖 / OUTPUT 冷 */
+  /* 左右色语义：INPUT 暖 / OUTPUT 冷 — Left/right color semantics: INPUT warm / OUTPUT cool */
   --acc-in:#E8A04C; --acc-out:#5DCAA5;
   --acc-in-fill:rgba(232,160,76,.10); --acc-out-fill:rgba(93,202,165,.09);
-  /* —— 深色主题（默认）：毛玻璃分层 —— */
+  /* —— 深色主题（默认）：毛玻璃分层 — Dark theme (default): frosted-glass layering —— */
   --bg-base:#0B0F15;
-  --glass:rgba(18,23,32,0.82);      /* 面板底（半透明+blur） */
-  --glass-2:rgba(22,28,38,0.65);    /* 区块底 */
-  --glass-3:rgba(28,35,48,0.70);    /* 控件/标题栏底 */
+  --glass:rgba(18,23,32,0.82);      /* 面板底（半透明+blur） — panel base (semi-transparent + blur) */
+  --glass-2:rgba(22,28,38,0.65);    /* 区块底 — section base */
+  --glass-3:rgba(28,35,48,0.70);    /* 控件/标题栏底 — control & header-bar base */
   --glass-hov:rgba(38,48,65,0.55);
-  --sh-bg:rgba(24,30,42,0.80);      /* 区块标题栏底 */
+  --sh-bg:rgba(24,30,42,0.80);      /* 区块标题栏底 — section header-bar base */
   --glass-bd:rgba(255,255,255,.07); --glass-bd-2:rgba(255,255,255,.12); --glass-hi:transparent;
   --hairline:rgba(255,255,255,.04);
   --ink-1:#E8E4DC; --ink-2:#9B968D; --ink-3:#6B6760;
@@ -36,12 +40,12 @@
   --knob:#E8D4BF;
   --font-ui:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
   --font-mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
-  /* 语义别名（兼容 JS 内联引用） */
+  /* 语义别名（兼容 JS 内联引用） — Semantic aliases (compatible with inline JS references) */
   --txt2:var(--ink-2); --txt3:var(--ink-3);
 }
 [data-theme="light"]{
   color-scheme:light;
-  /* —— 浅色主题：柔和纸面 —— */
+  /* —— 浅色主题：柔和纸面 — Light theme: soft paper surface —— */
   --bg-base:#EEEAE2;
   --glass:rgba(247,243,236,0.88); --glass-2:rgba(241,235,228,0.75); --glass-3:rgba(233,226,214,0.80); --glass-hov:rgba(255,255,255,0.90);
   --sh-bg:rgba(233,226,214,0.85);
@@ -95,7 +99,7 @@ body{
 .dot.r{background:var(--err);box-shadow:0 0 6px var(--err)}
 .dot.c{background:var(--pri)}
 @keyframes dotb{0%,100%{opacity:1}50%{opacity:.45}}
-/* 浅色 / 深色主题切换开关 */
+/* 浅色 / 深色主题切换开关 — Light / dark theme toggle switch */
 .theme-tg{position:relative;flex:0 0 50px;width:50px;height:26px;align-self:center;margin:0 12px;cursor:pointer;
   background:var(--glass-3);border:1px solid var(--glass-bd-2);border-radius:var(--r-pill);
   box-shadow:none;transition:background .2s}
@@ -118,7 +122,7 @@ body{
 .pnl::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border:2px solid transparent;background-clip:content-box;border-radius:var(--r-pill)}
 .pnl::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18);background-clip:content-box;border:2px solid transparent}
 
-/* —— 区块：柔和标题栏 + 微圆角 + 呼吸感间距（L1 层级） —— */
+/* —— 区块：柔和标题栏 + 微圆角 + 呼吸感间距（L1 层级） — Section: soft header bar + micro radii + breathing-room spacing (L1 tier) —— */
 .sec{margin:4px 8px;border-radius:var(--r-md);overflow:hidden;
   background:var(--glass-2);border:1px solid var(--glass-bd);
   box-shadow:none}
@@ -126,7 +130,7 @@ body{
     background:var(--sh-bg);
     padding-left:10px;font:10px/1.35 var(--font-ui);letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase;cursor:pointer;position:relative;transition:background .18s;
     flex-wrap:wrap}
-/* G32：中文标题长时折行不再压到英文副标签（原固定 28px 高致两行文字重叠） */
+/* G32：中文标题长时折行不再压到英文副标签（原固定 28px 高致两行文字重叠） — G32: long Chinese titles now wrap without crushing the English sub-label (the old fixed 28px height made the two text lines overlap) */
 .sh .zh{white-space:normal;line-height:1.3}
 .sh:hover{background:var(--glass-hov)}
 .sh::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2.5px;border-radius:var(--r-pill);
@@ -135,7 +139,7 @@ body{
 .sh.grn::before{background:var(--ok)}
 .sh.purp::before{background:var(--s-lav)}
 .sh.blu::before{background:var(--s-prus)}
-/* 左右色语义：#lp=操作区暖 / #rp=指标区冷 */
+/* 左右色语义：#lp=操作区暖 / #rp=指标区冷 — Left/right color semantics: #lp = warm control side / #rp = cool metric side */
 #lp .sh::before{background:var(--acc-in)}
 #rp .sh::before{background:var(--acc-out)}
 .sh .zh{color:var(--ink-1);letter-spacing:.02em;font-size:11.5px;font-weight:600;margin-right:6px;text-transform:none}
@@ -149,7 +153,11 @@ body{
 
 /* M7（2026-09-20）：输入行紧凑化——每行 43px → 33px（行高 14/20→13/18、内边距 9→5px）。
    左栏 6 个区约 36 行输入，旧高度下 1080p 一屏只看得到 4~5 个区、要滚很久；
-   紧凑后同屏可见的区数提升约 1/4。网格列/行定义与 .ctl>label 等规则保持不变。 */
+   紧凑后同屏可见的区数提升约 1/4。网格列/行定义与 .ctl>label 等规则保持不变。
+   M7 (2026-09-20): compacted input rows — 43px → 33px per row (line-height 14/20→13/18, padding 9→5px).
+   The left column holds ~36 input rows across 6 areas; at the old height a 1080p screen showed
+   only 4~5 areas and demanded long scrolling; after compaction ~25% more areas fit on screen.
+   Grid column/row definitions and rules like .ctl>label stay unchanged. */
 .ctl{display:grid;grid-template-columns:1fr 60px;grid-template-rows:13px 18px;gap:0 7px;
      padding:2px 10px 3px;align-items:center}
 .ctl>label{grid-column:1/3;grid-row:1;font-size:9.5px;color:var(--ink-2);overflow:hidden;
@@ -226,7 +234,7 @@ table.hp td.fx input{color:var(--err)}
 table.hp td.fr input{color:var(--ink-1)}
 table.hp td.rk input{color:var(--pri)}
 
-/* —— 读数行：呼吸感间距；hero 行为 L2 关键指标（accent + 左色条） —— */
+/* —— 读数行：呼吸感间距；hero 行为 L2 关键指标（accent + 左色条） — Readout rows: breathing-room spacing; hero rows are L2 key metrics (accent + left color bar) —— */
 .ro{display:grid;grid-template-columns:1fr 80px 32px 13px;align-items:center;padding:4px 12px;font-size:10px;min-height:20px;border-radius:var(--r-xs);transition:background .18s;
   border-bottom:1px solid var(--hairline)}
 .ro:hover{background:var(--glass-hov)}
@@ -298,9 +306,9 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 #sb .c.ok u::before{content:"";display:inline-block;width:5px;height:5px;border-radius:var(--r-pill);background:var(--ok);margin-right:4px;box-shadow:0 0 5px var(--ok)}
 #sb .c.bad u::before{content:"";display:inline-block;width:5px;height:5px;border-radius:var(--r-pill);background:var(--err);margin-right:4px;box-shadow:0 0 5px var(--err)}
 
-/* 引擎面板专用组件 */
+/* 引擎面板专用组件 — Engine-panel-specific components */
 .eng-row{display:flex;align-items:center;gap:6px;padding:3px 10px}
-/* M7：标签列加宽并禁止换行（旧 74px 放不下 "LCA 衬套 500N/mm" ⇒ 标签折成两行） */
+/* M7：标签列加宽并禁止换行（旧 74px 放不下 "LCA 衬套 500N/mm" ⇒ 标签折成两行） — M7: widened the label column and forbade wrapping (the old 74px could not fit "LCA bushing 500N/mm" ⇒ the label wrapped onto two lines) */
 .eng-lb{width:74px;flex:0 0 auto;font-size:9.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eng-lb.w86{width:86px}
 .eng-input{width:62px!important;text-align:right}
@@ -350,7 +358,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 #ssPreview{display:block;margin:6px 0;border:1px solid #252E3D;background:#0e1218}
 .ss-st{font:9px var(--font-mono);color:#9AA4B5;margin-top:10px}
 
-/* ================================ 综合评价报告 & 直线爬坡 样式 ================================ */
+/* ================================ 综合评价报告 & 直线爬坡 样式 — Comprehensive evaluation report & straight-line climb styles ================================ */
 .header-action-btn {
   height: 24px;
   padding: 0 10px;
@@ -496,7 +504,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 .metric-target { font-size: 10.5px; color: #8b949e; }
 .metric-desc { font-size: 10.5px; color: #8b949e; line-height: 1.35; margin-top: 2px; }
 
-/* 定圆绕环舞台全屏模态窗口 */
+/* 定圆绕环舞台全屏模态窗口 — Constant-radius skidpad stage fullscreen modal window */
 .circuit-stage-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -605,7 +613,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 
 .skidpad-top-right { display: flex; align-items: center; gap: 12px; font-size: 11px; flex-wrap: wrap; }
 
-/* 面板显示/隐藏控制组（顶栏按钮分组容器） */
+/* 面板显示/隐藏控制组（顶栏按钮分组容器） — Panel show/hide control group (top-bar button grouping container) */
 .circuit-panel-toggles {
   display: inline-flex;
   align-items: center;
@@ -620,7 +628,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
   margin-right: 2px;
   white-space: nowrap;
 }
-/* 组内功能分隔线（面板开关 / 遥测LOG / 全屏 之间） */
+/* 组内功能分隔线（面板开关 / 遥测LOG / 全屏 之间） — In-group function divider (between panel toggles / telemetry LOG / fullscreen) */
 .circuit-panel-toggles .c-toggle-sep {
   width: 1px;
   height: 18px;
@@ -702,7 +710,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
   pointer-events: none;
 }
 
-/* 爬坡 / 试验场舞台全屏 */
+/* 爬坡 / 试验场舞台全屏 — Hill climb / proving-ground stage fullscreen */
 .slope-stage-modal-backdrop {
   flex-direction: column;
 }
@@ -1339,13 +1347,13 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 .c-ctrl-btn:hover {
   background: rgba(255, 255, 255, 0.15);
 }
-/* 控制按钮纵向堆叠（AutoPilot / 重置发车），消除并排挤压 */
+/* 控制按钮纵向堆叠（AutoPilot / 重置发车），消除并排挤压 — Stack control buttons vertically (AutoPilot / reset launch) to eliminate side-by-side squeezing */
 .c-ctrl-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-/* 窄幅控制分组：不再与其它分组等分拉伸，杜绝大块留白 */
+/* 窄幅控制分组：不再与其它分组等分拉伸，杜绝大块留白 — Narrow control groups: no longer stretched to equal share like other groups, eliminating large blank blocks */
 .c-tune-group.compact {
   flex: 0 1 230px;
   min-width: 200px;
@@ -1788,6 +1796,7 @@ canvas.plot{display:block;width:100%;height:150px;background:var(--well);border:
 
 /* =====================================================================
    8. MoTeC i2 Pro 专业赛车遥测数据分析看板 (Circuit Telemetry LOG Modal)
+   — professional racing telemetry data-analysis dashboard
    ===================================================================== */
 .circuit-telemetry-modal-backdrop {
   display: none;

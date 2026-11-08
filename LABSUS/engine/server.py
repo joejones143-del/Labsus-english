@@ -15,15 +15,31 @@
 
 CORS：开放所有来源（前端为 file:// 双击打开时亦可直连本服务）。
 端口 8001 避开主仓库冻结的 8000（modeler 后端）。
+
+English: /api/v3 service entrypoint (S2) — the FastAPI application.
+Start:
+    python server.py                 # default http://127.0.0.1:8001
+    uvicorn server:app --port 8001
+Endpoints:
+    GET  /api/v3/health              engine health check
+    GET  /api/v3/version             engine and API version
+    POST /api/v3/solve/pose          single-point mechanism solve (attitude + alignment angles)
+    POST /api/v3/kandc/bump          parallel bump-travel sweep (K&C)
+    POST /api/v3/kandc/roll          roll sweep (K&C, combined for both sides)
+    POST /api/v3/kandc/steer         steering sweep (K&C)
+    POST /api/v3/kandc/compliance    force-compliance sweep (K&C)
+CORS: open to all origins (the frontend connects directly even when opened as a
+double-clicked file:// page). Port 8001 avoids the main repo's frozen 8000 (modeler backend).
 """
 from __future__ import annotations
 
 import os
 import sys
 
-# 确保 engine/ 在 sys.path（与 scripts/kandc_run.py 同款注入）。
-# F-74：不再挂 engine/src —— 引擎内部统一 `src.` 绝对导入根，避免同一文件
-# 被加载成 `src.geometry` 与 `geometry` 两个模块对象导致身份比较失效。
+# 确保 engine/ 在 sys.path（与 scripts/kandc_run.py 同款注入）。 — ensure engine/ is on sys.path (same injection as scripts/kandc_run.py).
+# F-74：不再挂 engine/src —— 引擎内部统一 `src.` 绝对导入根，避免同一文件 — F-74: no longer mounting engine/src — the engine uses `src.` as the unified
+# absolute import root, preventing the same file from being loaded as both `src.geometry` and
+# `geometry`, which breaks identity comparison.
 _ENGINE_ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ENGINE_ROOT not in sys.path:
     sys.path.insert(0, _ENGINE_ROOT)
@@ -46,12 +62,16 @@ from src.core.json_util import wash_json as _wash_json  # noqa: E402
 from src.solver.tire_fit import fit_tire_params  # noqa: E402
 from src.solver.transient import run_track_sim  # noqa: E402
 
-ENGINE_VERSION = "0.3.0"          # 引擎（S1 内核 + S2 服务层）
+ENGINE_VERSION = "0.3.0"          # 引擎（S1 内核 + S2 服务层） — engine (S1 core + S2 service layer)
 API_VERSION = "v3"
 
 
 def _handle_api_error(exc: Exception, context: str) -> None:
-    """F-46 脱敏与错误分流：区分 422 客户端输入/数值发散 vs 500 服务器内部未处理崩溃。"""
+    """F-46 脱敏与错误分流：区分 422 客户端输入/数值发散 vs 500 服务器内部未处理崩溃。
+
+    English: F-46 sanitization and error triage — separate 422 client-input /
+    numerical-divergence failures from 500 unhandled internal server crashes.
+    """
     if isinstance(exc, HTTPException):
         raise exc
     import traceback as _tb
@@ -68,11 +88,12 @@ def _handle_api_error(exc: Exception, context: str) -> None:
 
 app = FastAPI(
     title="LABSUS Engine /api/v3",
-    description="LABSUS 悬架实验室分析引擎（S1 衬套两层求解器 + S2 工况/API 服务层）",
+    description="LABSUS Suspension Lab analysis engine (S1 two-layer bushing solver + S2 load-case/API service layer)",
     version=ENGINE_VERSION,
 )
 
-# CORS：默认全开（前端 file:// 双击直连）。部署时可收紧：
+# CORS：默认全开（前端 file:// 双击直连）。部署时可收紧： — CORS: fully open by default
+# (frontend opened via double-clicked file://). Tighten at deployment:
 #   LABSUS_CORS_ORIGINS="http://127.0.0.1:8921,http://localhost:8921" python server.py
 _cors_origins = [o.strip() for o in os.environ.get("LABSUS_CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
@@ -126,7 +147,11 @@ def kandc(case: str, req: KandcRequest) -> dict:
 
 @app.post("/api/v3/chassis/solve")
 def chassis_solve(req: ChassisRequest) -> dict:
-    """整车单点：四角定位角 + 整车姿态 + 准静态载荷转移（TLLTD/侧倾梯度）。"""
+    """整车单点：四角定位角 + 整车姿态 + 准静态载荷转移（TLLTD/侧倾梯度）。
+
+    English: full-vehicle single point — four-corner alignment angles + full-vehicle
+    attitude + quasi-static load transfer (TLLTD / roll gradient).
+    """
     try:
         return _wash_json(chassis_service.solve_chassis(req).model_dump())
     except Exception as exc:  # noqa: BLE001
@@ -157,6 +182,16 @@ def simulate_track(req: TrackSimRequest) -> dict:
     其余端点不绑：它们的服务层本就返回 pydantic 模型（`runner(req).model_dump()`），
     键集已由模型保证；再加运行时校验只会把 `_wash_json` 洗出的诚实 null
     （发散工况）变成 500。
+
+    English: full-vehicle transient track simulation (S3-1) — planar 3-DOF + four-wheel
+    MF + quasi-static loads + pure-pursuit driver.
+    M5: response_model is bound — this is the only endpoint returning a bare dict; once
+    bound, the response key set is pinned by the model, so a backend rename fails loudly
+    instead of silently blanking the frontend.
+    The other endpoints are not bound: their service layer already returns pydantic models
+    (`runner(req).model_dump()`), so the key set is guaranteed by the model; adding runtime
+    validation would only turn the honest nulls (divergent cases) washed out by `_wash_json`
+    into 500s.
     """
     try:
         return _wash_json(run_track_sim(req))
@@ -169,6 +204,10 @@ def tire_fit(req: TireFitRequest) -> TireFitResponse:
     """轮胎实测曲线 → Pacejka MF 子集参数辨识（讲义 EP08 数据链）。
 
     辨识出的 params 可直接作为 chassis/solve 的 tire 字段或赛道仿真轮胎参数回传。
+
+    English: identify a Pacejka MF parameter subset from measured tire curves (the
+    lecture-notes EP08 data chain). The identified params can be fed straight back as the
+    `tire` field of chassis/solve, or as transient-simulation tire parameters.
     """
     import time as _time
     t0 = _time.perf_counter()

@@ -8,6 +8,26 @@
   联合最小二乘，保证残差 ≤0.02mm（G1）且换姿态热启动保持分支连续；
 - 摇臂/推杆闭环是纯运动学从动链（轮侧解完再事后求解 θ，与产品 rocker.py 架构一致），
   不进轮侧状态向量。
+
+Mechanism kinematics solve: scipy least_squares joint convergence +
+continuation warm start + rocker post-processing.
+
+Design notes (where this landed relative to the original spec, recorded
+as justified deviations):
+- Still solves as a DWB-style "mechanism model" (nodes / rigid links /
+  hinge clusters / rigid knuckle + dual drivers: wheel height / rack);
+  the model layer matches the reference;
+- but convergence does not use an "independent exact projection
+  iteration" (in practice, under real geometry with double closed loops
+  / strongly anisotropic covariance, Gauss-Seidel does not contract);
+  instead it performs a scipy `least_squares` joint least-squares on the
+  **same constraint residual vector**, guaranteeing residual ≤0.02mm
+  (G1) while keeping branch continuity via posture-to-posture warm
+  starts;
+- the rocker/pushrod closed loop is a purely kinematic driven chain
+  (solve the wheel side first, then back-solve θ afterwards, matching
+  the production rocker.py architecture), and does not enter the
+  wheel-side state vector.
 """
 from __future__ import annotations
 
@@ -45,6 +65,14 @@ def _apply(m: Mechanism, x: np.ndarray) -> None:
     # set_drives——驱动写入自 F-13 起内联在 _build_residual）——
     # 当前调用序无害，但属易踩雷别名，任何"先 apply 再改 pos"的新路径
     # 都会静默污染初值向量（least_squares 复用 x 的路径尤其危险）。
+    # F-68 (2026-08-30): view alias → copy. The old implementation assigned
+    # slices of x directly to node.pos (zero-copy views), so drive writes
+    # would write back into the x array (M5 already deleted that dead
+    # function set_drives — drive writes have been inlined in
+    # _build_residual since F-13) — the current call order is harmless, but
+    # it is a trip-hazard alias; any new path of "apply first, then modify
+    # pos" would silently pollute the initial-value vector (the path where
+    # least_squares reuses x is especially dangerous).
     for k, i in enumerate(_STATE_IDS):
         m.nodes[i].pos = x[3 * k:3 * k + 3].copy()
 
@@ -55,6 +83,16 @@ def _build_residual(m: Mechanism, travel: float, rack: float):
     P2（2026-08-22）：刚体距离对由 m.bodies[0].ids 派生 —— strut_attach!=knuckle
     时 UP4 已移出转向节，不再受 knuckle 刚距约束；同时补一条 UP4↔臂球头刚线
     （对应前端 ATT_B-ST_O），消除"绕臂轴相对转角"的伪自由度。
+
+    Residual function: hinge circle (radius / axial) + knuckle rigid-body
+    distances + tie rod + dual drivers.
+
+    P2 (2026-08-22): the rigid-body distance pairs are derived from
+    m.bodies[0].ids — when strut_attach!=knuckle, UP4 has been moved out
+    of the knuckle and is no longer constrained by the knuckle rigid
+    distances; additionally a UP4↔arm-ball-joint rigid link is added
+    (corresponding to the frontend ATT_B-ST_O), removing the spurious
+    DOF "relative rotation about the arm axis".
     """
     body_ids = sorted(m.bodies[0].ids)
     pair = [(i, j) for idx, i in enumerate(body_ids) for j in body_ids[idx + 1:]]
@@ -115,6 +153,22 @@ def solve_rocker(m: Mechanism) -> tuple[bool, float | None, float | None]:
     使压缩行程推杆长度不可达，bracket 恒失败 → 减振器长度不更新 →
     引擎 MR 数值垃圾化（实测 3.98）；这正是"STRUT_OUT 拓扑 OpenItem"的
     真实物理根源之一。
+
+    Rocker post-processing: solve θ such that
+    |rotate_axis(CH5.p0, pivot, axis, θ) − UP4.current| = L_pr.
+
+    Returns (ok, theta_rad, damper_len_mm). ok=False when unreachable.
+    Also writes back CH5/RK_DAMPER.
+
+    P2 (2026-08-22): the rotation axis now comes from the mechanism's
+    rocker cluster axis — the v3 layer supplies a real 3D axis via
+    RCK_AX_B−RCK_AX_A; by default it falls back to the global X axis (the
+    old behavior). The old rotate_around_x did not change the X
+    coordinate; the X span of CH5→UP4 (358mm at baseline) made the pushrod
+    length on the compression stroke unreachable, so bracket always failed
+    → the damper length never updated → the engine's MR numbers became
+    garbage (measured 3.98); this was one of the real physical root causes
+    of the "STRUT_OUT topology OpenItem".
     """
     pivot = m.node("RK_PIVOT").p0
     ch5_0 = m.node("CH5").p0
@@ -143,7 +197,7 @@ def solve_rocker(m: Mechanism) -> tuple[bool, float | None, float | None]:
     if bracket is None:
         return False, None, None
     lo, hi = bracket
-    flo = err(lo)  # F-71：缓存 err(lo)，循环内不再每次重复计算
+    flo = err(lo)  # F-71：缓存 err(lo)，循环内不再每次重复计算 — F-71: cache err(lo) so the loop no longer recomputes it every iteration
     for _ in range(60):
         mid = 0.5 * (lo + hi)
         fm = err(mid)

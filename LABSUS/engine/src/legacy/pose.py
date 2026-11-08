@@ -1,4 +1,9 @@
-"""机构解 → 现有角度/指标管道消费的 pose dict；附便利求解入口（V1 冻结线）。"""
+"""机构解 → 现有角度/指标管道消费的 pose dict；附便利求解入口（V1 冻结线）。
+
+Mechanism solution → pose dict in the shape consumed by the existing
+angle/metrics pipeline; plus convenience solve entry points (V1 frozen
+line).
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -14,12 +19,21 @@ _POSE_KEYS = [
 
 
 def mechanism_to_pose_result(m: Mechanism) -> dict[str, np.ndarray]:
-    """导出为 `solver.angles.compute_alignment_angles` 消费的 result_dict 形状。"""
+    """导出为 `solver.angles.compute_alignment_angles` 消费的 result_dict 形状。
+
+    Export as the result_dict shape consumed by
+    `solver.angles.compute_alignment_angles`.
+    """
     return {k: m.node(k).pos.copy() for k in _POSE_KEYS}
 
 
 def solve_to_angles(m: Mechanism, travel: float, rack: float, hp: dict | None = None):
-    """求解姿态并返回定位角 dict；hp 需带轮胎参数（tire_radius 等），供 scrub/trail 一致计算。"""
+    """求解姿态并返回定位角 dict；hp 需带轮胎参数（tire_radius 等），供 scrub/trail 一致计算。
+
+    Solve the pose and return the alignment-angle dict; `hp` must carry tire
+    parameters (tire_radius etc.) so that scrub/trail are computed
+    consistently.
+    """
     from src.legacy.angles import compute_alignment_angles
 
     drive_to(m, travel, rack)

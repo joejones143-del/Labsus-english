@@ -1,26 +1,28 @@
 /* =====================================================================
-   14-tire-lab.js — 轮胎工坊（G29，2026-09-04）
+   14-tire-lab.js — 轮胎工坊（G29，2026-09-04） — Tire Lab (G29, 2026-09-04)
 
-   自定义轮胎/轮毂尺寸 + 四轮共用 MF 力学参数 + 分轴胎压。
-   架构：预设覆盖层——写运行时状态 S[axle].tire / SIM.userTire，
-   不改 VEHICLE_PRESETS 出厂值、不改 resolveTireParams 缺省表（对拍锚）。
+   自定义轮胎/轮毂尺寸 + 四轮共用 MF 力学参数 + 分轴胎压。 — custom tire/rim sizes + one four-wheel-shared MF mechanics parameter set + per-axle tire pressure.
+   架构：预设覆盖层——写运行时状态 S[axle].tire / SIM.userTire， — architecture: preset overlay — writes runtime state S[axle].tire / SIM.userTire,
+   不改 VEHICLE_PRESETS 出厂值、不改 resolveTireParams 缺省表（对拍锚）。 — never touches VEHICLE_PRESETS factory values nor the resolveTireParams default table (parity anchor).
 
-   力学参数优先级：SIM.tireCalib（实测辨识）> SIM.userTire（本模块）> 引擎缺省。
-   F-61 约束：window 导出与定义同文件；TIRE_LAB 挂 window。
+   力学参数优先级：SIM.tireCalib（实测辨识）> SIM.userTire（本模块）> 引擎缺省。 — parameter precedence: SIM.tireCalib (measured identification) > SIM.userTire (this module) > engine defaults.
+   F-61 约束：window 导出与定义同文件；TIRE_LAB 挂 window。 — F-61 constraint: window exports and definitions live in the same file; TIRE_LAB is attached to window.
+   =====================================================================
+   EN: Tire Lab module — custom tire/rim dimensions, shared MF mechanics params, per-axle pressure; preset overlay writing S[axle].tire / SIM.userTire without touching VEHICLE_PRESETS / resolveTireParams defaults (parity anchors); precedence SIM.tireCalib > SIM.userTire > engine defaults; F-61: window export and definition in the same file.
    ===================================================================== */
 "use strict";
 const TIRE_LAB = {
   MAX_CUSTOMS: 20,
-  KT_K: 0.55,    // 胎压→垂刚：气压承载份额 ~55% 线性近似
-  LS_K: 0.25,    // 胎压→载荷敏感度：高压使帘线张紧、胎面变硬，曲线趋平
+  KT_K: 0.55,    // 胎压→垂刚：气压承载份额 ~55% 线性近似 — pressure→vertical stiffness: the pressure share of load carrying is ~55%, linear approximation
+  LS_K: 0.25,    // 胎压→载荷敏感度：高压使帘线张紧、胎面变硬，曲线趋平 — pressure→load sensitivity: higher pressure tensions the cords and stiffens the tread, flattening the curve
   KEYS: { customs: "labsus-tire-customs", active: "labsus-tire-active" },
   LIMITS: {
     R: [200, 800], W: [100, 400], rim: [203, 533], rimW: [127, 330], et: [-20, 60], p: [120, 350],
     Fy0: [1000, 20000], FzNom: [500, 10000], By: [8, 32], Cy: [1.0, 1.6], Ey: [-1.0, 0], LS: [0, 1], Cg: [0.2, 12]
   },
-  // 基准胎压 p0 随车型（kPa）；缺省 180
+  // 基准胎压 p0 随车型（kPa）；缺省 180 — baseline pressure p0 per vehicle type (kPa); default 180
   PRESSURE_BASE: { formula: 160, gt3: 210, gt3_sport: 210, baja: 140 },
-  // 与 11-stages.js resolveTireParams 的 D 表一致（改这里不会改对拍锚，仅作表单缺省）
+  // 与 11-stages.js resolveTireParams 的 D 表一致（改这里不会改对拍锚，仅作表单缺省） — matches the resolveTireParams D-table of 11-stages.js (changing here never alters the parity anchor; form defaults only)
   MF_DEFAULTS: { Fy0: 5250, FzNom: 3500, By: 20, Cy: 1.2, Ey: -0.5, LS: 0.10, Cg: 6.0 },
 
   customs: {}, active: null, storageOk: true, _modal: null, _form: null,
@@ -38,7 +40,7 @@ const TIRE_LAB = {
   persistCustoms() { this.storageSet(this.KEYS.customs, JSON.stringify(this.customs)); },
   persistActive() { this.storageSet(this.KEYS.active, JSON.stringify(this.active)); },
 
-  /* 表单初始值：无激活自定义 → 取当前预设胎 + MF 缺省；有 → 保留用户值 */
+  /* 表单初始值：无激活自定义 → 取当前预设胎 + MF 缺省；有 → 保留用户值 — form defaults: with no active custom take current preset tires + MF defaults; otherwise keep user values */
   captureFromPreset() {
     const p0 = this.pressureBase(S.vehicleType);
     const cap = (a, old) => ({
@@ -54,7 +56,7 @@ const TIRE_LAB = {
     };
   },
 
-  /* 校验：范围 + 可数性；FzNom<=0 / By<=0 由 LIMITS 下限覆盖 */
+  /* 校验：范围 + 可数性；FzNom<=0 / By<=0 由 LIMITS 下限覆盖 — validation: ranges + numeric sanity; FzNom<=0 / By<=0 are covered by the LIMITS lower bounds */
   validate(cfg) {
     const errors = [];
     const chk = (label, v, lim) => {
@@ -72,27 +74,29 @@ const TIRE_LAB = {
     return { ok: errors.length === 0, errors };
   },
 
-  /* 应用覆盖层：写 S[axle].tire / kT / SIM.userTire；不触碰 VEHICLE_PRESETS */
+  /* 应用覆盖层：写 S[axle].tire / kT / SIM.userTire；不触碰 VEHICLE_PRESETS — apply overlay: writes S[axle].tire / kT / SIM.userTire; never touches VEHICLE_PRESETS */
   applyToState(cfg) {
     const a = cfg || this.active; if (!a) return;
     const p0 = this.pressureBase(S.vehicleType);
     ["front", "rear"].forEach(ax => {
       const A = S[ax];
-      if (A._kTBase === undefined) A._kTBase = A.kT;   // 记住预设基准，恢复用
+      if (A._kTBase === undefined) A._kTBase = A.kT;   // 记住预设基准，恢复用 — remember the preset baseline, used for restore
       A.tire = Object.assign(deepClone(A.tire), {
         R: a[ax].R, W: a[ax].W, rim: a[ax].rim, rimW: a[ax].rimW, et: a[ax].et,
         label: `CUSTOM ${a[ax].W}/${Math.round((a[ax].R - a[ax].rim / 2) / a[ax].W * 100)}R${Math.round(a[ax].rim / 25.4)}`
       });
       A.kT = A._kTBase * this.kTFactor(a[ax].p, p0);
     });
-    // MF 单组共用；LS 按前轴胎压修正
+    // MF 单组共用；LS 按前轴胎压修正 — one shared MF set; LS corrected by front-axle pressure
     SIM.userTire = Object.assign(deepClone(a.mf), { p: a.front.p, LS: a.mf.LS * this.lSFactor(a.front.p, p0) });
     const nm = (this.active && this.active.name) || null;
     this.active = deepClone(a); this.active.name = nm;
     this.persistActive();
     if (typeof rebuild === "function") { try { rebuild(); } catch (e) {} }
     /* M-1：舞台重建统一走本路径——SLOPE 引擎构造期固化 ReF，
-       activateCustom/restoreBuiltin/applyFromForm 全部经由 applyToState 收敛 */
+       activateCustom/restoreBuiltin/applyFromForm 全部经由 applyToState 收敛
+       — M-1: stage rebuilds funnel through this single path — the SLOPE engine bakes ReF at construction time,
+       so activateCustom/restoreBuiltin/applyFromForm all converge via applyToState */
     this.rebuildActiveStages();
   },
 
@@ -127,7 +131,9 @@ const TIRE_LAB = {
     if (typeof loadVehiclePreset === "function") {
       loadVehiclePreset(S.vehicleType);
       /* 预设重载 deepClone 轴对象后 _kTBase 失效——恢复内置后状态即预设，
-         重捕基准使 kT === _kTBase 不变式成立（与 applyToState 捕获逻辑幂等） */
+         重捕基准使 kT === _kTBase 不变式成立（与 applyToState 捕获逻辑幂等）
+         — after the preset reload deepClones the axle objects _kTBase is stale — after restoring built-in the state is the preset again,
+         recapturing the baseline keeps the kT === _kTBase invariant (idempotent with the applyToState capture logic) */
       ["front", "rear"].forEach(ax => {
         const A = S[ax];
         if (A && typeof A.kT === "number") A._kTBase = A.kT;
@@ -135,10 +141,10 @@ const TIRE_LAB = {
     }
   },
 
-  /* 02-presets 钩子：换车型后重放覆盖层（kT 基准随新预设刷新） */
+  /* 02-presets 钩子：换车型后重放覆盖层（kT 基准随新预设刷新） — 02-presets hook: replay the overlay after a vehicle-type change (kT baseline refreshed with the new preset) */
   syncAfterPreset() { if (this.active) this.applyToState(deepClone(this.active)); },
 
-  /* 预设下拉追加「自定义轮胎」分组 */
+  /* 预设下拉追加「自定义轮胎」分组 — append a "Custom tires" optgroup to the preset dropdown */
   refreshPresetSelect() {
     const sel = document.getElementById("topVehSelect"); if (!sel) return;
     if (sel.querySelectorAll) {
@@ -147,7 +153,7 @@ const TIRE_LAB = {
     }
     const names = Object.keys(this.customs); if (!names.length) return;
     const g = document.createElement("optgroup");
-    g.setAttribute("label", "🛞 自定义轮胎"); g.setAttribute("data-tirelab", "1");
+    g.setAttribute("label", "🛞 Custom tires"); g.setAttribute("data-tirelab", "1");
     names.forEach(n => {
       const o = document.createElement("option");
       o.value = "tirecustom:" + n; o.textContent = "🛞 " + n;
@@ -156,19 +162,19 @@ const TIRE_LAB = {
     sel.appendChild(g);
   },
 
-  /* 已存预设管理区：名称 + 保存时间 + 删除（规格 §7 删除入口，解除 20 条上限死锁） */
+  /* 已存预设管理区：名称 + 保存时间 + 删除（规格 §7 删除入口，解除 20 条上限死锁） — saved-preset manager: name + save time + delete (spec §7 delete entry, breaking the 20-item cap deadlock) */
   renderSavedList() {
     const box = document.getElementById("tlSavedList"); if (!box) return;
     const names = Object.keys(this.customs);
     if (!names.length) { box.innerHTML = ""; return; }
-    let html = `<div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:4px;">已存预设（${names.length}/${this.MAX_CUSTOMS}）</div>`;
+    let html = `<div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:4px;">Saved presets (${names.length}/${this.MAX_CUSTOMS})</div>`;
     names.forEach(n => {
       const c = this.customs[n];
       const when = (c.meta && c.meta.savedAt) ? c.meta.savedAt.slice(0, 10) : "";
       html += `<div style="display:flex;align-items:center;gap:8px;padding:2px 0;">
         <span style="flex:1;font:11px var(--font-ui);color:#c9d1d9;">🛞 ${n}` +
         `<span style="color:#8b949e;"> · ${when} · ${c.meta && c.meta.sourceVehicle ? c.meta.sourceVehicle : ""}</span></span>` +
-        `<button data-tl-del="${n}" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:1px 8px;cursor:pointer;font:11px var(--font-ui);">删除</button>` +
+        `<button data-tl-del="${n}" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:1px 8px;cursor:pointer;font:11px var(--font-ui);">Delete</button>` +
         `</div>`;
     });
     box.innerHTML = html;
@@ -179,7 +185,7 @@ const TIRE_LAB = {
     }
   },
 
-  /* ── 弹窗 UI（懒构建；样式内联，与舞台 modal 同风格暗色面板）── */
+  /* ── 弹窗 UI（懒构建；样式内联，与舞台 modal 同风格暗色面板）── — modal UI (lazy-built; inline styles, dark panel matching the stage modal style) ── */
   open() {
     if (!this._modal) { this._modal = this.buildModal(); document.body.appendChild(this._modal); }
     this._form = this.captureFromPreset();
@@ -189,7 +195,8 @@ const TIRE_LAB = {
   close() { if (this._modal) this._modal.style.display = "none"; },
 
   /* MF 峰值侧偏角（度）：与 11-stages.js resolveTireParams 的 sPeak 二分同构。
-     Cy<1 无内部峰值 → NaN（UI 显示 ∞） */
+     Cy<1 无内部峰值 → NaN（UI 显示 ∞） — MF peak slip angle (deg): isomorphic to the sPeak bisection in 11-stages.js resolveTireParams.
+     Cy<1 has no interior peak → NaN (UI shows ∞) */
   alphaPeakDeg(By, Cy, Ey) {
     if (!(Cy >= 1.0) || !(By > 0)) return NaN;
     const argT = Math.tan(Math.PI / (2 * Cy));
@@ -201,7 +208,7 @@ const TIRE_LAB = {
     return Math.atan((0.5 * (lo + hi)) / By) * 180 / Math.PI;
   },
 
-  /* 派生量回显：名义规格 / 扁平比 / 滚动半径 / 接地面积（@FzNom 与胎压） */
+  /* 派生量回显：名义规格 / 扁平比 / 滚动半径 / 接地面积（@FzNom 与胎压） — derived readouts: nominal size / aspect ratio / rolling radius / contact patch area (at FzNom with the entered pressure) */
   updateDerived() {
     const f = this.readForm(); if (!f) return;
     ["F", "R"].forEach(ax => {
@@ -210,12 +217,12 @@ const TIRE_LAB = {
       const side = a.R - a.rim / 2, aspect = a.W > 0 ? (side / a.W * 100) : 0;
       const area = a.p > 0 ? (f.mf.FzNom / (a.p * 1000) * 1e4) : 0;  // cm²
       e.textContent = `${Math.round(a.W)}/${Math.round(aspect)}R${(a.rim / 25.4).toFixed(0)}` +
-        ` · 扁平比 ${aspect.toFixed(0)}% · 滚动半径 ${(a.R / 1000).toFixed(3)}m · 接地 ${area.toFixed(0)}cm²@FzNom`;
+        ` · aspect ratio ${aspect.toFixed(0)}% · rolling radius ${(a.R / 1000).toFixed(3)}m · contact patch ${area.toFixed(0)}cm²@FzNom`;
     });
     const mfe = document.getElementById("tl_derive_MF");
     if (mfe) {
       const ap = this.alphaPeakDeg(f.mf.By, f.mf.Cy, f.mf.Ey);
-      mfe.textContent = `峰值侧偏角 ≈ ${isFinite(ap) ? ap.toFixed(1) : "∞"}° · μ=${(f.mf.Fy0 / f.mf.FzNom).toFixed(2)}`;
+      mfe.textContent = `Peak slip angle ≈ ${isFinite(ap) ? ap.toFixed(1) : "∞"}° · μ=${(f.mf.Fy0 / f.mf.FzNom).toFixed(2)}`;
     }
   },
 
@@ -228,9 +235,9 @@ const TIRE_LAB = {
        </label>`;
     return `<div style="flex:1;background:#10151d;border:1px solid #21262d;border-radius:8px;padding:8px 10px;">
       <div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:5px;">${label}</div>
-      ${n("R", "外径 R", "mm", 200, 800, 1)}${n("W", "胎宽 W", "mm", 100, 400, 1)}
-      ${n("rim", "轮毂直径", "mm", 203, 533, 0.1)}${n("rimW", "轮毂宽度", "mm", 127, 330, 1)}
-      ${n("et", "偏距 ET", "mm", -20, 60, 1)}${n("p", "胎压", "kPa", 120, 350, 1)}
+      ${n("R", "Outer diameter R", "mm", 200, 800, 1)}${n("W", "Tire width W", "mm", 100, 400, 1)}
+      ${n("rim", "Rim diameter", "mm", 203, 533, 0.1)}${n("rimW", "Rim width", "mm", 127, 330, 1)}
+      ${n("et", "Offset ET", "mm", -20, 60, 1)}${n("p", "Tire pressure", "kPa", 120, 350, 1)}
       <div id="tl_derive_${key}" style="font:10px monospace;color:#8b949e;margin-top:5px;min-height:24px;"></div>
     </div>`;
   },
@@ -247,18 +254,18 @@ const TIRE_LAB = {
        </label>`;
     m.innerHTML = `<div style="width:760px;max-height:88vh;overflow:auto;background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;color:#e6edf3;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <b style="font:700 15px var(--font-ui);">🛞 轮胎工坊 TIRE LAB</b>
+        <b style="font:700 15px var(--font-ui);">🛞 Tire Lab (TIRE LAB)</b>
         <button id="tlClose" style="background:none;border:none;color:#8b949e;font-size:16px;cursor:pointer;">✕</button>
       </div>
       <div id="tlCalibNote" style="display:none;font:11px var(--font-ui);color:#d29922;margin-bottom:8px;">
-        ⚠ 实测标定结果存在，力学参数以标定为准（本弹窗自定义仅在标定清除后生效）
+        ⚠ A measured calibration exists — calibrated mechanics parameters take precedence (custom values in this dialog only take effect after the calibration is cleared)
       </div>
       <div style="display:flex;gap:10px;">
-        ${this.axleCol("F", "前轴 FRONT")}
-        ${this.axleCol("R", "后轴 REAR")}
+        ${this.axleCol("F", "FRONT AXLE")}
+        ${this.axleCol("R", "REAR AXLE")}
       </div>
       <div style="background:#10151d;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-top:10px;">
-        <div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:5px;">力学参数 MF（四轮共用）</div>
+        <div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:5px;">MF parameters (shared by all four wheels)</div>
         <div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:6px;">
           ${nMF("Fy0", "Fy0 (N)", 1000, 20000, 50)}${nMF("FzNom", "FzNom (N)", 500, 10000, 50)}
           ${nMF("By", "By", 8, 32, 0.5)}${nMF("Cy", "Cy", 1.0, 1.6, 0.05)}
@@ -268,15 +275,18 @@ const TIRE_LAB = {
       </div>
       <div id="tlSavedList" style="margin-top:10px;"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button id="tlRestore" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">恢复内置</button>
-        <button id="tlSave" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">保存为预设</button>
-        <button id="tlCancel" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">取消</button>
-        <button id="tlApply" style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:6px;padding:5px 14px;cursor:pointer;font:700 11px var(--font-ui);">应用 APPLY</button>
+        <button id="tlRestore" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Restore built-in</button>
+        <button id="tlSave" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Save as preset</button>
+        <button id="tlCancel" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Cancel</button>
+        <button id="tlApply" style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:6px;padding:5px 14px;cursor:pointer;font:700 11px var(--font-ui);">Apply</button>
       </div>
     </div>`;
     /* 事件绑定：m 此刻尚未插入 document，document.getElementById 找不到
        innerHTML 内元素（未连接树）；用 m.querySelector 子树查找，
-       未连接状态也可命中（真实浏览器 + 沙箱桩均安全） */
+       未连接状态也可命中（真实浏览器 + 沙箱桩均安全）
+       — event binding: m is not yet inserted into document at this point, so document.getElementById cannot find
+       the innerHTML elements (not connected to the tree); query the m.querySelector subtree instead,
+       which also matches in the disconnected state (safe in real browsers and sandbox stubs alike) */
     try {
       const q = id => m.querySelector("#" + id);
       q("tlClose").onclick = () => this.close();
@@ -300,7 +310,9 @@ const TIRE_LAB = {
     const calibNote = document.getElementById("tlCalibNote");
     if (calibNote) calibNote.style.display = (SIM.tireCalib) ? "block" : "none";
     /* M-3：实测标定存在时 MF 输入置灰——优先级 tireCalib > userTire，
-       自定义暂不生效；标定清除后恢复可编辑 */
+       自定义暂不生效；标定清除后恢复可编辑
+       — M-3: gray out the MF inputs while a measured calibration exists — precedence tireCalib > userTire,
+       custom values take no effect for now; editable again once the calibration is cleared */
     const calib = !!SIM.tireCalib;
     ["Fy0", "FzNom", "By", "Cy", "Ey", "LS", "Cg"].forEach(k => {
       const e = document.getElementById("tl_mf_" + k);
@@ -339,7 +351,7 @@ const TIRE_LAB = {
     const cfg = this.readForm();
     const v = this.validate(cfg);
     if (!v.ok) { this.markErrors(v.errors); return; }
-    this.applyToState(cfg);   // M-1：rebuildActiveStages 已由 applyToState 统一触发
+    this.applyToState(cfg);   // M-1：rebuildActiveStages 已由 applyToState 统一触发 — M-1: rebuildActiveStages is triggered uniformly by applyToState
     this.close();
   },
 
@@ -347,15 +359,15 @@ const TIRE_LAB = {
     const cfg = this.readForm();
     const v = this.validate(cfg);
     if (!v.ok) { this.markErrors(v.errors); return; }
-    const name = (typeof prompt === "function" && prompt("预设名称：", "我的轮胎")) || null;
+    const name = (typeof prompt === "function" && prompt("Preset name:", "My tires")) || null;
     if (!name) return;
-    // 先应用后保存：保存失败（dup/limit）时配置已生效，与「应用」语义一致（有意顺序）
+    // 先应用后保存：保存失败（dup/limit）时配置已生效，与「应用」语义一致（有意顺序） — apply first, save second: on save failure (dup/limit) the config is already live, matching the "Apply" semantics (intentional order)
     this.applyToState(cfg);
     const r = this.saveCustom(name);
     if (!r.ok) {
-      /* G29-P7：失败不关窗——用户可改名/删除旧条目后在表单内直接重试 */
-      if (r.error === "limit" && typeof alert === "function") alert("自定义预设已达 20 条上限，请先删除旧条目。");
-      else if (r.error === "dup" && typeof alert === "function") alert("名称已存在。");
+      /* G29-P7：失败不关窗——用户可改名/删除旧条目后在表单内直接重试 — G29-P7: on failure keep the dialog open — the user can rename / delete old entries and retry directly in the form */
+      if (r.error === "limit" && typeof alert === "function") alert("Custom tire presets have reached the 20-item limit — delete old entries first.");
+      else if (r.error === "dup" && typeof alert === "function") alert("That name already exists.");
       return;
     }
     this.close();
@@ -364,7 +376,11 @@ const TIRE_LAB = {
   /* 舞台生效路径：SLOPE 打开期间直接重建 15-DOF 引擎——switchScenario 仅在
      undulating_road 进/出分支重建（L1110/L1134），其余场景只 resetVehicle，
      构造期固化的 ReF/ReR（L301-302）不会刷新；
-     SKIDPAD/CIRCUIT 引擎在打开舞台时构造，重新打开舞台后生效 */
+     SKIDPAD/CIRCUIT 引擎在打开舞台时构造，重新打开舞台后生效
+     — stage activation path: while SLOPE is open, rebuild the 15-DOF engine directly — switchScenario only rebuilds in the
+     undulating_road enter/exit branches (L1110/L1134), other scenarios only resetVehicle, so the construction-time
+     ReF/ReR (L301-302) never refresh;
+     SKIDPAD/CIRCUIT engines are built when their stage opens — take effect after reopening the stage */
   rebuildActiveStages() {
     try {
       if (typeof SLOPE_STAGE !== "undefined" && SLOPE_STAGE.active &&
@@ -373,7 +389,7 @@ const TIRE_LAB = {
         const kmh = (SLOPE_STAGE.scenario === "accel_brake") ? 0
                   : (cfg.speedKmh || SLOPE_STAGE.speedKmh || 85);
         window.physicsEngine = new VehicleDynamics15DOF(S, SIM, (kmh * 1000) / 3600);
-        SLOPE_STAGE.resetVehicle();  // 位置/姿态/omega 与新 Re 对齐（速度优先级与 openSlopeStage 一致）
+        SLOPE_STAGE.resetVehicle();  // 位置/姿态/omega 与新 Re 对齐（速度优先级与 openSlopeStage 一致） — position/pose/omega aligned with the new Re (same speed precedence as openSlopeStage)
       }
     } catch (e) {}
   }
@@ -382,7 +398,9 @@ if (typeof window !== "undefined") window.TIRE_LAB = TIRE_LAB;
 TIRE_LAB.loadAll();
 
 /* G29 启动恢复：刷新后重放激活的自定义轮胎 + 填充预设下拉（规格 §7）。
-   本脚本在 body 底部同步执行，DOM 已就绪；try/catch 防御降级不阻断启动。 */
+   本脚本在 body 底部同步执行，DOM 已就绪；try/catch 防御降级不阻断启动。
+   — G29 startup restore: after a page refresh replay the active custom tire + fill the preset dropdown (spec §7).
+   This script runs synchronously at the bottom of body, DOM is ready; try/catch guards degrade without blocking startup. */
 try {
   if (TIRE_LAB.active) TIRE_LAB.applyToState(deepClone(TIRE_LAB.active));
   TIRE_LAB.refreshPresetSelect();

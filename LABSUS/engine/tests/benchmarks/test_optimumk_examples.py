@@ -4,6 +4,26 @@
 - 来源 `ref/OptimumKinematics - Help File.pdf`（92 页，pypdf 全文抽取核对）是
   用户手册，**不含双叉臂示例硬点表/期望输出数据集** → 无法录入真实
   OptimumK 数值对照；诚实占位，禁止伪造。
+
+English: OptimumKinematics cross-check baseline — structured scaffold (P4, upgraded 2026-08-22).
+
+Fact baseline (first-hand verified):
+- The source `ref/OptimumKinematics - Help File.pdf` (92 pages, full text cross-checked via
+  pypdf) is the user manual and does NOT contain a double-wishbone example hardpoint table /
+  expected-output dataset -> real OptimumK numeric cross-checking cannot be entered;
+  honest placeholder, forging forbidden.
+- ⚠️ `ref/` is excluded as a whole directory by the root `.gitignore` => cloners cannot get
+  the PDF and this baseline cannot be re-run on other machines. M5 (2026-09-20) therefore
+  changed the empty placeholder test from "silently passing" to an **explicit skip** (it
+  used to be a fake green: `OPTIMUMK_ROWS=[]` returned directly, looking like the test
+  passed while conveying zero information).
+- The scaffold instead provides: the target row format + pinning of current engine reference
+  values (PRO baseline), so that when OptimumK data is obtained in the future, a one-line
+  replacement of expected makes this the golden test.
+
+To enable: fill OptimumK data into `OPTIMUMK_ROWS` in the format below (or provide a
+same-format JSON sidecar file); the test automatically switches from skip to row-by-row
+comparison against the engine.
 - ⚠️ `ref/` 被根 `.gitignore` 整目录排除 ⇒ **克隆者拿不到该 PDF**，本基准也
   无法在别的机器上重跑。M5（2026-09-20）因此把空占位测试从"静默通过"改为
   **显式 skip**（此前是假绿：`OPTIMUMK_ROWS=[]` 直接 return，看起来测试通过
@@ -31,7 +51,7 @@ from src.api.v3service import (
 from src.solver.mechanism.models import build_mechanism
 from src.solver.mechanism.solver import solve_pose
 
-# 引擎当前参考值（PRO 基线，pytest 固化；OptimumK 录入后改填 expected）
+# 引擎当前参考值（PRO 基线，pytest 固化；OptimumK 录入后改填 expected） — current engine reference values (PRO baseline, pinned under pytest; replace with expected after OptimumK data is entered)
 REFERENCE = {
     "travel_mm": 0.0, "rack_mm": 0.0,
     "camber_deg": -1.2, "toe_deg": 0.05,
@@ -65,16 +85,23 @@ def test_pro_baseline_reference_pinned():
 
     作用不是"证明数值对"（那是 §对拍与解析锚的活），而是**防止无意漂移**：
     任何改动只要动了 v3 定位角数值，这里就会红，逼迫改动者解释差异。
-    数值本身来自 `_pro_reference()`（引擎自身），属刻意自证。
+
+    English: characteristic regression anchor — pins the v3 alignment-angle pipeline output under
+    the PRO baseline hardpoints as constants. The purpose is NOT to "prove the numbers correct"
+    (that is the job of the cross-check and analytic anchors) but to prevent unintended drift:
+    any change that moves the v3 alignment angles turns this red and forces the author to explain
+    the difference. The values themselves come from `_pro_reference()` (the engine itself),
+    which is deliberate self-certification.
+        数值本身来自 `_pro_reference()`（引擎自身），属刻意自证。
     """
     got = _pro_reference()
     for k, v in REFERENCE.items():
         assert abs(got[k] - v) < 1e-3, (k, got[k], v)
 
 
-# ── OptimumK 录入点（未来替换体）──────────────────────────────────────
+# ── OptimumK 录入点（未来替换体）────────────────────────────────────── — OptimumK entry point (future replacement body)
 OPTIMUMK_ROWS: list[dict] = []
-# 例：
+# 例： — example (note: `<章节>` = `<section>` in the commented block below):
 # OPTIMUMK_ROWS.append({
 #     "corner": "fr", "travel_mm": 0.0, "rack_mm": 0.0,
 #     "camber_deg": ..., "toe_deg": ..., "kpi_deg": ...,
@@ -84,7 +111,7 @@ OPTIMUMK_ROWS: list[dict] = []
 
 
 def test_optimumk_rows_match_engine():
-    """OptimumK 数据录入后逐行对拍；未录入时**显式 skip**（不再假绿）。"""
+    """OptimumK 数据录入后逐行对拍；未录入时**显式 skip**（不再假绿）。"""  # English: row-by-row comparison once OptimumK data is entered; when not entered, an **explicit skip** (no longer a fake green).
     if not OPTIMUMK_ROWS:
         pytest.skip("OptimumK 示例数据未录入（源 PDF 在 ref/，且不含硬点表）；"
                     "录入 OPTIMUMK_ROWS 后本测试自动启用")

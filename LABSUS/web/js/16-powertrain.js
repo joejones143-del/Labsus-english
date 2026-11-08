@@ -1,13 +1,13 @@
 /* =====================================================================
-   16-powertrain.js — G31 动力工坊（2026-09-05）
-   段1 数据模型/校验/默认(legacy-equivalent)/状态/mapLookup
-   段2 动力源(ICE/Motor) 段3 传动链 段4 电池 段5 组合器+step 段6 UI
-   设计：docs/superpowers/specs/2026-09-05-powertrain-design.md
-   计划：docs/superpowers/plans/2026-09-05-powertrain.md
-   legacy 等价锚：默认规格轮上扭矩 == 旧常数（后 480 / 前 120，未乘 drivePowerFactor）
-     曲轴 map 平直 1200 N·m × ratio(1) × final(1) = 轴 1200
-     → splitFront 0.2 → 前轴 240（轮 120）/ 后轴 960（轮 480）
-   F-61：window 导出与定义同文件
+   16-powertrain.js — G31 动力工坊（2026-09-05） — G31 Powertrain Lab (2026-09-05)
+   段1 数据模型/校验/默认(legacy-equivalent)/状态/mapLookup — sec1 data model/validation/defaults(legacy-equivalent)/state/mapLookup
+   段2 动力源(ICE/Motor) 段3 传动链 段4 电池 段5 组合器+step 段6 UI — sec2 power sources (ICE/Motor), sec3 drivetrain, sec4 battery, sec5 combiner+step, sec6 UI
+   设计：docs/superpowers/specs/2026-09-05-powertrain-design.md — design: docs/superpowers/specs/2026-09-05-powertrain-design.md
+   计划：docs/superpowers/plans/2026-09-05-powertrain.md — plan: docs/superpowers/plans/2026-09-05-powertrain.md
+   legacy 等价锚：默认规格轮上扭矩 == 旧常数（后 480 / 前 120，未乘 drivePowerFactor） — legacy parity anchor: default-spec wheel torque == the old constants (rear 480 / front 120, drivePowerFactor not applied)
+     曲轴 map 平直 1200 N·m × ratio(1) × final(1) = 轴 1200 — flat crankshaft map 1200 N·m × ratio(1) × final(1) = axle 1200
+     → splitFront 0.2 → 前轴 240（轮 120）/ 后轴 960（轮 480） — via splitFront 0.2 → front axle 240 (wheel 120) / rear axle 960 (wheel 480)
+   F-61：window 导出与定义同文件 — F-61: window export and definition in the same file
    ===================================================================== */
 "use strict";
 const POWERTRAIN = {
@@ -35,10 +35,10 @@ const POWERTRAIN = {
     if (sp.ice) {
       if (!Array.isArray(sp.ice.map) || sp.ice.map.length < 2 ||
           sp.ice.map.some(p => !Array.isArray(p) || p.length !== 2 || !(p[0] > 0) || !(p[1] >= 0))) errs.push("ice.map");
-      /* I-1：map 转速点必须严格单调递增，否则插值分母可为零或负 */
+      /* I-1：map 转速点必须严格单调递增，否则插值分母可为零或负 — I-1: map rpm points must be strictly monotonic ascending, otherwise the interpolation denominator can be zero or negative */
       if (Array.isArray(sp.ice.map) && sp.ice.map.some((p, i) => i > 0 && !(p[0] > sp.ice.map[i - 1][0]))) errs.push("ice.map(ascending)");
       if (!(sp.ice.idleRpm > 0) || !(sp.ice.redlineRpm > sp.ice.idleRpm)) errs.push("ice.rpm");
-      /* M-2：断油转速必须 ≥ 红线，否则物理上不可达 */
+      /* M-2：断油转速必须 ≥ 红线，否则物理上不可达 — M-2: fuel-cut rpm must be ≥ redline, otherwise physically unreachable */
       if (sp.ice.fuelCutRpm !== undefined && !(sp.ice.fuelCutRpm >= sp.ice.redlineRpm)) errs.push("ice.fuelCutRpm");
     }
     if (sp.architecture !== "ev" && !sp.ice) errs.push("ice(required for non-ev)");
@@ -46,7 +46,7 @@ const POWERTRAIN = {
     if (sp.architecture === "ice" && (sp.motorF || sp.motorR)) errs.push("motor(forbidden for ice)");
     if (sp.architecture === "ev" && !sp.motorF && !sp.motorR) errs.push("motor(required for ev)");
     if (sp.drive === "tv" && !(sp.motorF && sp.motorR)) errs.push("tv(requires motorF & motorR)");
-    /* M-3：混动架构必须至少一台电机 */
+    /* M-3：混动架构必须至少一台电机 — M-3: hybrid architectures must carry at least one motor */
     if (["p2","p3","p4","series","powersplit"].includes(sp.architecture) && !sp.motorF && !sp.motorR) errs.push("motor(required for hybrid)");
     if (sp.gearbox) {
       if (!Array.isArray(sp.gearbox.ratios) || sp.gearbox.ratios.length < 1 ||
@@ -56,7 +56,7 @@ const POWERTRAIN = {
     }
     for (const k of ["motorF", "motorR"]) if (sp[k]) {
       if (!(sp[k].peakTorqueNm > 0) || !(sp[k].peakPowerKw > 0) || !(sp[k].maxRpm > 0)) errs.push(k);
-      /* I-1：baseRpm 一致性校验——若提供则必须与 P/T 拐点匹配（±5%） */
+      /* I-1：baseRpm 一致性校验——若提供则必须与 P/T 拐点匹配（±5%） — I-1: baseRpm consistency check — when provided it must match the P/T knee (±5%) */
       if (sp[k].baseRpm !== undefined && sp[k].peakTorqueNm > 0 && sp[k].peakPowerKw > 0) {
         const knee = 30 * sp[k].peakPowerKw * 1000 / (Math.PI * sp[k].peakTorqueNm);
         if (Math.abs(sp[k].baseRpm - knee) / sp[k].baseRpm >= 0.05) errs.push(`${k}.baseRpm(inconsistent with P/T)`);
@@ -67,12 +67,16 @@ const POWERTRAIN = {
       if (sp.battery.soc0 !== undefined && !(sp.battery.soc0 >= 0 && sp.battery.soc0 <= 1)) errs.push("battery.soc0");
     }
     /* Task4 审查修复：电气化架构（ev + 含 motor 的混动 p2/p3/p4/series/powersplit）必须携带 battery，
-       否则段5 组合器的 SOC 积分/充放钳制无落点，能量流不守恒。 */
+       否则段5 组合器的 SOC 积分/充放钳制无落点，能量流不守恒。
+       — Task4 review fix: electrified architectures (ev plus motor-carrying hybrids p2/p3/p4/series/powersplit) must carry a battery,
+       otherwise the sec-5 combiner SOC integration / charge-discharge clamping has nowhere to land and the energy flow is not conserved. */
     if (sp.architecture === "ev" && !sp.battery) errs.push("battery(required for electrified)");
     if (["p2","p3","p4","series","powersplit"].includes(sp.architecture) &&
         (sp.motorF || sp.motorR) && !sp.battery) errs.push("battery(required for electrified)");
     /* G31-P10-1：中央差速可选——缺省 null（awd_fixed/其他）不校验；
-       携带时 lockNm 必须 ≥0（负预紧无物理意义），slipRefRadS（若给）必须 >0。 */
+       携带时 lockNm 必须 ≥0（负预紧无物理意义），slipRefRadS（若给）必须 >0。
+       — G31-P10-1: the center differential is optional — default null (awd_fixed/others) is not validated;
+       when present lockNm must be ≥0 (negative preload has no physical meaning) and slipRefRadS (if given) must be >0. */
     if (sp.centerDiff !== null && sp.centerDiff !== undefined) {
       if (!(sp.centerDiff.lockNm >= 0)) errs.push("centerDiff.lockNm");
       if (sp.centerDiff.slipRefRadS !== undefined && !(sp.centerDiff.slipRefRadS > 0)) errs.push("centerDiff.slipRefRadS");
@@ -90,17 +94,21 @@ const POWERTRAIN = {
     const sp = this.spec || this.defaultSpec();
     this.state = {
       /* M-1：EV 无曲轴，iceOmega 置 0（非 EV 无 ice 时同样置 0，不伪造怠速）；
-         下游组合器（段5）不得对该值做除法或扭矩计算 */
+         下游组合器（段5）不得对该值做除法或扭矩计算
+         — M-1: EVs have no crankshaft so iceOmega is 0 (non-EV without ice also gets 0, never a fake idle);
+         downstream combiners (sec 5) must not divide by this value or use it for torque math */
       iceOmega: (sp.architecture !== "ev" && sp.ice) ? sp.ice.idleRpm * Math.PI / 30 : 0,
       gearIdx: 0, shiftT: 0, shiftDir: 0,
       /* C3(G31-FR)：换挡完成后的【反向】锁止窗口（剩余 ms）与刚完成的换挡方向。
-         防大齿比间隔箱升挡后转速直接落到 downFrac 以下造成的 1↔2 挡往复振荡。 */
+         防大齿比间隔箱升挡后转速直接落到 downFrac 以下造成的 1↔2 挡往复振荡。
+         — C3(G31-FR): the [reverse-direction] lock window (remaining ms) after a completed shift, plus the direction of the shift just completed.
+         Prevents the 1↔2 up/down oscillation caused by a large-ratio-gap box dropping rpm straight below downFrac after an upshift. */
       shiftLockT: 0, shiftLockDir: 0,
       soc: sp.battery ? (sp.battery.soc0 !== undefined ? sp.battery.soc0 : 0.8) : 1,
       thrSm: 0
     };
   },
-  /* 扭矩 map 查表：控制点线性插值，端点外钳位 */
+  /* 扭矩 map 查表：控制点线性插值，端点外钳位 — torque map lookup: linear interpolation between control points, clamped outside the endpoints */
   mapLookup(map, x) {
     if (!Array.isArray(map) || map.length === 0) return 0;
     if (x <= map[0][0]) return map[0][1];
@@ -112,12 +120,12 @@ const POWERTRAIN = {
     }
     return map[map.length - 1][1];
   },
-  /* ICE 曲轴扭矩：map×cmd − 摩擦/泵气损失。
-     断油（rpm>fuelCut）后驱动=0 但摩擦保留 → 负扭矩=发动机制动。
-     摩擦随油门减小而占比升高（泵气损失在节气门关闭时最大）：
+  /* ICE 曲轴扭矩：map×cmd − 摩擦/泵气损失。 — ICE crankshaft torque: map×cmd − friction/pumping losses.
+     断油（rpm>fuelCut）后驱动=0 但摩擦保留 → 负扭矩=发动机制动。 — after fuel cut (rpm>fuelCut) drive = 0 but friction stays → negative torque = engine braking.
+     摩擦随油门减小而占比升高（泵气损失在节气门关闭时最大）： — friction share rises as throttle drops (pumping loss peaks with the throttle closed):
        fric_eff = fric × (0.35 + 0.65×(1−c_eff))
-     M-3：0.35 = WOT 机械摩擦占比经验值；0.65 = 泵气损失占比，可后续替换为 MAP 模型。
-     断油时节气门视为全关（c_eff=0）→ 满泵气损失，与"节气门关闭时最大"一致。 */
+     M-3：0.35 = WOT 机械摩擦占比经验值；0.65 = 泵气损失占比，可后续替换为 MAP 模型。 — M-3: 0.35 = empirical WOT mechanical-friction share; 0.65 = pumping-loss share, replaceable later with a MAP model.
+     断油时节气门视为全关（c_eff=0）→ 满泵气损失，与"节气门关闭时最大"一致。 — during fuel cut the throttle is treated as fully closed (c_eff=0) → full pumping loss, consistent with "max when closed". */
   iceTorque(rpm, cmd) {
     const ice = this.spec ? this.spec.ice : null;
     if (!ice) return 0;
@@ -129,15 +137,15 @@ const POWERTRAIN = {
     const c_eff = cut ? 0 : c;
     return drive - fric * (0.35 + 0.65 * (1 - c_eff));
   },
-  /* Motor 扭矩：恒扭矩区(rpm<base)→恒功率区(T=P/ω)。
-     cmd<0 = 回收：受 regenMaxKw 与 SOC 双重限制。
-     SOC 降额：放电 soc<0.2 线性降额至 0（soc=0.05 截止）；回收 soc>0.95 线性降额。
-     M-2：支持负 rpm（反转）——ω 取绝对值，扭矩乘 sgn(rpm)。
-     G31-P10-2：maxRpm 是 ECU/逆变器超转保护（硬截止），不是软衰减——
-     |rpm| 超过 maxRpm 时驱动与回收一律归零（超转不回收：转子反电动势超限后
-     逆变器无法安全施加制动扭矩）；maxRpm 缺失/非有限 → 不启用截止（向后兼容）。 */
+  /* Motor 扭矩：恒扭矩区(rpm<base)→恒功率区(T=P/ω)。 — motor torque: constant-torque region (rpm<base) → constant-power region (T=P/ω).
+     cmd<0 = 回收：受 regenMaxKw 与 SOC 双重限制。 — cmd<0 = regen: limited by both regenMaxKw and SOC.
+     SOC 降额：放电 soc<0.2 线性降额至 0（soc=0.05 截止）；回收 soc>0.95 线性降额。 — SOC derating: discharge derates linearly to 0 below soc<0.2 (cut-off at soc=0.05); regen derates linearly above soc>0.95.
+     M-2：支持负 rpm（反转）——ω 取绝对值，扭矩乘 sgn(rpm)。 — M-2: negative rpm (reverse) supported — ω is absolute, torque is multiplied by sgn(rpm).
+     G31-P10-2：maxRpm 是 ECU/逆变器超转保护（硬截止），不是软衰减—— — G31-P10-2: maxRpm is ECU/inverter over-speed protection (hard cut), not a soft falloff —
+     |rpm| 超过 maxRpm 时驱动与回收一律归零（超转不回收：转子反电动势超限后 — when |rpm| exceeds maxRpm, both drive and regen go to zero (no regen at over-speed: once the rotor back-EMF exceeds limits,
+     逆变器无法安全施加制动扭矩）；maxRpm 缺失/非有限 → 不启用截止（向后兼容）。 — the inverter cannot safely apply braking torque); missing/non-finite maxRpm → no cut (backward compatible). */
   motorTorque(motor, rpm, cmd, soc) {
-    /* I-2：NaN 防护——缺少有效 peakTorqueNm/peakPowerKw 时直接返回 0 */
+    /* I-2：NaN 防护——缺少有效 peakTorqueNm/peakPowerKw 时直接返回 0 — I-2: NaN guard — return 0 directly when valid peakTorqueNm/peakPowerKw are missing */
     if (!motor || !(motor.peakTorqueNm > 0) || !(motor.peakPowerKw > 0)) return 0;
     if (motor.maxRpm !== undefined && Number.isFinite(motor.maxRpm) && Math.abs(rpm) > motor.maxRpm) return 0;
     const wAbs = Math.max(1, Math.abs(rpm) * Math.PI / 30);
@@ -157,7 +165,11 @@ const POWERTRAIN = {
   /* I-1(G31-P6)：判断当前规格是否携带真实传动比（非 legacy 恒等箱）。
      legacy 默认 gearbox = { ratios:[1], finalDrive:1 } → 恒等传动 → iceOmega=轮速，
      HUD/声浪若直接读 iceOmega 会塌到轮速/怠速。本方法供下游判据：
-     true = 存在真实齿轮比，可信任 iceOmega 作为 rpm 源。 */
+     true = 存在真实齿轮比，可信任 iceOmega 作为 rpm 源。
+     — I-1(G31-P6): whether the current spec carries a real drivetrain (not the legacy identity box).
+     legacy default gearbox = { ratios:[1], finalDrive:1 } → identity transmission → iceOmega = wheel speed,
+     and a HUD/sound reading iceOmega directly would collapse to wheel speed/idle. Downstream gate:
+     true = real gear ratios exist, iceOmega is trustworthy as an rpm source. */
   hasRealDrivetrain() {
     const g = this.spec && this.spec.gearbox;
     return !!(g && !(g.ratios.length === 1 && g.ratios[0] === 1 && g.finalDrive === 1));
@@ -166,7 +178,12 @@ const POWERTRAIN = {
      true → payload 不发嵌套 powertrain 字段（与旧行为逐字节一致，对拍锚）；
      false → 09-track.js 把 spec 发给 Python 引擎。
      逐项比较影响物理的字段（map 平直性/比表/惯量/摩擦/架构/驱动/分裂比），
-     不比 UI 专用字段（slipRefRadS 等在缺省 open diff 下无物理效应）。 */
+     不比 UI 专用字段（slipRefRadS 等在缺省 open diff 下无物理效应）。
+     — G31-P10-4: whether the live spec is still physically equivalent to the legacy-equivalent default.
+     true → the payload sends no nested powertrain field (byte-identical to old behavior, parity anchor);
+     false → 09-track.js sends the spec to the Python engine.
+     Compare only physics-affecting fields (flatness of map / displacement / inertia / friction / architecture / drive / split ratio),
+     not UI-only fields (slipRefRadS etc. have no physical effect with the default open diff). */
   isLegacyEquivalent() {
     const sp = this.spec;
     if (!sp) return true;
@@ -192,7 +209,12 @@ const POWERTRAIN = {
      不可用，rpm 源必须落到驱动轮速）或 hasRealDrivetrain()（存在真实齿轮比，
      iceOmega 可信）二者任一为真时，state.iceOmega/驱动轮速才作为 HUD/声浪 rpm 源。
      13-engine-sound.js（声浪）与 11-stages.js（HUD renderCircuitTelemetry）共用此判据，
-     避免两处各写一份、语义漂移。legacy 恒等箱 + 非 EV → false（回退轮速×齿比估算，保对拍锚）。 */
+     避免两处各写一份、语义漂移。legacy 恒等箱 + 非 EV → false（回退轮速×齿比估算，保对拍锚）。
+     — M-1(G31-P6-fix): packaged rpm-source gate — when either architecture==="ev" (direct drive, no crankshaft / iceOmega
+     unusable, the rpm source must fall back to driven-wheel speed) or hasRealDrivetrain() (real gear ratios exist, iceOmega trustworthy)
+     is true, state.iceOmega/driven-wheel speed serves as the HUD/sound rpm source.
+     13-engine-sound.js (sound) and 11-stages.js (HUD renderCircuitTelemetry) share this gate,
+     avoiding two divergent copies drifting apart. legacy identity box + non-EV → false (fall back to wheel speed × gear ratio estimate, keeping the parity anchor). */
   hasLiveRpmSource() {
     return !!(this.spec && this.state &&
       (this.spec.architecture === "ev" || this.hasRealDrivetrain()));
@@ -200,7 +222,11 @@ const POWERTRAIN = {
   /* ═══ 段3 传动链：gearbox 换挡状态机 + 反射惯量 ═══
      I1(G31-FR)：驱动轮判定——反射惯量只应加到【实际接收驱动扭矩】的轮上。
      fwd → FL/FR；rwd → RL/RR；awd_fixed/awd_center/tv → 四轮。
-     未知 wheelId / spec 缺失 → false（失效安全，接线层按 0 处理，不污染 Iw）。 */
+     未知 wheelId / spec 缺失 → false（失效安全，接线层按 0 处理，不污染 Iw）。
+     ═══ sec3 drivetrain: gearbox shift state machine + reflected inertia ═══
+     I1(G31-FR) driven-wheel test — reflected inertia must only land on wheels that actually receive drive torque.
+     fwd → FL/FR; rwd → RL/RR; awd_fixed/awd_center/tv → all four wheels.
+     Unknown wheelId / missing spec → false (fail-safe; the wiring layer treats it as 0, never polluting Iw). */
   isDriveWheel(wheelId) {
     const d = this.spec ? this.spec.drive : null;
     if (d === "awd_fixed" || d === "awd_center" || d === "tv") return true;
@@ -211,7 +237,7 @@ const POWERTRAIN = {
     if (d === "rwd") return isR;
     return false;
   },
-  /* I1(G31-FR)：驱动轮数（归一分母）。spec/drive 缺失 → 0。 */
+  /* I1(G31-FR)：驱动轮数（归一分母）。spec/drive 缺失 → 0。 — I1(G31-FR): driven-wheel count (normalization denominator). Missing spec/drive → 0. */
   driveWheelCount() {
     const d = this.spec ? this.spec.drive : null;
     if (d === "awd_fixed" || d === "awd_center" || d === "tv") return 4;
@@ -234,7 +260,24 @@ const POWERTRAIN = {
        单值函数的固有限制：双电机 inertia 不对称时前后轮取同值（求和/nDrive 近似）。
      ICE 惯量：series 的 ICE 只发电不接轮 → 不计入（P10-2 修正）；
        powersplit 的 ICE 经行星排机械路径耦合 → 保留计入（简化，与 P10-1 前现状一致）；
-       ev 无曲轴。 */
+       ev 无曲轴。
+     — rotational inertia reflected onto a [single driven wheel] (kg·m²/wheel): (I_ice + I_motCoupled)×(ratio×final)²/nDrive.
+     I-2(G31-P6): nDrive normalizes by driven-wheel count — awd/tv=4 wheels, fwd/rwd=2 wheels.
+     I1(G31-FR): this value must only be added to wheels with isDriveWheel(id)===true (the wiring layer does the filtering);
+       the old wiring added it to all 4 wheels → non-driven-wheel Iw was inflated without physical basis and the driven-axle equivalent mass doubled.
+     legacy default inertia=0 → 0, the 15-DOF Iw unchanged (equivalence anchor).
+     p2 architecture motor is coaxial between ICE and gearbox → counted in; p3/p4 motors sit behind the box, direct-coupled to the wheel axle
+       (ratio 1, negligible amplification) → still not counted.
+     G31-P10-2: for ev/series/powersplit the drive motors reach the wheels through the reducer (ratio×finalDrive) →
+       sum over the [actually driving motors] (a motor producing no output → its inertia never reaches the wheels, not counted):
+       ev: fwd→motorF, rwd→motorR, tv/awd_*→both motors (same test as the step output branch);
+       series: wheels are driven by motors only → count the existing motors (preset motorR);
+       powersplit: motorB (motorR field) shares the drive axle with the ICE → count motorR;
+         motorF (MG1) is a generating role, never drives the wheels → not counted (same for fwd/rwd).
+       Inherent limit of a single-value function: with asymmetric dual-motor inertia front/rear wheels get the same value (sum/nDrive approximation).
+     ICE inertia: the series ICE only generates and never connects to the wheels → not counted (P10-2 fix);
+       the powersplit ICE couples through the planetary mechanical path → still counted (simplification, matching the pre-P10-1 status quo);
+       ev has no crankshaft. */
   reflectedInertiaPerDriveWheel() {
     const sp = this.spec, st = this.state;
     if (!sp || !st || !sp.gearbox) return 0;
@@ -242,39 +285,42 @@ const POWERTRAIN = {
     const arch = sp.architecture;
     let I = 0;
     if (sp.ice && arch !== "series") {
-      I += (sp.ice.inertia || 0);   // series ICE 不接轮不计；ev 无 ice；其余（含 powersplit）保留
+      I += (sp.ice.inertia || 0);   // series ICE 不接轮不计；ev 无 ice；其余（含 powersplit）保留 — series ICE never connects to the wheels, not counted; ev has no ice; the rest (incl. powersplit) keep it
     }
     if (arch === "p2") {
       I += (sp.motorF ? (sp.motorF.inertia || 0) : 0) + (sp.motorR ? (sp.motorR.inertia || 0) : 0);
     } else if (arch === "ev") {
-      /* 只计实际出力的电机（与 step 的 ev 出力分支同判据：fwd/rwd 单电机，其余双电机） */
+      /* 只计实际出力的电机（与 step 的 ev 出力分支同判据：fwd/rwd 单电机，其余双电机） — only count motors that actually produce output (same test as the ev output branch in step: fwd/rwd single motor, otherwise both) */
       if (sp.drive === "fwd") I += (sp.motorF ? (sp.motorF.inertia || 0) : 0);
       else if (sp.drive === "rwd") I += (sp.motorR ? (sp.motorR.inertia || 0) : 0);
       else I += (sp.motorF ? (sp.motorF.inertia || 0) : 0) + (sp.motorR ? (sp.motorR.inertia || 0) : 0);
     } else if (arch === "series") {
-      /* series 的出力分支不按 drive 过滤（存在的电机都出力）→ 求和同判据 */
+      /* series 的出力分支不按 drive 过滤（存在的电机都出力）→ 求和同判据 — the series output branch is not filtered by drive (all existing motors produce) → sum with the same test */
       I += (sp.motorF ? (sp.motorF.inertia || 0) : 0) + (sp.motorR ? (sp.motorR.inertia || 0) : 0);
     } else if (arch === "powersplit") {
       if (sp.drive === "awd_fixed" || sp.drive === "awd_center") {
         I += (sp.motorF ? (sp.motorF.inertia || 0) : 0) + (sp.motorR ? (sp.motorR.inertia || 0) : 0);
       } else {
-        I += (sp.motorR ? (sp.motorR.inertia || 0) : 0);   // 仅 motorB 进驱动轴；MG1 不计
+        I += (sp.motorR ? (sp.motorR.inertia || 0) : 0);   // 仅 motorB 进驱动轴；MG1 不计 — only motorB reaches the drive axle; MG1 is not counted
       }
     }
     const nDrive = Math.max(1, this.driveWheelCount());
     return I * r * r / nDrive;
   },
-  /* 向后兼容别名（既有调用点/测试沿用）——语义即“每驱动轮”反射惯量。 */
+  /* 向后兼容别名（既有调用点/测试沿用）——语义即“每驱动轮”反射惯量。  — backward-compatible alias (existing call sites/tests keep working) — semantically "per driven wheel" reflected inertia. */
   reflectedInertia() { return this.reflectedInertiaPerDriveWheel(); },
   /* 换挡状态机推进（每子步调用）。返回 true = 本子步处于扭矩中断期。
      完成时：gearIdx += shiftDir、iceOmega 跳变 = wheelOmegaAxle×ratio_new×final
-     （刚性传动链运动学耦合；离合器结合瞬态不做半联动物理，见设计非目标）。 */
+     （刚性传动链运动学耦合；离合器结合瞬态不做半联动物理，见设计非目标）。
+     — shift state machine advance (called every substep). Returns true when this substep is inside the torque-interruption window.
+     On completion: gearIdx += shiftDir, iceOmega jumps to wheelOmegaAxle×ratio_new×final
+     (rigid drivetrain kinematic coupling; no half-engaged clutch transient physics — see design non-goals). */
   advanceGearbox(dt, wheelOmegaAxle) {
     const sp = this.spec, st = this.state;
     if (!sp || !st || !sp.gearbox) return false;
-    /* M：dt 必须有限，否则 shiftT -= NaN 会把状态机推入 NaN 死锁 */
+    /* M：dt 必须有限，否则 shiftT -= NaN 会把状态机推入 NaN 死锁 — M: dt must be finite, otherwise shiftT -= NaN drives the state machine into a NaN deadlock */
     if (!Number.isFinite(dt)) return false;
-    /* C3(G31-FR)：反向锁止窗口递减（与换挡计时同源，每子步一次） */
+    /* C3(G31-FR)：反向锁止窗口递减（与换挡计时同源，每子步一次） — C3(G31-FR): decrement of the reverse lock window (same clock as shift timing, once per substep) */
     if (st.shiftLockT > 0) {
       st.shiftLockT -= dt * 1000;
       if (st.shiftLockT <= 0) { st.shiftLockT = 0; st.shiftLockDir = 0; }
@@ -286,18 +332,20 @@ const POWERTRAIN = {
         st.gearIdx = Math.max(0, Math.min(sp.gearbox.ratios.length - 1, st.gearIdx + st.shiftDir));
         st.shiftDir = 0; st.shiftT = 0;
         st.iceOmega = (wheelOmegaAxle || 0) * (sp.gearbox.ratios[st.gearIdx] || 1) * sp.gearbox.finalDrive;
-        /* C3：换挡完成 → 开启反向锁止窗口（只挡反向，同向与 requestShift 不受影响） */
+        /* C3：换挡完成 → 开启反向锁止窗口（只挡反向，同向与 requestShift 不受影响） — C3: shift complete → open the reverse lock window (blocks only the reverse direction; same direction and requestShift are unaffected) */
         st.shiftLockDir = dirDone; st.shiftLockT = this.SHIFT_LOCK_MS;
       }
       return true;
     }
     return false;
   },
-  /* 换挡请求（dir=+1 升 / −1 降）。越界或正在换挡时忽略（幂等，无副作用）。 */
+  /* 换挡请求（dir=+1 升 / −1 降）。越界或正在换挡时忽略（幂等，无副作用）。 — shift request (dir=+1 up / −1 down). Ignored when out of range or mid-shift (idempotent, no side effects). */
   requestShift(dir) {
     const sp = this.spec, st = this.state;
     /* M：dir 定义域守卫——仅允许 +1/−1，其他值（0/2/NaN/字符串）一律拒绝，
-       避免 ni = gearIdx + 2 造成的跳挡与 shiftDir=0 的“永久换挡中”死锁。 */
+       避免 ni = gearIdx + 2 造成的跳挡与 shiftDir=0 的“永久换挡中”死锁。
+       — M: dir domain guard — only +1/−1 allowed; everything else (0/2/NaN/strings) is rejected,
+       preventing the skipped-gear effect of ni = gearIdx + 2 and the "perpetually shifting" deadlock of shiftDir=0. */
     if (dir !== 1 && dir !== -1) return;
     if (!sp || !st || !sp.gearbox || st.shiftT > 0) return;
     const ni = st.gearIdx + dir;
@@ -312,19 +360,37 @@ const POWERTRAIN = {
      终审缺陷：旧白名单仅 auto/dct → 6 内置预设里 5 个（GT3=manual、FSAE=seq、
      THS=cvt，以及 EV/串联的转速源缺失）全部卡 1 挡，极速被齿比封顶。
      说明：cvt（e-CVT）通常 ratios.length===1 → 天然不越界换挡，纳入白名单只为
-     多速比 e-CVT/模拟挡位留口子，不改变 THS 预设行为。 */
+     多速比 e-CVT/模拟挡位留口子，不改变 THS 预设行为。
+     — C3(G31-FR): auto-shift whitelist — auto/dct/seq/cvt can shift automatically;
+     manual stays fully manual (driven by the shiftCmdFromRpm rpm law or the UI explicitly).
+     Anything outside the whitelist (undefined, "single", case-mismatched "AUTO", etc.) never auto-shifts;
+     it is driven explicitly via requestShift.
+     Final-review defect: the old whitelist had only auto/dct → 5 of the 6 built-in presets (GT3=manual, FSAE=seq,
+     THS=cvt, plus the missing rpm sources in EV/series) all stuck in 1st gear, top speed capped by the gear ratio.
+     Note: cvt (e-CVT) usually has ratios.length===1 → naturally never out-of-range shifts; whitelist inclusion only leaves room
+     for multi-ratio e-CVTs / simulated gears and does not change THS preset behavior. */
   AUTO_GB_TYPES: ["auto", "dct", "seq", "cvt"],
   /* C3：换挡完成后的反向锁止窗口（ms）。齿比间隔大的箱（如 P3 预设 3.5→2.1）
      升挡后转速比直接落到 autoDownFrac 以下 → 1↔2 挡往复振荡、永远升不上去
      （终审实测 P3 极速卡在 ~49 km/h）。锁止只挡【反向】、不挡同向，
-     也不影响 requestShift 的显式请求（驾驶员意图优先）。 */
+     也不影响 requestShift 的显式请求（驾驶员意图优先）。
+     — C3: reverse-direction lock window (ms) after a completed shift. Boxes with large ratio gaps (e.g. the P3 preset 3.5→ 2.1)
+     drop the rpm ratio straight below autoDownFrac after an upshift → 1↔2 gear oscillation, never climbing out
+     (final review measured the P3 top speed stuck at ~49 km/h). The lock blocks only the [reverse] direction, not the same direction,
+     and does not affect explicit requestShift requests (driver intent wins). */
   SHIFT_LOCK_MS: 400,
   /* C3(G31-FR)：架构感知红线（换挡判据的分母）。
      ev/series/powersplit：驱动电机不经曲轴 → 用驱动电机 maxRpm（取轴与 shiftRpm
        一致：fwd 看前电机、其余看后电机）；EV 的 iceOmega≡0、series/powersplit 的
        iceOmega 是发电控制律转速，二者均不可用作换挡判据。
      ice/p2/p3/p4：曲轴经齿轮刚性耦合 → ice.redlineRpm。
-     缺失时逐级回退，最后回退 9000（防御，不抛错）。 */
+     缺失时逐级回退，最后回退 9000（防御，不抛错）。
+     — C3(G31-FR): architecture-aware redline (denominator of the shift test).
+     ev/series/powersplit: drive motors bypass the crankshaft → use the drive motor maxRpm (axle consistent with shiftRpm:
+       fwd looks at the front motor, the rest at the rear motor); an EV has iceOmega≡0 and the series/powersplit
+       iceOmega is the generating-control-law speed — neither works as a shift criterion.
+     ice/p2/p3/p4: crankshaft rigidly coupled through gears → ice.redlineRpm.
+     Falls back step by step when missing, finally to 9000 (defensive, no throw). */
   shiftRedlineRpm() {
     const sp = this.spec;
     if (!sp) return 0;
@@ -338,7 +404,10 @@ const POWERTRAIN = {
   },
   /* 自动换挡策略（白名单 AUTO_GB_TYPES）：rpm/红线 超 autoUpFrac 升、低于 autoDownFrac 降。
      入参 rpm 由 step() 传入 shiftRpm（架构感知转速源），也可由外部直接调用。
-     C3：受 SHIFT_LOCK_MS 反向锁止约束（只挡反向）。 */
+     C3：受 SHIFT_LOCK_MS 反向锁止约束（只挡反向）。
+     — auto-shift policy (whitelist AUTO_GB_TYPES): upshift when rpm/redline exceeds autoUpFrac, downshift below autoDownFrac.
+     The rpm argument comes from step() as shiftRpm (architecture-aware speed source), but can also be called externally.
+     C3: subject to the SHIFT_LOCK_MS reverse lock (blocks only the reverse direction). */
   autoShift(rpm) {
     const sp = this.spec, st = this.state;
     if (!sp || !st || !sp.gearbox) return;
@@ -362,7 +431,13 @@ const POWERTRAIN = {
      本律由接线层（11-stages.js VehicleDynamics15DOF.step）每子步调用并写入
      demand.shiftCmd；驾驶员显式换挡（ctrl.shiftCmd=±1）优先级更高。
      upFrac=0.95（近红线升挡）/ downFrac=0.55（低转降挡），中间带保持；
-     与 autoShift 同享 SHIFT_LOCK_MS 反向锁止。返回 +1/−1/0（不直接改状态）。 */
+     与 autoShift 同享 SHIFT_LOCK_MS 反向锁止。返回 +1/−1/0（不直接改状态）。
+     — C3(G31-FR): shift producer for manual/sequential boxes — a simple rpm law ("manual box with auto clutch" simplification).
+     Trade-off: UI shift keys would need keyboard focus management plus rebuilding the ctrl construction in three stages — too costly;
+     this law is called every substep by the wiring layer (11-stages.js VehicleDynamics15DOF.step), which writes
+     demand.shiftCmd; explicit driver shifts (ctrl.shiftCmd=±1) take priority.
+     upFrac=0.95 (upshift near redline) / downFrac=0.55 (downshift at low rpm), hold in between;
+     shares the SHIFT_LOCK_MS reverse lock with autoShift. Returns +1/−1/0 (never mutates state directly). */
   shiftCmdFromRpm(rpm, upFrac, downFrac) {
     const sp = this.spec, st = this.state;
     if (!sp || !st || !sp.gearbox) return 0;
@@ -382,15 +457,19 @@ const POWERTRAIN = {
   /* 电池 SOC 积分：dSoc = −P_net·dt/(cap×3.6e6)。P_net>0=放电、<0=充电。
      钳位 [0,1]；无 battery / 非有限输入 → no-op（失效安全）。
      充放功率上限（maxDischargeKw/maxChargeKw）由调用方（段 5 组合器）在
-     计算 P_net 前钳制——本方法只做积分，保持单一职责。 */
+     计算 P_net 前钳制——本方法只做积分，保持单一职责。
+     — battery SOC integration: dSoc = −P_net·dt/(cap×3.6e6). P_net>0 = discharging, <0 = charging.
+     Clamped to [0,1]; no battery / non-finite input → no-op (fail-safe).
+     The charge/discharge power caps (maxDischargeKw/maxChargeKw) are applied by the caller (sec-5 combiner) before
+     computing P_net — this method only integrates, keeping a single responsibility. */
   integrateBattery(P_net_W, dt) {
     const b = this.spec ? this.spec.battery : null;
     const st = this.state;
     if (!b || !st) return;
     if (!Number.isFinite(P_net_W) || !Number.isFinite(dt)) return;
-    /* Task4 审查修复：dt 必须为正（dt=0/负 → no-op，避免零步长或倒流积分） */
+    /* Task4 审查修复：dt 必须为正（dt=0/负 → no-op，避免零步长或倒流积分） — Task4 review fix: dt must be positive (dt=0/negative → no-op, avoiding zero-step or reverse-flow integration) */
     if (!(dt > 0)) return;
-    /* Task4 审查修复：soc 已损坏（NaN/Infinity）时不再积分，防止污染扩散 */
+    /* Task4 审查修复：soc 已损坏（NaN/Infinity）时不再积分，防止污染扩散 — Task4 review fix: if soc is corrupt (NaN/Infinity) stop integrating to prevent contamination from spreading */
     if (!Number.isFinite(st.soc)) return;
     st.soc = Math.max(0, Math.min(1, st.soc - P_net_W * dt / (b.capacityKwh * 3.6e6)));
   },
@@ -402,7 +481,16 @@ const POWERTRAIN = {
               Ttrans = min(lockNm, ((bias−1)/(bias+1))·|tAxle|/2 + lockNm·min(1,|Δω|/slipRef))
             Δω = wR − wL（正 = 右轮快 → 向左轮转移）；slipRef = diff.slipRefRadS ?? 8 rad/s 满锁。
             Tsign：Δω≥0 → +1（向左轮，右连续约定）；否则 −1（向右轮）。
-       守恒：tR ≡ tAxle − tL（逐位），任意输入 |tL+tR−tAxle| < 1e−12。 */
+       守恒：tR ≡ tAxle − tL（逐位），任意输入 |tL+tR−tAxle| < 1e−12。
+     ═══ sec4b differential allocation (G31-P10-1) ═══
+     distributeAxle: splits one axle’s torque to left/right wheels → [tL, tR] (N·m per wheel).
+       open/default: [tAxle/2, tAxle/2] (legacy semantics, bit-for-bit unchanged, ignores fz and speed difference).
+       locked: both wheels locked at the same speed → split by vertical load [tAxle·fzL/(fzL+fzR), …]; fz sum ≤0 degrades to 50/50.
+       lsd: transfers from the fast wheel to the slow wheel on top of the open behavior, transfer amount
+              Ttrans = min(lockNm, ((bias−1)/(bias+1))·|tAxle|/2 + lockNm·min(1,|Δω|/slipRef))
+            Δω = wR − wL (positive = right wheel faster → transfer to the left wheel); slipRef = diff.slipRefRadS ?? 8 rad/s at full lock.
+            Tsign: Δω≥0 → +1 (toward the left wheel, right-continuous convention); otherwise −1 (toward the right wheel).
+       Conservation: tR ≡ tAxle − tL (bit-exact) for any input, |tL+tR−tAxle| < 1e−12. */
   distributeAxle(tAxle, wL, wR, fzL, fzR, diff) {
     const ty = diff ? diff.type : "open";
     if (ty === "locked") {
@@ -417,23 +505,27 @@ const POWERTRAIN = {
       const dW = (wR || 0) - (wL || 0);
       const ramp = lockNm * Math.min(1, Math.abs(dW) / Math.max(1e-3, slipRef));
       const Ttrans = Math.min(lockNm, ((bias - 1) / (bias + 1)) * Math.abs(tAxle) / 2 + ramp);
-      const Tsign = dW >= 0 ? 1 : -1;   // 右轮快(含零速差)→向左轮转移；对 Δω>0 右连续
+      const Tsign = dW >= 0 ? 1 : -1;   // 右轮快(含零速差)→向左轮转移；对 Δω>0 右连续 — right wheel faster (incl. zero speed difference) → transfer to the left wheel; right-continuous for Δω > 0
       const tL = tAxle / 2 + Tsign * Ttrans;
       return [tL, tAxle - tL];
     }
-    return [tAxle / 2, tAxle / 2];   // open / 未知类型 → 对称（失效安全）
+    return [tAxle / 2, tAxle / 2];   // open / 未知类型 → 对称（失效安全） — open / unknown type → symmetric (fail-safe)
   },
   /* distributeCenter：中央差速——单源【总扭矩】按 splitFront 前后分裂，速差时向慢轴转移。
      返回 [tFrontAxle, tRearAxle]（N·m/轴，未 /2）。cd = spec.centerDiff（缺省 lockNm 0 → 纯
      splitFront）。当前后轴轮速不等且有 lockNm：向慢轴转移 min(lockNm, lockNm·min(1,|Δω|/slipRef))。
-     守恒：tR ≡ tTotal − tF（逐位）。awd_fixed 不经此路（组合器保持现状纯 splitFront，逐位不变）。 */
+     守恒：tR ≡ tTotal − tF（逐位）。awd_fixed 不经此路（组合器保持现状纯 splitFront，逐位不变）。
+     — distributeCenter: center differential — splits a single-source [total torque] front/rear by splitFront, shifting toward the slower axle under a speed difference.
+     Returns [tFrontAxle, tRearAxle] (N·m per axle, not halved). cd = spec.centerDiff (default lockNm 0 → pure
+     splitFront). When front/reaxle wheel speeds differ and lockNm > 0: shift min(lockNm, lockNm·min(1,|Δω|/slipRef)) toward the slower axle.
+     Conservation: tR ≡ tTotal − tF (bit-exact). awd_fixed never goes through this path (the combiner stays pure splitFront, bit-for-bit unchanged). */
   distributeCenter(tTotal, wF, wR, splitFront, cd) {
     const tF0 = tTotal * splitFront;
     let tF = tF0;
     const lock = (cd && Number.isFinite(cd.lockNm) && cd.lockNm > 0) ? cd.lockNm : 0;
     if (lock > 0) {
       const slipRef = (cd && Number.isFinite(cd.slipRefRadS) && cd.slipRefRadS > 0) ? cd.slipRefRadS : 8;
-      const dW = wF - wR;   // 正 = 前轴快 → 借向后轴（前减）；负 = 后轴快 → 前增（向慢轴）
+      const dW = wF - wR;   // 正 = 前轴快 → 借向后轴（前减）；负 = 后轴快 → 前增（向慢轴） — positive = front axle faster → lend to the rear axle (front loses); negative = rear axle faster → front gains (toward the slower axle)
       if (dW !== 0) {
         const Ttrans = Math.min(lock, lock * Math.min(1, Math.abs(dW) / Math.max(1e-3, slipRef)));
         const sgn = dW > 0 ? -1 : 1;
@@ -458,7 +550,24 @@ const POWERTRAIN = {
      七架构功率流见各 case 注释。TCS 机械通道不在本层（接线层按轮滑移切轮扭矩）。
      I-3(G31-P6-fix)：dm.tcsRear（默认 1）为 TCS 能量通道——仅缩放 P_mot 中后电机
        贡献（T_motR×tcsRear 进 P_mot，用于 SOC/油耗积分的能量近似守恒），不影响
-       tFront/tRear/tWheel 轮扭矩输出（机械通道由接线层轮循环内 tcsScale 单独切）。 */
+       tFront/tRear/tWheel 轮扭矩输出（机械通道由接线层轮循环内 tcsScale 单独切）。
+     ═══ sec5 combiner + step main loop ═══
+     step(dt, demand, wheelOmega): called once per substep (before the 15-DOF wheel loop).
+       demand = { throttle, brake, shiftCmd?, tvBias?, tcsRear? }
+       wheelOmega = { FL, FR, RL, RR } (rad/s)
+     Returns { tFront, tRear, tWheel|null, iceRpm, shiftRpm, gearIdx, soc, shifting, P_gen, P_out }
+       tFront/tRear = per-wheel drive torque (axle torque / 2, same scale as the legacy constants 480/120, drivePowerFactor not applied)
+       tWheel = per-wheel [FL,FR,RL,RR]: when drive==='tv' (tvBias split) or the differential yields left/right asymmetry
+                      (locked by load / lsd speed-difference transfer); otherwise null (symmetric, via tFront/tRear)
+       shiftRpm = C3(G31-FR) architecture-aware shift speed source (ev/series/powersplit → motor rpm, others → iceRpm);
+                      the wiring-layer shift producer and HUD/sound should both use this value
+       P_gen = ICE generating power (W, >0 only for series/powersplit)
+       P_out = G31-P10-2 wheel-end mechanical power (W, positive = driving, negative = braking/regen; with tWheel, per wheel × each wheel ω)
+     tWheel is per-wheel torque (no further /2); tFront/tRear are axle torque/2 — the wiring layer must not halve tWheel again.
+     See per-case comments for the seven-architecture power flows. The TCS mechanical channel is not in this layer (the wiring layer cuts wheel torque by wheel slip).
+     I-3(G31-P6-fix): dm.tcsRear (default 1) is the TCS energy channel — only scales the rear-motor contribution in P_mot
+       (T_motR×tcsRear enters P_mot, giving approximate energy conservation for SOC/fuel integration) and never touches
+       the tFront/tRear/tWheel torque outputs (the mechanical channel is cut separately by tcsScale inside the wiring layer wheel loop). */
   step(dt, demand, wheelOmega) {
     const sp = this.spec || this.defaultSpec();
     if (!this.state) this.resetState();
@@ -466,29 +575,33 @@ const POWERTRAIN = {
     const g = sp.gearbox || { ratios: [1], finalDrive: 1, eff: 1, type: "manual" };
     const dm = demand || {}, wo = wheelOmega || {};
     /* I-3(G31-P6-fix)：TCS 能量通道——dm.tcsRear（默认 1，钳位 [0,1]，NaN/非数值回退 1）
-       仅用于下方 P_mot 中后电机贡献的缩放，不进入任何扭矩输出路径。 */
+       仅用于下方 P_mot 中后电机贡献的缩放，不进入任何扭矩输出路径。
+       — I-3(G31-P6-fix): the TCS energy channel — dm.tcsRear (default 1, clamped to [0,1], NaN/non-numeric falls back to 1)
+       only scales the rear-motor contribution in the P_mot below; it never enters any torque output path. */
     const tcsRear = (typeof dm.tcsRear === "number" && Number.isFinite(dm.tcsRear))
       ? Math.max(0, Math.min(1, dm.tcsRear)) : 1;
-    /* 轴平均轮速（rad/s） */
+    /* 轴平均轮速（rad/s）  — axle-mean wheel speeds (rad/s) */
     const wF = 0.5 * ((wo.FL || 0) + (wo.FR || 0));
     const wR = 0.5 * ((wo.RL || 0) + (wo.RR || 0));
-    const iceAxleW = (sp.drive === "fwd") ? wF : wR;   // ICE 运动学耦合参考轴
+    const iceAxleW = (sp.drive === "fwd") ? wF : wR;   // ICE 运动学耦合参考轴 — reference axle for ICE kinematic coupling
     const thr = Math.max(0, Math.min(1, dm.throttle || 0));
     const brk = Math.max(0, Math.min(1, dm.brake || 0));
-    /* 电机指令：油门驱动为正；制动强于油门时反转矩回收（regen） */
+    /* 电机指令：油门驱动为正；制动强于油门时反转矩回收（regen）  — motor command: positive for throttle drive; negative-torque regen when braking outweighs throttle */
     const motCmd = (brk > thr) ? -brk : thr;
-    /* 油门一阶惯性（throttleTau）；tau→0.001 时单步即达目标（legacy 等价锚要求瞬时响应） */
+    /* 油门一阶惯性（throttleTau）；tau→0.001 时单步即达目标（legacy 等价锚要求瞬时响应）  — first-order throttle inertia (throttleTau); tau→0.001 reaches the target in a single step (the legacy parity anchor requires instantaneous response) */
     const tau = Math.max(0.001, sp.ice ? (sp.ice.throttleTau || 0) : 0);
     if (Number.isFinite(dt)) st.thrSm += (thr - st.thrSm) * Math.min(1, dt / tau);
     const cmd = Math.max(0, Math.min(1, st.thrSm));
-    /* 显式换挡请求（仅 +1/−1 生效，requestShift 内自守卫） */
+    /* 显式换挡请求（仅 +1/−1 生效，requestShift 内自守卫）  — explicit shift request (only +1/−1 take effect; requestShift self-guards) */
     if (dm.shiftCmd === 1 || dm.shiftCmd === -1) this.requestShift(dm.shiftCmd);
-    /* 换挡状态机推进：返回 true = 本子步处于扭矩中断期 */
+    /* 换挡状态机推进：返回 true = 本子步处于扭矩中断期  — shift state machine: returns true when this substep is in the torque-interruption window */
     const shifting = this.advanceGearbox(dt, iceAxleW);
     const ratio = (g.ratios[st.gearIdx] || 1) * (g.finalDrive !== undefined ? g.finalDrive : 1);
     const eff = g.eff !== undefined ? g.eff : 1;
     /* 刚性传动链运动学耦合：非 series/powersplit 且非换挡期 → iceOmega = 轴轮速 × 总传动比。
-       series/powersplit 的 ICE 与轮无刚性耦合，转速由下方发电控制律决定。 */
+       series/powersplit 的 ICE 与轮无刚性耦合，转速由下方发电控制律决定。
+       — rigid drivetrain kinematic coupling: architectures other than series/powersplit, outside a shift → iceOmega = axle wheel speed × total ratio.
+       For series/powersplit the ICE is not rigidly coupled to the wheels; its speed comes from the generating control law below. */
     if (!shifting && sp.ice && sp.architecture !== "series" && sp.architecture !== "powersplit") {
       st.iceOmega = iceAxleW * ratio;
     }
@@ -500,19 +613,28 @@ const POWERTRAIN = {
          电池 maxDischargeKw 钳制形同虚设（EV 变成无限功率）、P_mot 与轮功率
          不同源（能量不守恒）。p2/p3 早已成对处理，本修只补齐 ev/series/powersplit。
        p2：电机在曲轴链（组合器内已统一乘 ratio×eff）→ motGeared=1；
-       p3/p4：电机在箱后直连轮轴 → motGeared=1。二者逐位不变（保既有断言/对拍锚）。 */
+       p3/p4：电机在箱后直连轮轴 → motGeared=1。二者逐位不变（保既有断言/对拍锚）。
+       — C1(G31-FR): whether the motor sits [upstream] of the reducer.
+       ev/series/powersplit: motor shaft → reducer (ratios[gear]×finalDrive) → half-shafts,
+         so the wheel-end motor torque = T_mot × ratio × eff, and the motor angular speed = wheel speed × ratio.
+         Final-review defect: the old implementation took both at the wheel end → wheel torque was one gear ratio too small (with the EV single ratio 9.73,
+         tRear was only 175 N·m instead of 1652); motor speed was underestimated → the constant-power knee was never reached,
+         the battery maxDischargeKw clamp became toothless (the EV turned into an infinite power source), and P_mot and wheel power
+         came from different sources (energy not conserved). p2/p3 were already handled as a pair; this fix completes ev/series/powersplit.
+       p2: motor on the crankshaft chain (the combiner already multiplies ratio×eff uniformly) → motGeared=1;
+       p3/p4: motor behind the box, direct-coupled to the wheel axle → motGeared=1. Both unchanged bit-for-bit (preserving existing assertions / the parity anchor). */
     const MOTOR_GEARED = (sp.architecture === "ev" || sp.architecture === "series" || sp.architecture === "powersplit");
     const motGeared = MOTOR_GEARED ? ratio * eff : 1;
-    /* 电机轴角速度（rad/s）：p2 → iceOmega；MOTOR_GEARED → 轮速×ratio；p3/p4 → 轮速 */
+    /* 电机轴角速度（rad/s）：p2 → iceOmega；MOTOR_GEARED → 轮速×ratio；p3/p4 → 轮速  — motor shaft angular speeds (rad/s): p2 → iceOmega; MOTOR_GEARED → wheel speed × ratio; p3/p4 → wheel speed */
     const wMotF = (sp.architecture === "p2") ? st.iceOmega : (MOTOR_GEARED ? wF * ratio : wF);
     const wMotR = (sp.architecture === "p2") ? st.iceOmega : (MOTOR_GEARED ? wR * ratio : wR);
-    /* 电机转速（rpm）与 wMot* 严格同源（C1 前按架构分叉，现统一由 wMot* 导出） */
+    /* 电机转速（rpm）与 wMot* 严格同源（C1 前按架构分叉，现统一由 wMot* 导出）  — motor speeds (rpm) are strictly co-sourced with wMot* (before C1 they forked per architecture; now derived uniformly from wMot*) */
     const rpmF = wMotF * 30 / Math.PI;
     const rpmR = wMotR * 30 / Math.PI;
     let T_motF = 0, T_motR = 0;
     if (sp.motorF) T_motF = this.motorTorque(sp.motorF, rpmF, motCmd, st.soc);
     if (sp.motorR) T_motR = this.motorTorque(sp.motorR, rpmR, motCmd, st.soc);
-    /* I2：电池功率上限反馈——在组合器前对电机扭矩做功率钳制（电机轴侧，与 P_mot 同源） */
+    /* I2：电池功率上限反馈——在组合器前对电机扭矩做功率钳制（电机轴侧，与 P_mot 同源）  — I2: battery power cap feedback — clamp motor torque by power before the combiner (motor-shaft side, same source as P_mot) */
     const pLim = (sp.battery && sp.battery.maxDischargeKw !== undefined) ? sp.battery.maxDischargeKw * 1000 : Infinity;
     const pMotRaw = Math.abs(T_motF * wMotF) + Math.abs(T_motR * wMotR);
     if (pMotRaw > pLim && pMotRaw > 0) {
@@ -522,11 +644,16 @@ const POWERTRAIN = {
     const P_mot = (T_motF * wMotF + T_motR * tcsRear * wMotR) / 0.95;
     /* C1：轮端电机扭矩（已过减速器）。非 MOTOR_GEARED 架构下 motGeared===1 → 与 T_mot* 同值，
        组合器/tv 块统一只用 _w 版本，避免“某条路径忘乘齿比”类缺陷再次发生。
-       能量关系：P_wheel = P_mot × 0.95（电机/逆变器）× eff（齿轮），与下方 P_mot 严格同源。 */
+       能量关系：P_wheel = P_mot × 0.95（电机/逆变器）× eff（齿轮），与下方 P_mot 严格同源。
+       — C1: wheel-end motor torques (already through the reducer). Under non-MOTOR_GEARED architectures motGeared===1 → identical to T_mot*,
+       and the combiner/tv block uses only the _w versions, so a "forgot the gear ratio on one path" class of defect cannot recur.
+       Energy relation: P_wheel = P_mot × 0.95 (motor/inverter) × eff (gears), strictly co-sourced with the P_mot below. */
     const T_motF_w = T_motF * motGeared;
     const T_motR_w = T_motR * motGeared;
     /* series/powersplit：ICE 转速不跟轮速，按增程/功率分流控制律。
-       iceOmega = max(idle, min(redline, idle + (P_demand/P_rated)×(redline−idle)))，P_demand = 电机消耗功率估计。 */
+       iceOmega = max(idle, min(redline, idle + (P_demand/P_rated)×(redline−idle)))，P_demand = 电机消耗功率估计。
+       — series/powersplit: the ICE speed does not follow wheel speed; it follows the range-extender/power-split control law.
+       iceOmega = max(idle, min(redline, idle + (P_demand/P_rated)×(redline−idle))), where P_demand = estimated motor power draw. */
     if ((sp.architecture === "series" || sp.architecture === "powersplit") && sp.ice) {
       const idle = sp.ice.idleRpm * Math.PI / 30, red = sp.ice.redlineRpm * Math.PI / 30;
       let P_rated = 0;
@@ -539,32 +666,38 @@ const POWERTRAIN = {
     /* C3(G31-FR)：架构感知换挡转速源——ev/series/powersplit 的电机不经曲轴，
        iceOmega（EV≡0、series/powersplit 为发电控制律转速）不可用作换挡判据 →
        改用驱动电机的电机轴 rpm（= 轮速×ratio）；其余架构 iceOmega 已含齿比 → 直接用。
-       本值同时回传（out.shiftRpm），供接线层换挡生产者与 HUD/声浪统一取用。 */
+       本值同时回传（out.shiftRpm），供接线层换挡生产者与 HUD/声浪统一取用。
+       — C3(G31-FR): architecture-aware shift speed source — for ev/series/powersplit the motors bypass the crankshaft,
+       and iceOmega (EV≡0; generating-control-law speed for series/powersplit) cannot be a shift criterion →
+       use the drive-motor shaft rpm (= wheel speed × ratio) instead; other architectures already have the ratio inside iceOmega → use it directly.
+       This value is also returned (out.shiftRpm) so the wiring-layer shift producer and the HUD/sound use one source. */
     const wMotShift = (sp.drive === "fwd") ? wMotF : wMotR;
     const shiftRpm = MOTOR_GEARED ? (wMotShift * 30 / Math.PI) : iceRpm;
-    this.autoShift(shiftRpm);   // 自守卫：仅 AUTO_GB_TYPES 生效（+ 反向锁止）
-    /* ICE 曲轴扭矩（换挡中断期置 0） */
+    this.autoShift(shiftRpm);   // 自守卫：仅 AUTO_GB_TYPES 生效（+ 反向锁止） — self-guarding: only effective for AUTO_GB_TYPES (+ the reverse lock)
+    /* ICE 曲轴扭矩（换挡中断期置 0）  — ICE crankshaft torque (zeroed during shift interruption) */
     const T_ice = (sp.ice && !shifting) ? this.iceTorque(iceRpm, cmd) : 0;
-    const T_ice_wheel = shifting ? 0 : T_ice * ratio * eff;   // ICE 经变速箱到轴的扭矩
-    /* ── 七架构组合器 → 轴扭矩 Tf/Tr（N·m/轴） ── */
+    const T_ice_wheel = shifting ? 0 : T_ice * ratio * eff;   // ICE 经变速箱到轴的扭矩 — ICE torque from gearbox to axle
+    /* ── 七架构组合器 → 轴扭矩 Tf/Tr（N·m/轴） ── — seven-architecture combiner → axle torques Tf/Tr (N·m per axle) ── */
     let Tf = 0, Tr = 0, P_gen = 0;
     switch (sp.architecture) {
       case "ice":
-        /* 单动力源经 gearbox；fwd/rwd 单轴，awd_* 按 splitFront 前后分裂 */
+        /* 单动力源经 gearbox；fwd/rwd 单轴，awd_* 按 splitFront 前后分裂  — single power source through the gearbox; fwd/rwd single axle, awd_* split front/rear by splitFront */
         if (sp.drive === "fwd") Tf = T_ice_wheel;
         else if (sp.drive === "rwd") Tr = T_ice_wheel;
         else { Tf = T_ice_wheel * sp.splitFront; Tr = T_ice_wheel * (1 - sp.splitFront); }
         break;
       case "ev":
         /* 电机经单速减速器驱轮（无 ICE）；C1：扭矩用轮端值 T_mot*_w（已×ratio×eff）。
-           drive==='tv' 逐轮在下方 tv 块处理 */
-        if (sp.drive === "tv") { /* 见下方 tv 块 */ }
+           drive==='tv' 逐轮在下方 tv 块处理
+           — motors drive the wheels through a single-speed reducer (no ICE); C1: torque uses the wheel-end values T_mot*_w (already ×ratio×eff).
+           drive==='tv' per-wheel allocation is handled in the tv block below */
+        if (sp.drive === "tv") { /* 见下方 tv 块 — handled in the tv block below */ }
         else if (sp.drive === "fwd") Tf = T_motF_w;
         else if (sp.drive === "rwd") Tr = T_motR_w;
         else { Tf = T_motF_w; Tr = T_motR_w; }
         break;
       case "p2": {
-        /* I1：电机在 ICE 与 gearbox 之间同轴：T_shaft = (T_ice + T_motF + T_motR)×ratio×eff；换挡期整轴切断 */
+        /* I1：电机在 ICE 与 gearbox 之间同轴：T_shaft = (T_ice + T_motF + T_motR)×ratio×eff；换挡期整轴切断 — I1: the motor is coaxial between the ICE and the gearbox: T_shaft = (T_ice + T_motF + T_motR)×ratio×eff; the whole axle is cut during shifts */
         const Ts = (T_ice + T_motF + T_motR) * ratio * eff * (shifting ? 0 : 1);
         if (sp.drive === "fwd") Tf = Ts;
         else if (sp.drive === "rwd") Tr = Ts;
@@ -572,7 +705,7 @@ const POWERTRAIN = {
         break;
       }
       case "p3": {
-        /* I1：电机在箱后（与 ICE 输出并联到轮）：T_axle = T_ice×ratio×eff + T_motF + T_motR */
+        /* I1：电机在箱后（与 ICE 输出并联到轮）：T_axle = T_ice×ratio×eff + T_motF + T_motR  — I1: motor behind the box (paralleled with the ICE output to the wheels): T_axle = T_ice×ratio×eff + T_motF + T_motR */
         const Ta = T_ice_wheel + T_motF + T_motR;
         if (sp.drive === "fwd") Tf = Ta;
         else if (sp.drive === "rwd") Tr = Ta;
@@ -580,7 +713,7 @@ const POWERTRAIN = {
         break;
       }
       case "p4": {
-        /* ICE 驱一轴 + 电机驱另一轴（through-the-road）；awd_x/tv 时 ICE 轴扭矩按 splitFront 分裂 */
+        /* ICE 驱一轴 + 电机驱另一轴（through-the-road）；awd_x/tv 时 ICE 轴扭矩按 splitFront 分裂  — ICE drives one axle and the motor the other (through-the-road); with awd_x/tv the ICE axle torque is split by splitFront */
         const iceF = (sp.drive === "fwd") ? 1 : (sp.drive === "rwd") ? 0 : sp.splitFront;
         const iceR = (sp.drive === "fwd") ? 0 : (sp.drive === "rwd") ? 1 : (1 - sp.splitFront);
         Tf = T_ice_wheel * iceF + (sp.motorF ? T_motF : 0);
@@ -588,7 +721,7 @@ const POWERTRAIN = {
         break;
       }
       case "series":
-        /* 增程：轮只由电机驱动（C1：×ratio×eff）；ICE 仅发电 P_gen = max(0,T_ice)×iceOmega×0.9（不接轮） */
+        /* 增程：轮只由电机驱动（C1：×ratio×eff）；ICE 仅发电 P_gen = max(0,T_ice)×iceOmega×0.9（不接轮）  — series range-extender: wheels driven by motors only (C1: ×ratio×eff); the ICE only generates, P_gen = max(0,T_ice)×iceOmega×0.9 (never drives the wheels) */
         P_gen = Math.max(0, T_ice) * st.iceOmega * 0.9;
         Tf = sp.motorF ? T_motF_w : 0;
         Tr = sp.motorR ? T_motR_w : 0;
@@ -600,10 +733,17 @@ const POWERTRAIN = {
            T_motR_w 与机械路径统一路由：fwd → 全部进 Tf（后轴归零；旧实现把 MG2 出力到
            后轴 = “前驱”车后轴出力的物理错误）；rwd → 全部进 Tr。
            motorF(MG1) 在 fwd/rwd 为发电角色 → 不进轮扭矩（发电分流由 P_gen 承担）。
-           awd_* 保持 splitFront 分裂（既有行为）；p4 异轴独立语义不受影响。 */
+           awd_* 保持 splitFront 分裂（既有行为）；p4 异轴独立语义不受影响。
+           — power split (simplified planetary gear set): 72% mechanical path to the wheels, 28% generating;
+           motorB (MG2) adds onto the wheels — C1: the motor path is likewise ×ratio×eff (sharing the final drive with the mechanical path).
+           G31-P10-2: the planetary set sits at the front — motorB (motorR field) shares the [drive axle] with the ICE,
+           so T_motR_w is routed uniformly with the mechanical path: fwd → all into Tf (rear axle zeroed; the old implementation sending MG2 output
+           to the rear axle was the physical error of a "front-drive" car producing rear-axle output); rwd → all into Tr.
+           motorF (MG1) is a generating role under fwd/rwd → never contributes wheel torque (the generation split is carried by P_gen).
+           awd_* keeps the splitFront split (existing behavior); the p4 separate-axle semantics are unaffected. */
         const Tmech = T_ice * 0.72 * ratio * eff * (shifting ? 0 : 1);
         P_gen = Math.max(0, T_ice) * 0.28 * st.iceOmega * 0.9;
-        const T_motB_w = (sp.motorR ? T_motR_w : 0);   // motorB 轮端扭矩（motorR 字段承载）
+        const T_motB_w = (sp.motorR ? T_motR_w : 0);   // motorB 轮端扭矩（motorR 字段承载） — motorB wheel-end torque (carried in the motorR field)
         if (sp.drive === "fwd") { Tf = Tmech + T_motB_w; Tr = 0; }
         else if (sp.drive === "rwd") { Tr = Tmech + T_motB_w; Tf = 0; }
         else { Tf = Tmech * sp.splitFront + (sp.motorF ? T_motF_w : 0); Tr = Tmech * (1 - sp.splitFront) + T_motB_w; }
@@ -611,17 +751,22 @@ const POWERTRAIN = {
       }
     }
     /* G31-P10-1：awd_center 中央差速——用前后轴平均轮速差把总轴扭矩(Tf+Tr)向慢轴转移。
-       awd_fixed/fwd/rwd/tv 不经此路（组合器现状逐位不变）。 */
+       awd_fixed/fwd/rwd/tv 不经此路（组合器现状逐位不变）。
+       — G31-P10-1: awd_center center differential — shifts the total axle torque (Tf+Tr) toward the slower axle using the front/rear mean wheel speed difference.
+       awd_fixed/fwd/rwd/tv never take this path (the combiner stays bit-for-bit unchanged). */
     if (sp.drive === "awd_center") {
       const cSplit = this.distributeCenter(Tf + Tr, wF, wR, sp.splitFront, sp.centerDiff);
       Tf = cSplit[0]; Tr = cSplit[1];
     }
-    /* tv 逐轮：tvBias 将前/后电机轮端扭矩分裂到左右轮（守恒：四轮和 = T_motF_w + T_motR_w） */
+    /* tv 逐轮：tvBias 将前/后电机轮端扭矩分裂到左右轮（守恒：四轮和 = T_motF_w + T_motR_w）  — tv per wheel: tvBias splits the front/rear motor wheel-end torques to left/right (conservation: wheel sum = T_motF_w + T_motR_w) */
     let tWheel = null;
     if (sp.drive === "tv" && sp.motorF && sp.motorR) {
       /* M1：tvBias 钳位 [0,1]，NaN/undefined 回退 0.5（C1：用轮端扭矩 T_mot*_w）
          TODO(G31-P10)：动态扭矩矢量（按横摆角速度误差/前后轴侧偏分配 bias）尚未接入——
-         接线层恒传 undefined → 0.5 均分；生产者待后续操纵性波次落地。 */
+         接线层恒传 undefined → 0.5 均分；生产者待后续操纵性波次落地。
+         — M1: tvBias clamped to [0,1]; NaN/undefined falls back to 0.5 (C1: wheel-end torques T_mot*_w are used)
+         TODO(G31-P10): dynamic torque vectoring (distributing bias by yaw-rate error / front-rear slip) is not wired yet —
+         the wiring layer always passes undefined → a 0.5 even split; the producer will land with a later handling wave. */
       const b = Math.max(0, Math.min(1, Number.isFinite(dm.tvBias) ? dm.tvBias : 0.5));
       tWheel = [T_motF_w * b, T_motF_w * (1 - b), T_motR_w * b, T_motR_w * (1 - b)];
       Tf = T_motF_w; Tr = T_motR_w;
@@ -630,13 +775,21 @@ const POWERTRAIN = {
        tv 已由上方 tv 块逐轮分配（tWheel 非 null），此处跳过（tvBias 优先，diff 不重复分配）。
        仅当某轴左/右非对称（|tL−tR|>1e−12）才产出 tWheel，否则维持 null（tFront/tRear 对称，
        legacy 等价锚逐位不变）。fz 取 demand.wheelLoads（接线层传上一子步各轮垂直载荷，缺省 0 →
-       locked 退化 50/50、open/lsd 不受影响）。守恒自检：违反即回退对称，绝不容忍扭矩凭空产生。 */
+       locked 退化 50/50、open/lsd 不受影响）。守恒自检：违反即回退对称，绝不容忍扭矩凭空产生。
+       — G31-P10-1: differential wheel-end allocation — splits each axle torque (Tf/Tr) to left/right wheels (open/locked/lsd).
+       tv is already allocated per wheel by the tv block above (tWheel non-null), so skip here (tvBias takes priority; the diff does not double-allocate).
+       tWheel is produced only when an axle is left/right asymmetric (|tL−tR|>1e−12); otherwise stays null (tFront/tRear symmetric,
+       the legacy parity anchor unchanged bit-for-bit). fz comes from demand.wheelLoads (the wiring layer passes the previous substep’s per-wheel vertical loads; default 0 →
+       locked degrades to 50/50, open/lsd unaffected). Conservation self-check: on violation fall back to symmetric — never tolerate torque from nowhere. */
     if (!tWheel) {
       const wl = dm.wheelLoads || {};
       const df = sp.diff || { type: "open" };
       /* 非通过扭矩轴强制 open：lsd/locked 的转移需有输入扭矩路径才物理成立。
          tAxle=0 时若应用 lsd 会产生 ±X 自消力偶，且在 ωL≠ωR 下净功率 = X·Δω ≠ 0
-         （能量凭空产生）。判据：仅 |tAxle|>1e−12（有通过扭矩）的轴应用 diff。 */
+         （能量凭空产生）。判据：仅 |tAxle|>1e−12（有通过扭矩）的轴应用 diff。
+         — force open on axles with no through-torque: the lsd/locked transfer is only physical when there is an input torque path.
+         With tAxle=0, applying lsd would create a ±X self-cancelling couple, and with ωL≠ωR the net power = X·Δω ≠ 0
+         (energy from nowhere). Test: apply diff only to axles with |tAxle|>1e−12 (through-torque exists). */
       const dfF = (Math.abs(Tf) > 1e-12) ? df : { type: "open" };
       const dfR = (Math.abs(Tr) > 1e-12) ? df : { type: "open" };
       const pf = this.distributeAxle(Tf, wo.FL || 0, wo.FR || 0, wl.FL || 0, wl.FR || 0, dfF);
@@ -648,7 +801,7 @@ const POWERTRAIN = {
         tWheel = [pf[0], pf[1], pr[0], pr[1]];
       }
     }
-    /* 电池能量流：P_net = 电机耗电 − ICE 发电；按 maxDischargeKw/maxChargeKw 钳制后积分 SOC */
+    /* 电池能量流：P_net = 电机耗电 − ICE 发电；按 maxDischargeKw/maxChargeKw 钳制后积分 SOC  — battery energy flow: P_net = motor draw − ICE generation; clamp by maxDischargeKw/maxChargeKw, then integrate SOC */
     let P_net = P_mot - P_gen;
     const bat = sp.battery;
     if (bat) {
@@ -658,7 +811,10 @@ const POWERTRAIN = {
     }
     /* G31-P10-2：轮上机械功率 P_out（W，正=驱动 负=制动/回收）——P10-3 HUD 数据源。
        含 tWheel 时按逐轮×各轮 ω（左右速差下轴级近似不守恒）；否则轴扭矩×轴均轮速。
-       机械侧功率：与电池电功率 P_net 不同源（中间隔电机/逆变器 0.95 与齿轮 eff）。 */
+       机械侧功率：与电池电功率 P_net 不同源（中间隔电机/逆变器 0.95 与齿轮 eff）。
+       — G31-P10-2: wheel-end mechanical power P_out (W, positive = driving, negative = braking/regen) — the P10-3 HUD data source.
+       With tWheel: summed per wheel × each wheel ω (an axle-level approximation is not conserved under left/right speed difference); otherwise axle torque × axle-mean wheel speed.
+       The mechanical-side power is a different source from the battery electric power P_net (separated by the motor/inverter 0.95 and the gear eff). */
     const P_out = tWheel
       ? tWheel[0] * (wo.FL || 0) + tWheel[1] * (wo.FR || 0) + tWheel[2] * (wo.RL || 0) + tWheel[3] * (wo.RR || 0)
       : Tf * wF + Tr * wR;
@@ -673,25 +829,36 @@ const POWERTRAIN = {
      G29 教训：弹窗在 appendChild 之前 document.getElementById 取不到内部元素 →
      事件绑定一律走元素级 m.querySelector("#id")；表单值读写走 getElementById
      （open() 时弹窗已入文档、innerHTML 已解析）。
-     编辑监听用委托式绑在 modal 根：栏位 innerHTML 重建后监听仍在、且不会重复注册。 */
+     编辑监听用委托式绑在 modal 根：栏位 innerHTML 重建后监听仍在、且不会重复注册。
+     ═══ sec6 UI: Powertrain Lab modal + built-in presets + localStorage persistence + dropdown integration ═══
+     Overlay semantics (same as the G29 Tire Lab): never modify VEHICLE_PRESETS / 15-DOF defaults; write only
+     POWERTRAIN.spec (+ S.ptSpec reference); "Restore built-in" = back to defaultSpec (the legacy-equivalent anchor).
+     G29 lesson: before appendChild, document.getElementById cannot find the modal-internal elements →
+     bind events via element-level m.querySelector("#id"); read/write form values via getElementById
+     (by open() time the modal is already in the document and innerHTML parsed).
+     Edit listeners are delegated on the modal root: after the fields’ innerHTML is rebuilt the listeners survive and never double-register. */
   MAX_CUSTOMS: 20,
   LS_KEY: "labsus-powertrain-customs",
   _modal: null, _draft: null, _rafPending: false,
   /* map textarea 校验错误（null = 无错）。readMap 只记录、updateDerived 只渲染——
-     单一写者，避免 ⚠ 提示被随后的概要覆盖（M-8）。 */
+     单一写者，避免 ⚠ 提示被随后的概要覆盖（M-8）。
+     — map textarea validation error (null = none). readMap only records, updateDerived only renders —
+     a single writer, so the ⚠ warning is never overwritten by the later summary (M-8). */
   _mapErr: null,
-  /* 七架构卡片（与 validate 白名单同集） */
+  /* 七架构卡片（与 validate 白名单同集）  — the seven architecture cards (same set as the validate whitelist) */
   ARCHS: [
-    { k: "ice",        zh: "内燃机",   en: "ICE",        hint: "单动力源经变速箱到驱动轴" },
-    { k: "ev",         zh: "纯电",     en: "EV",         hint: "电机直驱，无曲轴" },
-    { k: "p2",         zh: "P2 并联",  en: "P2",         hint: "电机在 ICE 与变速箱之间同轴" },
-    { k: "p3",         zh: "P3 并联",  en: "P3",         hint: "电机在箱后，与 ICE 并联到轮" },
-    { k: "p4",         zh: "P4 双轴",  en: "P4",         hint: "ICE 驱一轴 + 电机驱另一轴" },
-    { k: "series",     zh: "串联增程", en: "SERIES",     hint: "ICE 只发电，轮只由电机驱动" },
-    { k: "powersplit", zh: "功率分流", en: "POWERSPLIT", hint: "行星排：机械路径 + 发电分流" }
+    { k: "ice",        zh: "ICE engine",   en: "ICE",        hint: "Single power source through the gearbox to the driven axles" },
+    { k: "ev",         zh: "Battery electric",     en: "EV",         hint: "Motor direct drive, no crankshaft" },
+    { k: "p2",         zh: "P2 parallel",  en: "P2",         hint: "Motor coaxial between the ICE engine and the gearbox" },
+    { k: "p3",         zh: "P3 parallel",  en: "P3",         hint: "Motor behind the gearbox, paralleled with the ICE engine to the wheels" },
+    { k: "p4",         zh: "P4 dual-axle",  en: "P4",         hint: "ICE engine drives one axle, motor drives the other" },
+    { k: "series",     zh: "Series range-extender", en: "SERIES",     hint: "ICE engine only generates; wheels are driven by the motors only" },
+    { k: "powersplit", zh: "Power split", en: "POWERSPLIT", hint: "Planetary gear set: mechanical path + generation split" }
   ],
   /* 驱动形式按架构可用性过滤：tv 需 motorF&&motorR（validate 硬约束）→ 仅 ev/p4；
-     series 的轮只由电机驱，中央差速无意义 → 不给 awd_center */
+     series 的轮只由电机驱，中央差速无意义 → 不给 awd_center
+     — drive options filtered by architecture feasibility: tv needs motorF&&motorR (a hard validate constraint) → ev/p4 only;
+     series wheels are motor-driven only, so a center diff is meaningless → no awd_center */
   DRIVES: {
     ice:        ["fwd", "rwd", "awd_fixed", "awd_center"],
     ev:         ["fwd", "rwd", "awd_fixed", "awd_center", "tv"],
@@ -701,23 +868,23 @@ const POWERTRAIN = {
     series:     ["fwd", "rwd", "awd_fixed"],
     powersplit: ["fwd", "rwd", "awd_fixed", "awd_center"]
   },
-  DRIVE_ZH: { fwd: "前驱 FWD", rwd: "后驱 RWD", awd_fixed: "四驱 固定分裂", awd_center: "四驱 中央差速", tv: "双电机扭矩矢量 TV" },
-  GB_TYPES: [["manual", "手动 MT"], ["auto", "自动 AT"], ["dct", "双离合 DCT"], ["seq", "序列式 SEQ"], ["cvt", "无级 CVT"]],
-  DIFF_TYPES: [["open", "开放式"], ["lsd", "限滑 LSD"], ["locked", "锁止"]],
-  /* 表单缺省块：勾选启用时填入 sane 值（不写 baseRpm——由 P/T 拐点导出） */
+  DRIVE_ZH: { fwd: "Front-wheel drive (FWD)", rwd: "Rear-wheel drive (RWD)", awd_fixed: "AWD, fixed split", awd_center: "AWD, center diff", tv: "Twin-motor torque vectoring (TV)" },
+  GB_TYPES: [["manual", "Manual (MT)"], ["auto", "Automatic (AT)"], ["dct", "Dual-clutch (DCT)"], ["seq", "Sequential (SEQ)"], ["cvt", "Continuously variable (CVT)"]],
+  DIFF_TYPES: [["open", "Open"], ["lsd", "Limited-slip (LSD)"], ["locked", "Locked"]],
+  /* 表单缺省块：勾选启用时填入 sane 值（不写 baseRpm——由 P/T 拐点导出）  — form default blocks: sane values filled in when the user checks "enable" (no baseRpm — derived from the P/T knee) */
   MOTOR_DEF: { peakTorqueNm: 300, peakPowerKw: 150, maxRpm: 12000, regenMaxKw: 100, inertia: 0.1 },
-  BAT_DEF: { capacityKwh: 20, soc0: 0.8, maxDischargeKw: 0, maxChargeKw: 0 },   // 0 = 不限
-  /* 中央差速表单缺省（编辑时填入；lockNm=0 = 纯 splitFront，slipRefRadS = 满锁速差） */
+  BAT_DEF: { capacityKwh: 20, soc0: 0.8, maxDischargeKw: 0, maxChargeKw: 0 },   // 0 = 不限 — 0 = unbounded
+  /* 中央差速表单缺省（编辑时填入；lockNm=0 = 纯 splitFront，slipRefRadS = 满锁速差）  — center-diff form defaults (filled on edit; lockNm=0 = pure splitFront, slipRefRadS = full-lock speed difference) */
   defaultCenterDiff() { return { lockNm: 0, slipRefRadS: 8 }; },
 
   archZh(k) { const a = this.ARCHS.filter(x => x.k === k)[0]; return a ? a.zh + " " + a.en : String(k || "?"); },
-  /* 电机恒扭矩→恒功率拐点（rpm）= 30·P·1000/(π·T) = 9549.3·P/T，与 validate 的 I-1 同式 */
+  /* 电机恒扭矩→恒功率拐点（rpm）= 30·P·1000/(π·T) = 9549.3·P/T，与 validate 的 I-1 同式  — motor constant-torque→constant-power knee (rpm) = 30·P·1000/(π·T) = 9549.3·P/T, same formula as validate I-1 */
   kneeRpm(m) {
     if (!m || !(m.peakTorqueNm > 0) || !(m.peakPowerKw > 0)) return 0;
     return 30 * m.peakPowerKw * 1000 / (Math.PI * m.peakTorqueNm);
   },
   drivesFor(arch) { const l = this.DRIVES[arch]; return l ? l.slice() : ["fwd", "rwd", "awd_fixed"]; },
-  /* 用户可输入的预设名会进 innerHTML / option 文本 → 转义，不信任 localStorage 回读值 */
+  /* 用户可输入的预设名会进 innerHTML / option 文本 → 转义，不信任 localStorage 回读值  — user-entered preset names end up in innerHTML / option text → escape; never trust localStorage read-back values */
   _esc(s) {
     return String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g,
       c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -725,7 +892,7 @@ const POWERTRAIN = {
   _el(id) { try { return (typeof document !== "undefined") ? document.getElementById(id) : null; } catch (e) { return null; } },
   _setVal(id, v) { const e = this._el(id); if (e) e.value = v; },
   _getVal(id) { const e = this._el(id); return e ? e.value : ""; },
-  /* 空/非法输入 → 回退旧值（表单自愈，不把 NaN 写进草稿） */
+  /* 空/非法输入 → 回退旧值（表单自愈，不把 NaN 写进草稿）  — empty/invalid input → fall back to the old value (form self-healing; never write NaN into the draft) */
   _num(id, dflt) { const v = parseFloat(this._getVal(id)); return Number.isFinite(v) ? v : dflt; },
   _setChk(id, b) { const e = this._el(id); if (e) e.checked = !!b; },
   _getChk(id) { const e = this._el(id); return !!(e && e.checked); },
@@ -736,14 +903,14 @@ const POWERTRAIN = {
       this._modal = this.buildModal();
       try { document.body.appendChild(this._modal); } catch (e) { console.warn("POWERTRAIN modal mount failed:", e); }
     }
-    /* 草稿 = 当前生效规格的深拷贝：取消即丢弃，应用才 setSpec */
+    /* 草稿 = 当前生效规格的深拷贝：取消即丢弃，应用才 setSpec  — the draft = a deep copy of the live spec: cancel discards it; only Apply calls setSpec */
     this._draft = JSON.parse(JSON.stringify(this.spec || this.defaultSpec()));
     this.renderForm();
     if (this._modal && this._modal.style) this._modal.style.display = "flex";
   },
   close() { if (this._modal && this._modal.style) this._modal.style.display = "none"; },
 
-  /* ── 表单控件生成器（样式与轮胎工坊同风格暗色面板） ── */
+  /* ── 表单控件生成器（样式与轮胎工坊同风格暗色面板） ──  — form control builders (styling matches the Tire Lab dark panel) ── */
   _numRow(id, label, step, min, max, unit) {
     return `<label style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:2px 0;">
       <span style="font:10px var(--font-ui);color:#8b949e;">${label}${unit ? " <i style=\"font-style:normal;color:#6e7681;\">" + unit + "</i>" : ""}</span>
@@ -770,7 +937,7 @@ const POWERTRAIN = {
       <div style="font:700 11px var(--font-ui);color:#58a6ff;margin-bottom:4px;">${title}${extra || ""}</div>${body}</div>`;
   },
 
-  /* ── 左栏：架构 7 卡片 → 驱动形式 → ICE(+map) → motor×2 → battery ── */
+  /* ── 左栏：架构 7 卡片 → 驱动形式 → ICE(+map) → motor×2 → battery ──  — left column: 7 architecture cards → drive type → ICE(+map) → motor×2 → battery ── */
   leftColumnHTML(arch) {
     const cards = this.ARCHS.map(a =>
       `<label title="${this._esc(a.hint)}" style="display:inline-flex;align-items:center;gap:4px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:3px 7px;margin:2px 2px 0 0;cursor:pointer;">
@@ -780,83 +947,85 @@ const POWERTRAIN = {
     const driveOpts = this.drivesFor(arch).map(d => [d, this.DRIVE_ZH[d] || d]);
     const iceBody =
       `<div style="display:flex;gap:8px;">
-        <div style="flex:1;">${this._numRow("pt_ice_cyl", "缸数", 1, 1, 16, "")}${this._txtRow("pt_ice_layout", "布局", 60)}${this._numRow("pt_ice_dispL", "排量", 0.05, 0.05, 20, "L")}${this._numRow("pt_ice_inertia", "转动惯量", 0.01, 0, 10, "kg·m²")}${this._numRow("pt_ice_throttleTau", "油门时间常数", 0.01, 0, 2, "s")}</div>
-        <div style="flex:1;">${this._numRow("pt_ice_idleRpm", "怠速", 50, 200, 4000, "rpm")}${this._numRow("pt_ice_redlineRpm", "红线", 100, 1000, 25000, "rpm")}${this._numRow("pt_ice_fuelCutRpm", "断油", 100, 1000, 26000, "rpm")}${this._numRow("pt_ice_fricA", "摩擦 A", 0.5, undefined, undefined, "N·m")}${this._numRow("pt_ice_fricB", "摩擦 B", 0.0005, undefined, undefined, "N·m/rpm")}${this._numRow("pt_ice_fricC", "摩擦 C", 1e-7, undefined, undefined, "N·m/rpm²")}</div>
+        <div style="flex:1;">${this._numRow("pt_ice_cyl", "Cylinders", 1, 1, 16, "")}${this._txtRow("pt_ice_layout", "Layout", 60)}${this._numRow("pt_ice_dispL", "Displacement", 0.05, 0.05, 20, "L")}${this._numRow("pt_ice_inertia", "Rotational inertia", 0.01, 0, 10, "kg·m²")}${this._numRow("pt_ice_throttleTau", "Throttle time constant", 0.01, 0, 2, "s")}</div>
+        <div style="flex:1;">${this._numRow("pt_ice_idleRpm", "Idle", 50, 200, 4000, "rpm")}${this._numRow("pt_ice_redlineRpm", "Redline", 100, 1000, 25000, "rpm")}${this._numRow("pt_ice_fuelCutRpm", "Fuel cut", 100, 1000, 26000, "rpm")}${this._numRow("pt_ice_fricA", "Friction A", 0.5, undefined, undefined, "N·m")}${this._numRow("pt_ice_fricB", "Friction B", 0.0005, undefined, undefined, "N·m/rpm")}${this._numRow("pt_ice_fricC", "Friction C", 1e-7, undefined, undefined, "N·m/rpm²")}</div>
       </div>
-      <div style="font:10px var(--font-ui);color:#8b949e;margin:6px 0 2px;">扭矩特性图 map（控制点 JSON，rpm 升序；插值见 mapLookup）</div>
+      <div style="font:10px var(--font-ui);color:#8b949e;margin:6px 0 2px;">Torque map (control-point JSON, rpm ascending; interpolation in mapLookup)</div>
       <textarea id="pt_ice_map" rows="3" spellcheck="false" style="width:100%;box-sizing:border-box;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:4px 6px;font:10px monospace;"></textarea>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:3px;">
-        <span id="pt_ice_mapHint" style="font:10px monospace;color:#8b949e;">格式 [[rpm, N·m], …]</span>
-        <button id="ptMapApply" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:2px 9px;cursor:pointer;font:600 10px var(--font-ui);">应用 map</button>
+        <span id="pt_ice_mapHint" style="font:10px monospace;color:#8b949e;">Format [[rpm, N·m], …]</span>
+        <button id="ptMapApply" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:2px 9px;cursor:pointer;font:600 10px var(--font-ui);">Apply map</button>
       </div>`;
-    return `${this._secBox("", "架构 ARCHITECTURE", `<div>${cards}</div>` + this._selRow("pt_drive", "驱动形式", driveOpts))}
-      ${this._secBox("ptSecIce", "内燃机 ICE（曲轴端）", iceBody)}
-      ${this._secBox("ptSecMotorF", "前电机 MOTOR-F", this.motorBlockHTML("motorF"))}
-      ${this._secBox("ptSecMotorR", "后电机 MOTOR-R", this.motorBlockHTML("motorR"))}
-      ${this._secBox("ptSecBat", "电池 BATTERY", this.batteryBlockHTML())}`;
+    return `${this._secBox("", "Architecture", `<div>${cards}</div>` + this._selRow("pt_drive", "Drive type", driveOpts))}
+      ${this._secBox("ptSecIce", "ICE engine (crankshaft side)", iceBody)}
+      ${this._secBox("ptSecMotorF", "Front motor (MOTOR-F)", this.motorBlockHTML("motorF"))}
+      ${this._secBox("ptSecMotorR", "Rear motor (MOTOR-R)", this.motorBlockHTML("motorR"))}
+      ${this._secBox("ptSecBat", "Battery", this.batteryBlockHTML())}`;
   },
   motorBlockHTML(key) {
     return `<label style="display:inline-flex;align-items:center;gap:5px;margin-bottom:4px;cursor:pointer;">
-        <input id="pt_${key}_on" type="checkbox" style="margin:0;"><span style="font:10px var(--font-ui);color:#7ee787;">启用该电机</span>
+        <input id="pt_${key}_on" type="checkbox" style="margin:0;"><span style="font:10px var(--font-ui);color:#7ee787;">Enable this motor</span>
       </label>` +
-      this._numRow(`pt_${key}_peakTorqueNm`, "峰值扭矩", 5, 0, 5000, "N·m") +
-      this._numRow(`pt_${key}_peakPowerKw`, "峰值功率", 1, 0, 3000, "kW") +
-      this._numRow(`pt_${key}_baseRpm`, "基速（拐点）", 10, 0, 60000, "rpm") +
-      this._numRow(`pt_${key}_maxRpm`, "最高转速", 100, 0, 60000, "rpm") +
-      this._numRow(`pt_${key}_regenMaxKw`, "回收功率上限", 1, 0, 3000, "kW") +
-      this._numRow(`pt_${key}_inertia`, "转动惯量", 0.01, 0, 10, "kg·m²") +
+      this._numRow(`pt_${key}_peakTorqueNm`, "Peak torque", 5, 0, 5000, "N·m") +
+      this._numRow(`pt_${key}_peakPowerKw`, "Peak power", 1, 0, 3000, "kW") +
+      this._numRow(`pt_${key}_baseRpm`, "Base speed (knee)", 10, 0, 60000, "rpm") +
+      this._numRow(`pt_${key}_maxRpm`, "Max speed", 100, 0, 60000, "rpm") +
+      this._numRow(`pt_${key}_regenMaxKw`, "Regen power limit", 1, 0, 3000, "kW") +
+      this._numRow(`pt_${key}_inertia`, "Rotational inertia", 0.01, 0, 10, "kg·m²") +
       `<div id="pt_${key}_knee" style="font:10px monospace;color:#8b949e;margin-top:3px;"></div>`;
   },
   batteryBlockHTML() {
     return `<label style="display:inline-flex;align-items:center;gap:5px;margin-bottom:4px;cursor:pointer;">
-        <input id="pt_bat_on" type="checkbox" style="margin:0;"><span style="font:10px var(--font-ui);color:#d29922;">携带电池（电气化架构必需）</span>
+        <input id="pt_bat_on" type="checkbox" style="margin:0;"><span style="font:10px var(--font-ui);color:#d29922;">Carry battery (required for electrified architectures)</span>
       </label>` +
-      this._numRow("pt_bat_capacityKwh", "容量", 0.5, 0.1, 500, "kWh") +
-      this._numRow("pt_bat_soc0", "初始 SOC", 0.05, 0, 1, "0–1") +
-      this._numRow("pt_bat_maxDischargeKw", "放电上限（0=不限）", 5, 0, 5000, "kW") +
-      this._numRow("pt_bat_maxChargeKw", "充电上限（0=不限）", 5, 0, 5000, "kW");
+      this._numRow("pt_bat_capacityKwh", "Capacity", 0.5, 0.1, 500, "kWh") +
+      this._numRow("pt_bat_soc0", "Initial SOC", 0.05, 0, 1, "0–1") +
+      this._numRow("pt_bat_maxDischargeKw", "Discharge limit (0 = unbounded)", 5, 0, 5000, "kW") +
+      this._numRow("pt_bat_maxChargeKw", "Charge limit (0 = unbounded)", 5, 0, 5000, "kW");
   },
 
   /* ── 右栏：内置预设载入 + gearbox（逐行挡位可增删）+ diff + 中央差速 ── */
   rightColumnHTML() {
     const presetNames = Object.keys(POWERTRAIN_PRESETS);
-    const presetBody = this._selRow("ptPresetPick", "内置预设", presetNames.map(n => [n, n])) +
-      `<button id="ptPresetLoad" style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:3px 9px;cursor:pointer;font:600 10px var(--font-ui);margin-top:2px;">载入到草稿（不立即生效）</button>`;
-    const gbBody = this._selRow("pt_gb_type", "变速箱类型", this.GB_TYPES) +
-      `<div style="font:10px var(--font-ui);color:#8b949e;margin:5px 0 2px;">挡位传动比（逐行编辑）</div>
+    const presetBody = this._selRow("ptPresetPick", "Built-in preset", presetNames.map(n => [n, n])) +
+      `<button id="ptPresetLoad" style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:3px 9px;cursor:pointer;font:600 10px var(--font-ui);margin-top:2px;">Load into draft (not applied immediately)</button>`;
+    const gbBody = this._selRow("pt_gb_type", "Gearbox type", this.GB_TYPES) +
+      `<div style="font:10px var(--font-ui);color:#8b949e;margin:5px 0 2px;">Gear ratios (edit row by row)</div>
        <input id="pt_gb_rn" type="hidden">
        <div id="ptRatios"></div>
-       <button id="ptRatioAdd" style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:2px 9px;cursor:pointer;font:600 10px var(--font-ui);margin-top:3px;">＋ 加一挡</button>` +
-      this._numRow("pt_gb_finalDrive", "主减速比", 0.01, 0.05, 30, "") +
-      this._numRow("pt_gb_shiftTimeMs", "换挡时间", 5, 0, 2000, "ms") +
-      this._numRow("pt_gb_eff", "传动效率", 0.005, 0.5, 1, "") +
-      this._numRow("pt_gb_autoUpFrac", "自动升挡转速比", 0.01, 0.05, 1, "×红线") +
-      this._numRow("pt_gb_autoDownFrac", "自动降挡转速比", 0.01, 0.02, 1, "×红线");
-    const diffBody = this._selRow("pt_diff_type", "差速器类型", this.DIFF_TYPES) +
-      this._numRow("pt_diff_bias", "扭矩偏置比", 0.1, 1, 10, "") +
-      this._numRow("pt_diff_lockNm", "锁止预紧", 1, 0, 3000, "N·m") +
-      `<div id="ptRowDiffSlipRef">${this._numRow("pt_diff_slipRefRadS", "满锁速差", 0.5, 0.1, 100, "rad/s")}</div>`;
+       <button id="ptRatioAdd" style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:2px 9px;cursor:pointer;font:600 10px var(--font-ui);margin-top:3px;">＋ Add gear</button>` +
+      this._numRow("pt_gb_finalDrive", "Final drive ratio", 0.01, 0.05, 30, "") +
+      this._numRow("pt_gb_shiftTimeMs", "Shift time", 5, 0, 2000, "ms") +
+      this._numRow("pt_gb_eff", "Drivetrain efficiency", 0.005, 0.5, 1, "") +
+      this._numRow("pt_gb_autoUpFrac", "Auto upshift rpm ratio", 0.01, 0.05, 1, "× redline") +
+      this._numRow("pt_gb_autoDownFrac", "Auto downshift rpm ratio", 0.01, 0.02, 1, "× redline");
+    const diffBody = this._selRow("pt_diff_type", "Differential type", this.DIFF_TYPES) +
+      this._numRow("pt_diff_bias", "Torque bias ratio", 0.1, 1, 10, "") +
+      this._numRow("pt_diff_lockNm", "Lock preload (breakaway)", 1, 0, 3000, "N·m") +
+      `<div id="ptRowDiffSlipRef">${this._numRow("pt_diff_slipRefRadS", "Full-lock speed difference", 0.5, 0.1, 100, "rad/s")}</div>`;
     /* T3：内置预设的限滑参数是【文献量级、未标定】——标题上挂常驻提示，别让用户
-       把 1.6 / 25 N·m 当成实件值用。悬停给回填口径（台架测什么、回填哪个字段）。 */
-    const diffHint = ` <span title="内置预设的限滑参数取自文献区间（TBR 1.4~2.0 / breakaway 预紧 20~50 N·m），未按实件校正。台架或实车标定后回填：bias←实测 TBR、lockNm←实测 breakaway 扭矩、slipRefRadS←实测满锁速差。" style="font:400 9px var(--font-ui);color:#d29922;cursor:help;">⚠ 未标定</span>`;
-    const centerBody = this._numRow("pt_splitFront", "前轴扭矩分配", 0.01, 0, 1, "0–1") +
+       把 1.6 / 25 N·m 当成实件值用。悬停给回填口径（台架测什么、回填哪个字段）。
+       — T3: the built-in presets’ LSD parameters are [literature-range, not calibrated] — a persistent hint on the title so users
+       never treat 1.6 / 25 N·m as measured hardware values. The hover text gives the backfill procedure (what to bench-measure, which field to fill). */
+    const diffHint = ` <span title="LSD parameters of built-in presets are literature-range values (TBR 1.4~2.0 / breakaway preload 20~50 N·m), not calibrated against real hardware. After bench or vehicle calibration, backfill: bias←measured TBR, lockNm←measured breakaway torque, slipRefRadS←measured full-lock speed difference." style="font:400 9px var(--font-ui);color:#d29922;cursor:help;">⚠ Not calibrated</span>`;
+    const centerBody = this._numRow("pt_splitFront", "Front axle torque split", 0.01, 0, 1, "0–1") +
       `<div id="ptSecCenterDiff">` +
-      `<div style="font:10px var(--font-ui);color:#8b949e;margin:5px 0 2px;">中央差速锁止（仅 awd_center 生效）</div>` +
-      this._numRow("pt_cd_lockNm", "中央锁止扭矩", 1, 0, 3000, "N·m") +
-      this._numRow("pt_cd_slipRefRadS", "中央满锁速差", 0.5, 0.1, 100, "rad/s") +
+      `<div style="font:10px var(--font-ui);color:#8b949e;margin:5px 0 2px;">Center diff locking (only active for awd_center)</div>` +
+      this._numRow("pt_cd_lockNm", "Center lock torque", 1, 0, 3000, "N·m") +
+      this._numRow("pt_cd_slipRefRadS", "Center full-lock speed difference", 0.5, 0.1, 100, "rad/s") +
       `</div>`;
-    return `${this._secBox("", "内置预设 BUILTIN", presetBody)}
-      ${this._secBox("", "变速箱 GEARBOX", gbBody)}
-      ${this._secBox("", "差速器 DIFF", diffBody, diffHint)}
-      ${this._secBox("ptSecCenter", "中央差速 CENTER（四驱）", centerBody)}`;
+    return `${this._secBox("", "Built-in presets", presetBody)}
+      ${this._secBox("", "Gearbox", gbBody)}
+      ${this._secBox("", "Differential", diffBody, diffHint)}
+      ${this._secBox("ptSecCenter", "Center differential (AWD)", centerBody)}`;
   },
   ratiosHTML(n) {
     let rows = "";
     for (let i = 0; i < n; i++) {
       rows += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
-        <span style="width:30px;font:10px monospace;color:#8b949e;">${i + 1} 挡</span>
+        <span style="width:30px;font:10px monospace;color:#8b949e;">Gear ${i + 1}</span>
         <input id="pt_gb_r${i}" type="number" step="0.01" min="0.05" style="flex:1;min-width:0;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 5px;font:11px monospace;text-align:right;">
-        <button data-pt-rdel="${i}" title="删除该挡" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:0 6px;cursor:pointer;font:11px var(--font-ui);">−</button>
+        <button data-pt-rdel="${i}" title="Delete this gear" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:0 6px;cursor:pointer;font:11px var(--font-ui);">−</button>
       </div>`;
     }
     return rows;
@@ -865,12 +1034,12 @@ const POWERTRAIN = {
   buildModal() {
     const m = document.createElement("div");
     m.id = "powertrainModal";
-    /* M-3：响应式——窄屏不溢出 */
+    /* M-3：响应式——窄屏不溢出  — M-3: responsive — no overflow on narrow screens */
     m.style.cssText = "position:fixed;inset:0;z-index:400;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);";
     m.innerHTML = `<div style="width:880px;max-width:95vw;max-height:90vh;overflow:auto;background:#0d1117;border:1px solid #30363d;border-radius:12px;padding:16px;color:#e6edf3;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">
-        <b style="font:700 15px var(--font-ui);">🔧 动力工坊 POWERTRAIN LAB</b>
-        <span style="flex:1;font:10px var(--font-ui);color:#8b949e;">架构 · 动力源 · 传动链 · 实时扭矩/功率曲线预览</span>
+        <b style="font:700 15px var(--font-ui);">🔧 Powertrain Lab</b>
+        <span style="flex:1;font:10px var(--font-ui);color:#8b949e;">Architecture · power sources · drivetrain · live torque/power curve preview</span>
         <button id="ptClose" style="background:none;border:none;color:#8b949e;font-size:16px;cursor:pointer;">✕</button>
       </div>
       <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -881,14 +1050,16 @@ const POWERTRAIN = {
       <div id="ptDerived" style="font:10px monospace;color:#8b949e;margin-top:4px;min-height:14px;"></div>
       <div id="ptSavedList" style="margin-top:6px;"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
-        <button id="ptRestore" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">恢复内置</button>
-        <button id="ptSave" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">保存预设</button>
-        <button id="ptCancel" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">取消</button>
-        <button id="ptApply" style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:6px;padding:5px 14px;cursor:pointer;font:700 11px var(--font-ui);">应用 APPLY</button>
+        <button id="ptRestore" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Restore built-in</button>
+        <button id="ptSave" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Save preset</button>
+        <button id="ptCancel" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:5px 12px;cursor:pointer;font:600 11px var(--font-ui);">Cancel</button>
+        <button id="ptApply" style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:6px;padding:5px 14px;cursor:pointer;font:700 11px var(--font-ui);">Apply</button>
       </div>
     </div>`;
     /* G29 教训：此刻 m 尚未插入文档，document.getElementById 找不到 innerHTML 内元素；
-       用 m.querySelector 子树查找（未连接状态也能命中，真实浏览器 + 沙箱桩均安全） */
+       用 m.querySelector 子树查找（未连接状态也能命中，真实浏览器 + 沙箱桩均安全）
+       — G29 lesson: at this point m is not yet in the document, so document.getElementById cannot find the innerHTML elements;
+       query the m.querySelector subtree instead (matches even when disconnected — safe in real browsers and sandbox stubs alike) */
     try {
       const q = id => m.querySelector("#" + id);
       q("ptClose").onclick = () => this.close();
@@ -897,7 +1068,9 @@ const POWERTRAIN = {
       q("ptSave").onclick = () => this.saveFromForm();
       q("ptRestore").onclick = () => this.restoreBuiltin();
       /* G31-P9：canvas 拖拽控制点——mousedown 命中、mousemove 拖动、mouseup 结束回写。
-         坐标归一：优先 offsetX/offsetY，缺失用 getBoundingClientRect 差值（沙箱 stub 不触发）。 */
+         坐标归一：优先 offsetX/offsetY，缺失用 getBoundingClientRect 差值（沙箱 stub 不触发）。
+         — G31-P9: canvas drag control points — mousedown hit-test, mousemove drag, mouseup finish + write-back.
+         Coordinate normalization: prefer offsetX/offsetY; when missing use getBoundingClientRect deltas (sandbox stubs never fire it). */
       const cv = q("ptCurve");
       if (cv && typeof cv.addEventListener === "function") {
         const pos = (e) => {
@@ -914,7 +1087,10 @@ const POWERTRAIN = {
     } catch (e) { console.warn("POWERTRAIN modal bind failed:", e); }
     /* 实时预览：任何 input/change → readForm →（架构变了才重建栏位）→ 派生量 + 曲线重绘
        M-1：rAF 节流——连续快速 onEdit 只触发一次 updateDerived+drawCurve；
-       沙箱无 requestAnimationFrame 时回退直接调用（typeof 守卫）。 */
+       沙箱无 requestAnimationFrame 时回退直接调用（typeof 守卫）。
+       — live preview: any input/change → readForm → (fields rebuilt only when the architecture changed) → derived readouts + curve redraw.
+       M-1: rAF throttling — rapid consecutive onEdit calls trigger updateDerived+drawCurve only once;
+       when the sandbox has no requestAnimationFrame, fall back to a direct call (typeof guard). */
     try {
       const onEdit = () => {
         const bArch = this._draft ? this._draft.architecture : null;
@@ -923,7 +1099,9 @@ const POWERTRAIN = {
         this.readForm();
         const dd = this._draft;
         /* 架构 / 驱动形式 / 差速器类型变更 → 重建栏位（刷新 centerDiff、slipRefRadS 显隐）；
-           三者均为下拉选择，重建不丢文本焦点。 */
+           三者均为下拉选择，重建不丢文本焦点。
+           — architecture / drive type / differential type change → rebuild the fields (refreshing centerDiff and slipRefRadS visibility);
+           all three are dropdown selects, so rebuilding never loses text focus. */
         if (dd && (dd.architecture !== bArch || dd.drive !== bDrive || (dd.diff ? dd.diff.type : null) !== bDiff)) { this.renderForm(); return; }
         if (typeof requestAnimationFrame === "function") {
           if (this._rafPending) return;
@@ -944,7 +1122,10 @@ const POWERTRAIN = {
 
   /* ── renderForm：草稿 → DOM（栏位重建 + 写值 + 局部事件绑定 + 重绘）──
      重建时机：open() / 架构变更 / 挡位增删 / 载入预设。普通数值输入不重建
-     （只走 readForm+drawCurve），避免打字中焦点丢失。 */
+     （只走 readForm+drawCurve），避免打字中焦点丢失。
+     — renderForm: draft → DOM (field rebuild + value write + local event binding + redraw) ──
+     Rebuild timing: open() / architecture change / gear add-delete / preset load. Ordinary numeric inputs do not rebuild
+     (they only go through readForm+drawCurve), so typing never loses focus. */
   renderForm() {
     const d = this._draft || (this._draft = JSON.parse(JSON.stringify(this.spec || this.defaultSpec())));
     const arch = this.ARCHS.some(a => a.k === d.architecture) ? d.architecture : "ice";
@@ -952,13 +1133,13 @@ const POWERTRAIN = {
     const L = this._el("ptLeft"), R = this._el("ptRight");
     if (L) L.innerHTML = this.leftColumnHTML(arch);
     if (R) R.innerHTML = this.rightColumnHTML();
-    /* 架构 radio（同 name 互斥，浏览器自行保证单选） */
+    /* 架构 radio（同 name 互斥，浏览器自行保证单选）  — architecture radios (shared name, mutually exclusive; the browser enforces single selection) */
     this.ARCHS.forEach(a => this._setChk("pt_arch_" + a.k, a.k === arch));
-    /* 驱动形式：不在本架构白名单内 → 钳到首选（tv 需双电机，series 无中央差速） */
+    /* 驱动形式：不在本架构白名单内 → 钳到首选（tv 需双电机，series 无中央差速）  — drive type: not in this architecture’s whitelist → clamp to the default (tv needs both motors; series has no center diff) */
     const ds = this.drivesFor(arch);
     if (!ds.includes(d.drive)) d.drive = ds.includes("awd_fixed") && d.drive && d.drive.indexOf("awd") === 0 ? "awd_fixed" : ds[0];
     this._setVal("pt_drive", d.drive);
-    /* ICE（ev 时隐藏但仍写值：切回 ice 时不丢上次参数） */
+    /* ICE（ev 时隐藏但仍写值：切回 ice 时不丢上次参数）  — ICE section (hidden under ev but values still written: switching back to ice keeps the last parameters) */
     const ice = d.ice || this.defaultSpec().ice;
     this._setVal("pt_ice_cyl", ice.cyl); this._setVal("pt_ice_layout", ice.layout);
     this._setVal("pt_ice_dispL", ice.dispL); this._setVal("pt_ice_idleRpm", ice.idleRpm);
@@ -968,14 +1149,14 @@ const POWERTRAIN = {
     this._setVal("pt_ice_fricC", ice.fricC || 0); this._setVal("pt_ice_inertia", ice.inertia || 0);
     this._setVal("pt_ice_throttleTau", ice.throttleTau || 0);
     this._setVal("pt_ice_map", JSON.stringify(Array.isArray(ice.map) ? ice.map : []));
-    this._mapErr = null;   // textarea 已由草稿重写 → 旧的解析错误作废
-    /* motor×2：未启用也写 MOTOR_DEF，使「勾选即得合理值」 */
+    this._mapErr = null;   // textarea 已由草稿重写 → 旧的解析错误作废 — the textarea was rewritten from the draft → any old parse error is void
+    /* motor×2：未启用也写 MOTOR_DEF，使「勾选即得合理值」  — motor×2: write MOTOR_DEF even when not enabled, so checking the box instantly yields sane values */
     for (const k of ["motorF", "motorR"]) {
       const m = d[k] || null, src = m || this.MOTOR_DEF;
       this._setChk("pt_" + k + "_on", !!m);
       this._setVal(`pt_${k}_peakTorqueNm`, src.peakTorqueNm);
       this._setVal(`pt_${k}_peakPowerKw`, src.peakPowerKw);
-      /* baseRpm 缺省 = P/T 拐点（motorTorque 不读它，仅 validate 校一致性） */
+      /* baseRpm 缺省 = P/T 拐点（motorTorque 不读它，仅 validate 校一致性）  — baseRpm default = the P/T knee (motorTorque never reads it; only validate checks consistency) */
       this._setVal(`pt_${k}_baseRpm`, (m && m.baseRpm !== undefined) ? m.baseRpm : Math.round(this.kneeRpm(src)));
       this._setVal(`pt_${k}_maxRpm`, src.maxRpm);
       this._setVal(`pt_${k}_regenMaxKw`, src.regenMaxKw !== undefined ? src.regenMaxKw : src.peakPowerKw);
@@ -987,7 +1168,7 @@ const POWERTRAIN = {
     this._setVal("pt_bat_soc0", bsrc.soc0 !== undefined ? bsrc.soc0 : 0.8);
     this._setVal("pt_bat_maxDischargeKw", bsrc.maxDischargeKw !== undefined ? bsrc.maxDischargeKw : 0);
     this._setVal("pt_bat_maxChargeKw", bsrc.maxChargeKw !== undefined ? bsrc.maxChargeKw : 0);
-    /* gearbox：挡位数写入隐藏计数域（readForm 的唯一行数真相源）+ 逐行 input */
+    /* gearbox：挡位数写入隐藏计数域（readForm 的唯一行数真相源）+ 逐行 input  — gearbox: the gear count goes into the hidden counter field (the single source of truth for row count in readForm) + per-row inputs */
     const g = d.gearbox || this.defaultSpec().gearbox;
     const ratios = (Array.isArray(g.ratios) && g.ratios.length) ? g.ratios : [1];
     const rb = this._el("ptRatios");
@@ -1015,7 +1196,7 @@ const POWERTRAIN = {
     this.drawCurve();
   },
 
-  /* 栏位内动态按钮（innerHTML 重建后需重绑；用 onclick 赋值而非 addEventListener，不累积） */
+  /* 栏位内动态按钮（innerHTML 重建后需重绑；用 onclick 赋值而非 addEventListener，不累积）  — dynamic in-field buttons (must rebind after innerHTML rebuilds; assign via onclick, not addEventListener, so handlers never accumulate) */
   bindFormButtons() {
     const mb = this._el("ptMapApply");
     if (mb) mb.onclick = () => { this.readForm(); this.updateDerived(); this.drawCurve(); };
@@ -1032,7 +1213,7 @@ const POWERTRAIN = {
       btn.onclick = () => this.deleteRatioRow(idx);
     }
   },
-  /* 按架构/驱动形式显隐分区：ev 无 ICE；ice 无电机/电池；非四驱无中央差速 */
+  /* 按架构/驱动形式显隐分区：ev 无 ICE；ice 无电机/电池；非四驱无中央差速  — show/hide sections by architecture/drive type: ev has no ICE; ice has no motors/battery; non-AWD has no center diff */
   syncVisibility() {
     const d = this._draft || {};
     const arch = d.architecture || "ice", elec = arch !== "ice";
@@ -1041,28 +1222,28 @@ const POWERTRAIN = {
     this._show("ptSecMotorR", elec);
     this._show("ptSecBat", elec);
     this._show("ptSecCenter", d.drive === "awd_fixed" || d.drive === "awd_center");
-    /* G31-P10-1：中央差速锁止字段仅 awd_center；差速器满锁速差仅 lsd（locked 用载荷分配、open 用 50/50，均不需 slipRef） */
+    /* G31-P10-1：中央差速锁止字段仅 awd_center；差速器满锁速差仅 lsd（locked 用载荷分配、open 用 50/50，均不需 slipRef）  — G31-P10-1: center-diff lock fields only for awd_center; the differential full-lock speed difference only for lsd (locked allocates by load, open uses 50/50 — neither needs slipRef) */
     this._show("ptSecCenterDiff", d.drive === "awd_center");
     this._show("ptRowDiffSlipRef", !!(d.diff && d.diff.type === "lsd"));
   },
 
-  /* ── readForm：DOM → 草稿（带自愈：空值回退旧值、红线/断油/分配比钳位）── */
+  /* ── readForm：DOM → 草稿（带自愈：空值回退旧值、红线/断油/分配比钳位）──  — readForm: DOM → draft (with self-healing: empty values fall back to old values; redline / fuel-cut / split-ratio clamped) ── */
   readForm() {
     const d = this._draft || (this._draft = this.defaultSpec());
-    /* 架构 radio */
+    /* 架构 radio  — architecture radios */
     let arch = d.architecture;
     for (const a of this.ARCHS) if (this._getChk("pt_arch_" + a.k)) arch = a.k;
     d.architecture = arch;
-    /* 驱动形式（非白名单值 → 保留旧值或首选） */
+    /* 驱动形式（非白名单值 → 保留旧值或首选）  — drive type (non-whitelist value → keep the old value or the default) */
     const ds = this.drivesFor(arch), dv = String(this._getVal("pt_drive") || "");
     d.drive = ds.includes(dv) ? dv : (ds.includes(d.drive) ? d.drive : ds[0]);
     d.splitFront = Math.max(0, Math.min(1, this._num("pt_splitFront", d.splitFront)));
-    /* ICE：ev 架构必须无 ice（validate M-1）；其余架构空块→默认块 */
+    /* ICE：ev 架构必须无 ice（validate M-1）；其余架构空块→默认块  — ICE: the ev architecture must have no ice (validate M-1); an empty block under other architectures → default block */
     if (arch === "ev") d.ice = null;
     else {
       const prev = d.ice || this.defaultSpec().ice;
       const idle = this._num("pt_ice_idleRpm", prev.idleRpm);
-      /* 自愈：redline > idle（validate ice.rpm）、fuelCut ≥ redline（M-2） */
+      /* 自愈：redline > idle（validate ice.rpm）、fuelCut ≥ redline（M-2）  — self-healing: redline > idle (validate ice.rpm), fuelCut ≥ redline (M-2) */
       const red = Math.max(this._num("pt_ice_redlineRpm", prev.redlineRpm), idle + 1);
       const cut = Math.max(this._num("pt_ice_fuelCutRpm", prev.fuelCutRpm !== undefined ? prev.fuelCutRpm : red), red);
       d.ice = {
@@ -1078,7 +1259,7 @@ const POWERTRAIN = {
         throttleTau: Math.max(0, this._num("pt_ice_throttleTau", prev.throttleTau || 0))
       };
     }
-    /* motor×2：ice 架构禁带电机（validate）；未勾选 → null */
+    /* motor×2：ice 架构禁带电机（validate）；未勾选 → null  — motor×2: the ice architecture forbids motors (validate); unchecked → null */
     for (const k of ["motorF", "motorR"]) {
       const prev = d[k] || this.MOTOR_DEF;
       if (arch === "ice" || !this._getChk("pt_" + k + "_on")) { d[k] = null; continue; }
@@ -1091,11 +1272,13 @@ const POWERTRAIN = {
         inertia: Math.max(0, this._num(`pt_${k}_inertia`, prev.inertia || 0))
       };
       /* baseRpm 仅在 >0 时写入（≤0/缺省 → 不校一致性）；不静默吸附拐点，
-         不一致时由 updateDerived 实时提示 + applyFromForm 的 validate 报错，不隐藏用户意图 */
+         不一致时由 updateDerived 实时提示 + applyFromForm 的 validate 报错，不隐藏用户意图
+         — baseRpm is written only when >0 (≤0/missing → no consistency check); never silently snap to the knee.
+         On mismatch, updateDerived warns in real time and applyFromForm’s validate raises an error — the user’s intent is never hidden. */
       if (base > 0) m.baseRpm = base;
       d[k] = m;
     }
-    /* battery：电气化架构必需（validate）；ice 架构 → null */
+    /* battery：电气化架构必需（validate）；ice 架构 → null  — battery: required for electrified architectures (validate); ice architecture → null */
     if (arch === "ice" || !this._getChk("pt_bat_on")) d.battery = null;
     else {
       const prev = d.battery || this.BAT_DEF;
@@ -1103,14 +1286,14 @@ const POWERTRAIN = {
         capacityKwh: this._num("pt_bat_capacityKwh", prev.capacityKwh),
         soc0: Math.max(0, Math.min(1, this._num("pt_bat_soc0", prev.soc0 !== undefined ? prev.soc0 : 0.8)))
       };
-      /* 0 = 不限：不写入字段（step 中 undefined → Infinity；写 0 会错义为零功率） */
+      /* 0 = 不限：不写入字段（step 中 undefined → Infinity；写 0 会错义为零功率）  — 0 = unbounded: do not write the field (in step, undefined → Infinity; writing 0 would wrongly mean zero power) */
       const md = this._num("pt_bat_maxDischargeKw", prev.maxDischargeKw !== undefined ? prev.maxDischargeKw : 0);
       const mc = this._num("pt_bat_maxChargeKw", prev.maxChargeKw !== undefined ? prev.maxChargeKw : 0);
       if (md > 0) bb.maxDischargeKw = md;
       if (mc > 0) bb.maxChargeKw = mc;
       d.battery = bb;
     }
-    /* gearbox：行数取自隐藏计数域（增删挡时同步），逐行 input 空/非正 → 回退旧值 */
+    /* gearbox：行数取自隐藏计数域（增删挡时同步），逐行 input 空/非正 → 回退旧值  — gearbox: row count comes from the hidden counter field (synced on add/delete), and per-row inputs that are empty/non-positive → fall back to the old value */
     const gp = d.gearbox || this.defaultSpec().gearbox;
     const nRaw = parseInt(this._getVal("pt_gb_rn"), 10);
     const nPrev = (Array.isArray(gp.ratios) && gp.ratios.length) ? gp.ratios.length : 1;
@@ -1139,7 +1322,9 @@ const POWERTRAIN = {
       slipRefRadS: Math.max(1e-3, this._num("pt_diff_slipRefRadS", dp.slipRefRadS !== undefined ? dp.slipRefRadS : 8))
     };
     /* G31-P10-1：中央差速仅在 awd_center 时构建（其余驱动形式无轴间分配）；
-       lockNm=0 = 纯 splitFront，slipRefRadS 为满锁速差。 */
+       lockNm=0 = 纯 splitFront，slipRefRadS 为满锁速差。
+       — G31-P10-1: the center diff is built only for awd_center (other drive types have no inter-axle split);
+       lockNm=0 = pure splitFront, and slipRefRadS is the full-lock speed difference. */
     if (d.drive === "awd_center") {
       const cp = d.centerDiff || this.defaultCenterDiff();
       d.centerDiff = {
@@ -1150,47 +1335,51 @@ const POWERTRAIN = {
     return d;
   },
   /* map textarea → 控制点数组：非法 JSON / 点数<2 / rpm 重复 → 保留旧值并提示（失效安全）；
-     乱序录入自动按 rpm 升序（与 validate 的 ice.map(ascending) 规则一致） */
+     乱序录入自动按 rpm 升序（与 validate 的 ice.map(ascending) 规则一致）
+     — map textarea → control-point array: invalid JSON / fewer than 2 points / duplicate rpm → keep the old value and warn (fail-safe);
+     out-of-order input is sorted by rpm ascending automatically (consistent with the validate ice.map(ascending) rule) */
   readMap(prev) {
     const raw = String(this._getVal("pt_ice_map") || "").trim();
     const keep = () => Array.isArray(prev) ? prev : this.defaultSpec().ice.map;
     /* 校验失败只记 _mapErr，不直接写 hint：hint 的唯一写者是 updateDerived，
-       否则 onEdit 链中随后的 updateDerived 会把 ⚠ 覆盖成概要 → 用户看不到错误（M-8）。 */
+       否则 onEdit 链中随后的 updateDerived 会把 ⚠ 覆盖成概要 → 用户看不到错误（M-8）。
+       — on validation failure only record _mapErr, never write the hint directly: the sole writer of the hint is updateDerived,
+       otherwise the updateDerived later in the onEdit chain would overwrite the ⚠ with the summary → the user never sees the error (M-8). */
     if (!raw) { this._mapErr = null; return keep(); }
     let arr = null;
     try { arr = JSON.parse(raw); } catch (e) { arr = null; }
     if (!Array.isArray(arr) || arr.length < 2 ||
         arr.some(p => !Array.isArray(p) || p.length !== 2 || !(Number(p[0]) > 0) || !(Number(p[1]) >= 0))) {
-      this._mapErr = "map 非法：需 [[rpm, N·m], …] 且 ≥2 点、rpm>0";
+      this._mapErr = "Invalid map: expected [[rpm, N·m], …] with ≥2 points and rpm > 0";
       return keep();
     }
     const out = arr.map(p => [Number(p[0]), Number(p[1])]).sort((a, b) => a[0] - b[0]);
     if (out.some((p, i) => i > 0 && p[0] <= out[i - 1][0])) {
-      this._mapErr = "map rpm 重复：插值分母为零，请删重后重试";
+      this._mapErr = "Duplicate map rpm: interpolation denominator would be zero — remove duplicates and retry";
       return keep();
     }
     this._mapErr = null;
     return out;
   },
 
-  /* 派生量回显：电机拐点一致性 / ICE 峰值与功率 / 传动链概要 */
+  /* 派生量回显：电机拐点一致性 / ICE 峰值与功率 / 传动链概要  — derived readouts: motor knee consistency / ICE peak and power / drivetrain summary */
   updateDerived() {
     const d = this._draft; if (!d) return;
     for (const k of ["motorF", "motorR"]) {
       const e = this._el("pt_" + k + "_knee"); if (!e) continue;
       const m = d[k];
-      if (!m) { e.textContent = "（未启用）"; continue; }
+      if (!m) { e.textContent = "(not enabled)"; continue; }
       const knee = this.kneeRpm(m);
       const bad = (m.baseRpm !== undefined && knee > 0 && Math.abs(m.baseRpm - knee) / m.baseRpm >= 0.05);
       e.textContent = bad
-        ? `⚠ 基速 ${Math.round(m.baseRpm)} rpm 与 P/T 拐点 ${Math.round(knee)} rpm 不一致（需 ±5%）`
-        : `P/T 拐点 ≈ ${Math.round(knee)} rpm（基速需与之一致 ±5%）`;
+        ? `⚠ Base speed ${Math.round(m.baseRpm)} rpm inconsistent with the P/T knee ${Math.round(knee)} rpm (must match within ±5%)`
+        : `P/T knee ≈ ${Math.round(knee)} rpm (base speed must match within ±5%)`;
       e.style.color = bad ? "#f85149" : "#8b949e";
     }
     const ice = d.ice, hint = this._el("pt_ice_mapHint");
     if (hint && this._mapErr) {
-      /* ⚠ 优先于概要：readMap 失效安全地保留了旧 map，必须让用户看见原因 */
-      hint.textContent = `⚠ ${this._mapErr}（已保留原 map：${(ice && Array.isArray(ice.map)) ? ice.map.length : 0} 点）`;
+      /* ⚠ 优先于概要：readMap 失效安全地保留了旧 map，必须让用户看见原因  — ⚠ takes priority over the summary: readMap kept the old map fail-safely, so the user must see the reason */
+      hint.textContent = `⚠ ${this._mapErr} (original map kept: ${(ice && Array.isArray(ice.map)) ? ice.map.length : 0} points)`;
       hint.style.color = "#f85149";
     } else if (hint && ice && Array.isArray(ice.map) && ice.map.length) {
       let pk = ice.map[0], pmax = 0, prpm = 0;
@@ -1202,7 +1391,7 @@ const POWERTRAIN = {
         const P = this.mapLookup(ice.map, rpm) * rpm / 9550;
         if (P > pmax) { pmax = P; prpm = rpm; }
       }
-      hint.textContent = `${ice.map.length} 控制点 · 峰值 ${pk[1].toFixed(0)} N·m @${Math.round(pk[0])} rpm · 最大功率 ${pmax.toFixed(0)} kW @${Math.round(prpm)} rpm`;
+      hint.textContent = `${ice.map.length} control points · peak ${pk[1].toFixed(0)} N·m @${Math.round(pk[0])} rpm · max power ${pmax.toFixed(0)} kW @${Math.round(prpm)} rpm`;
       hint.style.color = "#8b949e";
     }
     const der = this._el("ptDerived");
@@ -1218,28 +1407,36 @@ const POWERTRAIN = {
         for (let rpm = lo; rpm <= hi; rpm += stp) pmax = Math.max(pmax, this.mapLookup(ice.map, rpm) * rpm / 9550);
         pw.push(`ICE ${pmax.toFixed(0)}kW`);
       }
-      if (d.motorF) pw.push(`前电机 ${(+d.motorF.peakPowerKw).toFixed(0)}kW`);
-      if (d.motorR) pw.push(`后电机 ${(+d.motorR.peakPowerKw).toFixed(0)}kW`);
-      if (d.battery) pw.push(`电池 ${(+d.battery.capacityKwh).toFixed(1)}kWh`);
-      der.textContent = `${this.archZh(d.architecture)} · ${this.DRIVE_ZH[d.drive] || d.drive} · ${rr.length} 挡` +
-        (rr.length ? ` · 1挡总比 ${(rr[0] * fd).toFixed(2)} · 顶挡总比 ${(rr[rr.length - 1] * fd).toFixed(2)}` : "") +
-        ` · ${pw.join(" / ") || "⚠ 无动力源"}`;
+      if (d.motorF) pw.push(`Front motor ${(+d.motorF.peakPowerKw).toFixed(0)}kW`);
+      if (d.motorR) pw.push(`Rear motor ${(+d.motorR.peakPowerKw).toFixed(0)}kW`);
+      if (d.battery) pw.push(`Battery ${(+d.battery.capacityKwh).toFixed(1)}kWh`);
+      der.textContent = `${this.archZh(d.architecture)} · ${this.DRIVE_ZH[d.drive] || d.drive} · ${rr.length} gears` +
+        (rr.length ? ` · 1st gear total ratio ${(rr[0] * fd).toFixed(2)} · top gear total ratio ${(rr[rr.length - 1] * fd).toFixed(2)}` : "") +
+        ` · ${pw.join(" / ") || "⚠ no power source"}`;
     }
   },
 
   /* ── drawCurve：扭矩曲线（控制点折线）+ 功率叠加（P=T·ω/9550 kW）+ 红线/断油竖线 + 坐标轴刻度 ──
      对 _draft 求值（非 this.spec）→ 未应用即可预览。mapLookup/motorTorque 均为纯函数，
      不需临时改 spec。只用 moveTo/lineTo/stroke/fillText/setLineDash——headless ctx 桩的
-     arc()/rect() 是空实现，控制点标记用十字而不依赖 arc。 */
+     arc()/rect() 是空实现，控制点标记用十字而不依赖 arc。
+     — drawCurve: torque curve(s) (control-point polylines) + power overlay (P=T·ω/9550 kW) + redline / fuel-cut verticals + axis ticks ──
+     Evaluated on _draft (not this.spec) → previewable before Apply. mapLookup/motorTorque are both pure functions,
+     no need to temporarily mutate the spec. Only moveTo/lineTo/stroke/fillText/setLineDash are used — the headless ctx stub’s
+     arc()/rect() are empty implementations, so control points are cross-marked instead of relying on arc. */
   /* G31-P9：canvas 拖拽控制点编辑已实现（本注释保留锚位；textarea JSON 仍是
-     map 的持久真源，拖拽结束时同步回写） */
+     map 的持久真源，拖拽结束时同步回写）
+     — G31-P9: canvas drag control-point editing is implemented (this comment kept as an anchor; the textarea JSON remains
+     the persistent source of truth for the map and is written back when a drag ends) */
   drawCurve() {
     const cv = this._el("ptCurve");
     if (!cv || typeof cv.getContext !== "function") return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     /* G32：DPR 自适应背衬——原固定 840×190 被 CSS 拉伸到容器宽 → 模糊。
-       逻辑坐标仍为 CSS 像素，拖拽命中/绘制共用同一坐标系，不受影响。 */
+       逻辑坐标仍为 CSS 像素，拖拽命中/绘制共用同一坐标系，不受影响。
+       — G32: DPR-adaptive backing — the original fixed 840×190 was stretched by CSS to the container width → blurry.
+       Logical coordinates remain CSS pixels; drag hit-testing and drawing share the same coordinate system, unaffected. */
     const dpr = Math.min(3, (typeof window !== "undefined" && Number(window.devicePixelRatio)) || 1);
     const W = (typeof cv.clientWidth === "number" && cv.clientWidth > 0) ? cv.clientWidth : 840;
     const H = (typeof cv.clientHeight === "number" && cv.clientHeight > 0) ? cv.clientHeight : 260;
@@ -1250,14 +1447,14 @@ const POWERTRAIN = {
     ctx.clearRect(0, 0, W, H);
     const d = this._draft || this.spec || this.defaultSpec();
     const ice = d.ice || null, mF = d.motorF || null, mR = d.motorR || null;
-    /* rpm 轴上限：红线/断油/电机最高转速取大，钳 [1000, 30000] */
+    /* rpm 轴上限：红线/断油/电机最高转速取大，钳 [1000, 30000]  — rpm axis upper limit: max of redline / fuel cut / motor max speed, clamped to [1000, 30000] */
     let rpmMax = Math.max(ice ? (Number.isFinite(ice.redlineRpm) ? ice.redlineRpm : 0) : 0,
                           ice ? (Number.isFinite(ice.fuelCutRpm) ? ice.fuelCutRpm : 0) : 0,
                           mF && Number.isFinite(mF.maxRpm) ? mF.maxRpm : 0,
                           mR && Number.isFinite(mR.maxRpm) ? mR.maxRpm : 0, 1000);
     if (!Number.isFinite(rpmMax) || !(rpmMax > 0)) rpmMax = 1000;
     rpmMax = Math.min(rpmMax, 30000);
-    /* 采样：ICE 全负荷 map（断油后置 0）+ 电机恒扭矩→恒功率（soc=undefined → 不降额） */
+    /* 采样：ICE 全负荷 map（断油后置 0）+ 电机恒扭矩→恒功率（soc=undefined → 不降额）  — sampling: ICE full-load map (zeroed after fuel cut) + motor constant-torque→constant-power (soc=undefined → no derating) */
     const cut = ice ? (ice.fuelCutRpm !== undefined ? ice.fuelCutRpm : Infinity) : Infinity;
     const iceT = rpm => (ice && rpm <= cut) ? this.mapLookup(ice.map, rpm) : 0;
     const motT = (m, rpm) => (m ? this.motorTorque(m, rpm, 1, undefined) : 0);
@@ -1275,7 +1472,7 @@ const POWERTRAIN = {
     const X = rpm => L + (Rr - L) * (rpm / rpmMax);
     const YT = t => Bb - (Bb - Tt) * (Math.max(0, t) / tMax);
     const YP = p => Bb - (Bb - Tt) * (Math.max(0, p) / pMax);
-    /* 网格 + X 轴刻度（rpm） */
+    /* 网格 + X 轴刻度（rpm）  — grid + X-axis ticks (rpm) */
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(139,148,158,0.16)";
     ctx.font = "11px monospace"; ctx.fillStyle = "#8b949e";
     const nx = 6;
@@ -1285,7 +1482,7 @@ const POWERTRAIN = {
       ctx.textAlign = "center"; ctx.textBaseline = "top";
       ctx.fillText(rpm >= 1000 ? (rpm / 1000).toFixed(1) + "k" : String(Math.round(rpm)), x, Bb + 5);
     }
-    /* Y 轴刻度：左 N·m（扭矩）/ 右 kW（功率） */
+    /* Y 轴刻度：左 N·m（扭矩）/ 右 kW（功率）  — Y-axis ticks: left N·m (torque) / right kW (power) */
     const ny = 4;
     ctx.textBaseline = "middle";
     for (let i = 0; i <= ny; i++) {
@@ -1301,7 +1498,7 @@ const POWERTRAIN = {
     ctx.fillText("N·m", 4, 2);
     ctx.fillStyle = "#d29922"; ctx.textAlign = "right";
     ctx.fillText("kW", W - 4, 2);
-    /* 红线 / 断油竖线 */
+    /* 红线 / 断油竖线  — redline / fuel-cut vertical lines */
     const dash = ctx.setLineDash ? ctx.setLineDash.bind(ctx) : null;
     const vline = (rpm, color, label) => {
       if (!(rpm > 0) || rpm > rpmMax) return;
@@ -1313,8 +1510,8 @@ const POWERTRAIN = {
       ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "top";
       ctx.fillText(label, Math.min(x + 3, Rr - 34), Tt + 12);
     };
-    if (ice) { vline(ice.redlineRpm, "#f85149", "红线"); vline(ice.fuelCutRpm, "#d29922", "断油"); }
-    /* 曲线：各动力源 + 合成扭矩（实线）+ 总功率（虚线，右轴） */
+    if (ice) { vline(ice.redlineRpm, "#f85149", "Redline"); vline(ice.fuelCutRpm, "#d29922", "Fuel cut"); }
+    /* 曲线：各动力源 + 合成扭矩（实线）+ 总功率（虚线，右轴）  — curves: each power source + combined torque (solid) + total power (dashed, right axis) */
     const plot = (key, color, width, useDash) => {
       ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = width;
       if (useDash && dash) dash([5, 3]);
@@ -1330,7 +1527,7 @@ const POWERTRAIN = {
     if (mR) plot("tr", "#7ee787", 1.5, false);
     plot("tot", "#e6edf3", 2, false);
     plot("pw", "#d29922", 1.5, true);
-    /* G31-P9：ICE 控制点十字标记（用户录入的折线节点）；拖拽命中半径 10px */
+    /* G31-P9：ICE 控制点十字标记（用户录入的折线节点）；拖拽命中半径 10px  — G31-P9: ICE control-point crosses (user-entered polyline nodes); drag hit radius 10px */
     if (ice && Array.isArray(ice.map)) {
       ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1;
       for (const p of ice.map) {
@@ -1342,15 +1539,15 @@ const POWERTRAIN = {
         ctx.stroke();
       }
     }
-    /* G31-P9：保存本次绘制的坐标变换，供拖拽命中/反解使用（与绘制同一套比例） */
+    /* G31-P9：保存本次绘制的坐标变换，供拖拽命中/反解使用（与绘制同一套比例）  — G31-P9: save this draw’s coordinate transforms for drag hit-testing / inverse mapping (same scales as the drawing) */
     this._cs = { L, Rr, Tt, Bb, rpmMax, tMax, map: ice && Array.isArray(ice.map) ? ice.map : null };
-    /* 图例 */
+    /* 图例  — legend */
     const legend = [];
     if (ice) legend.push(["ICE", "#f0883e"]);
-    if (mF) legend.push(["前电机", "#58a6ff"]);
-    if (mR) legend.push(["后电机", "#7ee787"]);
-    legend.push(["合成扭矩", "#e6edf3"]);
-    legend.push(["功率 kW(右轴)", "#d29922"]);
+    if (mF) legend.push(["Front motor", "#58a6ff"]);
+    if (mR) legend.push(["Rear motor", "#7ee787"]);
+    legend.push(["Combined torque", "#e6edf3"]);
+    legend.push(["Power kW (right axis)", "#d29922"]);
     ctx.font = "11px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     let lx = L + 2;
     for (const [t, c] of legend) {
@@ -1367,7 +1564,13 @@ const POWERTRAIN = {
      canvas 事件绑定驱动，坐标经 getBoundingClientRect 归一）。约束：
      - 扭矩自由拖（≥0）；rpm 受邻居严格递增约束（lo<rpm<hi），不破坏 map 单调
      - 结束时同步 textarea JSON（readMap 的单一数据源仍为 _draft）
-     - 无 ICE map（EV）时三方法均 no-op */
+     - 无 ICE map（EV）时三方法均 no-op
+     — G31-P9: canvas drag control-point editing (delivery of the spec §6 drag item, replacing the old TODO) ──
+     hit / drag / end are three separate methods for direct sandbox testing (in real browsers the buildModal canvas
+     event bindings drive them; coordinates normalized via getBoundingClientRect). Constraints:
+     - torque drags freely (≥0); rpm is neighbor-constrained strictly ascending (lo<rpm<hi) so map monotonicity is not broken
+     - on end, sync the textarea JSON (readMap’s single data source remains _draft)
+     - with no ICE map (EV) all three methods are no-ops */
   _curveHit(px, py) {
     const cs = this._cs;
     if (!cs || !cs.map) return -1;
@@ -1401,10 +1604,12 @@ const POWERTRAIN = {
   },
   _curveDragEnd() {
     /* 浏览器验收抓到的 bug：实际 textarea id 是 pt_ice_map（原误写 ptIceMap →
-       ta 恒 null、回写静默跳过）。两个 id 都尝试写入，容错未来重命名。 */
+       ta 恒 null、回写静默跳过）。两个 id 都尝试写入，容错未来重命名。
+       — a bug caught during browser acceptance: the real textarea id is pt_ice_map (originally miswritten ptIceMap →
+       ta always null and the write-back silently skipped). Both ids are attempted, tolerant of future renames. */
     const ta = this._el("pt_ice_map") || this._el("ptIceMap");
     if (ta && this._draft && this._draft.ice && Array.isArray(this._draft.ice.map)) {
-      try { ta.value = JSON.stringify(this._draft.ice.map); } catch (e) { /* 沙箱 value 只读时静默 */ }
+      try { ta.value = JSON.stringify(this._draft.ice.map); } catch (e) { /* 沙箱 value 只读时静默 — silently ignore a read-only sandbox value */ }
     }
     this._dragIdx = -1;
   },
@@ -1415,7 +1620,7 @@ const POWERTRAIN = {
     if (!Array.isArray(d.gearbox.ratios) || !d.gearbox.ratios.length) d.gearbox.ratios = [1];
     const n = Math.max(1, Math.min(16, d.gearbox.ratios.length + (delta > 0 ? 1 : -1)));
     while (d.gearbox.ratios.length < n) {
-      /* 新挡取末挡×0.75（递降惯例），用户再改 */
+      /* 新挡取末挡×0.75（递降惯例），用户再改  — new gear = last gear ×0.75 (descending convention); the user can adjust afterwards */
       d.gearbox.ratios.push(Math.max(0.05, d.gearbox.ratios[d.gearbox.ratios.length - 1] * 0.75));
     }
     d.gearbox.ratios.length = n;
@@ -1425,13 +1630,13 @@ const POWERTRAIN = {
     if (!(i >= 0)) return;
     this.readForm();
     const g = this._draft.gearbox;
-    if (!g || !Array.isArray(g.ratios) || g.ratios.length <= 1) return;   // validate 要求 ratios ≥ 1
+    if (!g || !Array.isArray(g.ratios) || g.ratios.length <= 1) return;   // validate 要求 ratios ≥ 1 — validate requires ratios ≥ 1
     if (i >= g.ratios.length) return;
     g.ratios.splice(i, 1);
     this.renderForm();
   },
 
-  /* ── 内置预设载入（只写草稿，不立即生效——由「应用」提交） ── */
+  /* ── 内置预设载入（只写草稿，不立即生效——由「应用」提交） ──  — built-in preset load (writes only the draft, not applied immediately — committed by "Apply") ── */
   loadBuiltinPreset(name) {
     const p = POWERTRAIN_PRESETS[name];
     if (!p) return;
@@ -1439,41 +1644,41 @@ const POWERTRAIN = {
     this.renderForm();
   },
 
-  /* ── 主按钮路径 ── */
+  /* ── 主按钮路径 ──  — main button paths ── */
   applyFromForm() {
     this.readForm();
     const r = this.applyToVehicle();
     if (!r || !r.ok) {
-      if (typeof alert === "function") alert("校验失败: " + ((r && r.errors) ? r.errors.join(", ") : "unknown"));
+      if (typeof alert === "function") alert("Validation failed: " + ((r && r.errors) ? r.errors.join(", ") : "unknown"));
       return;
     }
     this.close();
   },
   saveFromForm() {
     this.readForm();
-    const rawName = (typeof prompt === "function" && prompt("预设名称：", "我的动力")) || null;
+    const rawName = (typeof prompt === "function" && prompt("Preset name:", "My powertrain")) || null;
     const name = rawName ? rawName.trim() || null : null;
     if (!name) return;
     const r = this.saveCustom(name);
     if (!r.ok) {
-      /* 失败不关窗（G29-P7）：用户可改名/删旧条后在表单内直接重试 */
+      /* 失败不关窗（G29-P7）：用户可改名/删旧条后在表单内直接重试  — on failure keep the dialog open (G29-P7): the user can rename / delete old entries and retry directly in the form */
       if (typeof alert === "function") {
-        alert(r.error === "limit" ? `自定义预设已达 ${this.MAX_CUSTOMS} 条上限，请先删除旧条目。`
-          : r.error === "dup" ? "名称已存在。"
-          : "校验失败: " + (r.errors || []).join(", "));
+        alert(r.error === "limit" ? `Custom presets have reached the ${this.MAX_CUSTOMS}-item limit — delete old entries first.`
+          : r.error === "dup" ? "Name already exists."
+          : "Validation failed: " + (r.errors || []).join(", "));
       }
       return;
     }
     const a = this.applyToVehicle();
-    if (!a || !a.ok) { if (typeof alert === "function") alert("校验失败: " + a.errors.join(", ")); return; }
+    if (!a || !a.ok) { if (typeof alert === "function") alert("Validation failed: " + a.errors.join(", ")); return; }
     this.renderSavedList();
     this.close();
   },
-  /* 恢复内置 = legacy-equivalent 默认规格（等价锚：轮上后 480 / 前 120） */
+  /* 恢复内置 = legacy-equivalent 默认规格（等价锚：轮上后 480 / 前 120）  — Restore built-in = the legacy-equivalent default spec (equivalence anchor: wheel rear 480 / front 120) */
   restoreBuiltin() {
     this._draft = this.defaultSpec();
     const r = this.applyToVehicle();
-    if (!r || !r.ok) { if (typeof alert === "function") alert("校验失败: " + r.errors.join(", ")); return; }
+    if (!r || !r.ok) { if (typeof alert === "function") alert("Validation failed: " + r.errors.join(", ")); return; }
     this.renderForm();
   },
 
@@ -1481,11 +1686,16 @@ const POWERTRAIN = {
      G29 教训：switchScenario 不重建引擎（构造期固化的参数不刷新）→ 直构
      new VehicleDynamics15DOF + resetVehicle。三个舞台各持引擎：
      SLOPE/CIRCUIT → window.physicsEngine；SKIDPAD → window.skidpadEngine。
-     CIRCUIT 起跑状态由 openCircuitStage 局部构造 → 重建时保留旧 state，避免赛车瞬移回原点。 */
+     CIRCUIT 起跑状态由 openCircuitStage 局部构造 → 重建时保留旧 state，避免赛车瞬移回原点。
+     — activation path: setSpec(draft) → write overlay references → rebuild active stage engines ──
+     G29 lesson: switchScenario does not rebuild the engine (construction-time frozen parameters never refresh) → construct
+     new VehicleDynamics15DOF directly + resetVehicle. The three stages each own an engine:
+     SLOPE/CIRCUIT → window.physicsEngine; SKIDPAD → window.skidpadEngine.
+     The CIRCUIT start state is locally constructed by openCircuitStage → on rebuild keep the old state, so the car does not teleport back to the start. */
   applyToVehicle() {
     if (this._draft) {
       const v = this.setSpec(this._draft);
-      if (!v.ok) return v;   // 非法草稿 → 不覆盖当前生效 spec
+      if (!v.ok) return v;   // 非法草稿 → 不覆盖当前生效 spec — invalid draft → never overwrite the live spec
     }
     try { if (typeof S !== "undefined" && S) S.ptSpec = this.spec; } catch (e) {}
     this.rebuildActiveStages();
@@ -1522,7 +1732,7 @@ const POWERTRAIN = {
     } catch (e) {}
   },
 
-  /* ── 持久化：localStorage（key 前缀 labsus-，≤MAX_CUSTOMS 条） ── */
+  /* ── 持久化：localStorage（key 前缀 labsus-，≤MAX_CUSTOMS 条） ──  — persistence: localStorage (key prefix labsus-, up to MAX_CUSTOMS entries) ── */
   persistCustoms() {
     try { localStorage.setItem(this.LS_KEY, JSON.stringify(this.customs)); } catch (e) {}
   },
@@ -1549,7 +1759,7 @@ const POWERTRAIN = {
     delete this.customs[name];
     this.persistCustoms(); this.refreshPresetSelect();
   },
-  /* 下拉激活：写 spec + 同步草稿（弹窗再开即所见）+ 重建舞台 */
+  /* 下拉激活：写 spec + 同步草稿（弹窗再开即所见）+ 重建舞台  — dropdown activation: write spec + sync the draft (the modal reopens showing it) + rebuild stages */
   activateCustom(name) {
     const c = this.customs[name];
     if (!c) return { ok: false, errors: ["custom(missing)"] };
@@ -1559,7 +1769,7 @@ const POWERTRAIN = {
     this.applyToVehicle();
     return { ok: true, errors: [] };
   },
-  /* 预设下拉追加「自定义动力」分组（与 tirecustom 共用同一 select，data-ptlab 标记供幂等重建） */
+  /* 预设下拉追加「自定义动力」分组（与 tirecustom 共用同一 select，data-ptlab 标记供幂等重建）  — append a "Custom powertrains" optgroup to the preset dropdown (shares the same select with tirecustom; the data-ptlab marker enables idempotent rebuilds) */
   refreshPresetSelect() {
     const sel = (typeof document !== "undefined") ? document.getElementById("topVehSelect") : null;
     if (!sel) return;
@@ -1569,7 +1779,7 @@ const POWERTRAIN = {
     }
     const names = Object.keys(this.customs); if (!names.length) return;
     const g = document.createElement("optgroup");
-    g.setAttribute("label", "🔧 自定义动力"); g.setAttribute("data-ptlab", "1");
+    g.setAttribute("label", "🔧 Custom powertrains"); g.setAttribute("data-ptlab", "1");
     names.forEach(n => {
       const o = document.createElement("option");
       o.value = "ptcustom:" + n; o.textContent = "🔧 " + n;
@@ -1577,19 +1787,19 @@ const POWERTRAIN = {
     });
     sel.appendChild(g);
   },
-  /* 已存自定义管理区：载入 / 删除（解除 20 条上限死锁，同 G29 教训） */
+  /* 已存自定义管理区：载入 / 删除（解除 20 条上限死锁，同 G29 教训）  — saved-customs manager: load / delete (breaking the 20-item cap deadlock, same lesson as G29) */
   renderSavedList() {
     const box = this._el("ptSavedList"); if (!box) return;
     const names = Object.keys(this.customs);
     if (!names.length) { box.innerHTML = ""; return; }
-    let html = `<div style="font:700 10px var(--font-ui);color:#58a6ff;margin-bottom:3px;">已存自定义动力（${names.length}/${this.MAX_CUSTOMS}）</div>`;
+    let html = `<div style="font:700 10px var(--font-ui);color:#58a6ff;margin-bottom:3px;">Saved custom powertrains (${names.length}/${this.MAX_CUSTOMS})</div>`;
     names.forEach(n => {
       const c = this.customs[n] || {};
       html += `<div style="display:flex;align-items:center;gap:6px;padding:1px 0;">
         <span style="flex:1;font:10px var(--font-ui);color:#c9d1d9;">🔧 ${this._esc(n)}
           <span style="color:#6e7681;">· ${this._esc(c.architecture || "?")} / ${this._esc(c.drive || "?")}</span></span>
-        <button data-pt-load="${this._esc(n)}" style="background:none;border:1px solid #30363d;color:#58a6ff;border-radius:4px;padding:1px 8px;cursor:pointer;font:10px var(--font-ui);">载入</button>
-        <button data-pt-del="${this._esc(n)}" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:1px 8px;cursor:pointer;font:10px var(--font-ui);">删除</button>
+        <button data-pt-load="${this._esc(n)}" style="background:none;border:1px solid #30363d;color:#58a6ff;border-radius:4px;padding:1px 8px;cursor:pointer;font:10px var(--font-ui);">Load</button>
+        <button data-pt-del="${this._esc(n)}" style="background:none;border:1px solid #30363d;color:#f85149;border-radius:4px;padding:1px 8px;cursor:pointer;font:10px var(--font-ui);">Delete</button>
       </div>`;
     });
     box.innerHTML = html;
@@ -1613,19 +1823,25 @@ const POWERTRAIN = {
 /* ═══ 段6-b 内置预设 POWERTRAIN_PRESETS（name → spec，全部通过 POWERTRAIN.validate）═══
    数值取真实量级，不追求逐位对拍（启用后圈速变化属预期行为，不守 legacy 锚）。
    电机不写 baseRpm：motorTorque 只读 peakTorqueNm/peakPowerKw（min(T, P/ω)），
-   拐点由表单按 30·P·1000/(π·T) 自动导出，避免手写值与 validate 的 ±5% 一致性检查冲突。 */
+   拐点由表单按 30·P·1000/(π·T) 自动导出，避免手写值与 validate 的 ±5% 一致性检查冲突。
+   ═══ sec6-b built-in presets POWERTRAIN_PRESETS (name → spec, all pass POWERTRAIN.validate) ═══
+   Values use realistic magnitudes, not bit-exact parity (lap-time changes after enabling are expected; the legacy anchor is not kept).
+   Motors omit baseRpm: motorTorque reads only peakTorqueNm/peakPowerKw (min(T, P/ω)),
+   and the knee is derived in the form as 30·P·1000/(π·T), avoiding a clash with validate’s ±5% consistency check. */
 const POWERTRAIN_PRESETS = {
   /* 1) FIA GT3：4.0L 自然吸气 V8（量级：GT3 赛车 ~500–520 N·m / ~600 hp，红线 8500）
-     6 速序列式手动 + 主减 3.9（GT3 典型 3.9–4.1）；机械式 LSD 预紧 ~120 N·m。 */
+     6 速序列式手动 + 主减 3.9（GT3 典型 3.9–4.1）；机械式 LSD 预紧 ~120 N·m。
+     — 1) FIA GT3: 4.0L naturally aspirated V8 (magnitude: GT3 racing ~500–520 N·m / ~600 hp, redline 8500);
+     6-speed sequential manual + final drive 3.9 (typical GT3 3.9–4.1); mechanical LSD preload ~120 N·m. */
   "GT3 V8 RWD 6MT": {
     architecture: "ice", drive: "rwd", splitFront: 0,
     ice: {
       cyl: 8, layout: "V8", dispL: 4.0, idleRpm: 900, redlineRpm: 8500, fuelCutRpm: 8700,
-      /* 全负荷扭矩曲线：低转 300→峰值 520@6500→高转回落 470（NA V8 典型驼峰） */
+      /* 全负荷扭矩曲线：低转 300→峰值 520@6500→高转回落 470（NA V8 典型驼峰）  — full-load torque curve: 300 at low rpm → peak 520@6500 → 470 at high rpm (typical NA V8 hump) */
       map: [[900, 300], [2000, 400], [3500, 470], [5000, 510], [6500, 520], [7500, 505], [8500, 470]],
-      fricA: 20, fricB: 0.008, fricC: 0,   // 摩擦+泵气：8500rpm 约 88 N·m（~17% 峰值）
-      inertia: 0.35,                        // 曲轴+飞轮+离合 ~0.3–0.5 kg·m²
-      throttleTau: 0.06                     // 节气门一阶响应 ~60 ms
+      fricA: 20, fricB: 0.008, fricC: 0,   // 摩擦+泵气：8500rpm 约 88 N·m（~17% 峰值） — friction + pumping: ~88 N·m at 8500 rpm (~17% of peak)
+      inertia: 0.35,                        // 曲轴+飞轮+离合 ~0.3–0.5 kg·m² — crankshaft + flywheel + clutch ~0.3–0.5 kg·m²
+      throttleTau: 0.06                     // 节气门一阶响应 ~60 ms — first-order throttle response ~60 ms
     },
     motorF: null, motorR: null, battery: null,
     gearbox: { type: "manual", ratios: [3.0, 2.2, 1.7, 1.4, 1.15, 0.95], finalDrive: 3.9,
@@ -1634,13 +1850,15 @@ const POWERTRAIN_PRESETS = {
   },
 
   /* 2) Formula SAE：600cc 直列四缸（摩托式高转，红线 13000）+ 5 速序列式。
-     量级：FSAE 限制进气（20mm）后 ~60–70 N·m；齿比密、主减 3.6；惯量极小 ~0.06 kg·m²。 */
+     量级：FSAE 限制进气（20mm）后 ~60–70 N·m；齿比密、主减 3.6；惯量极小 ~0.06 kg·m²。
+     — 2) Formula SAE: 600cc inline-four (motorcycle-style high revs, redline 13000) + 5-speed sequential.
+     Magnitude: ~60–70 N·m after the FSAE restricted intake (20mm); close ratios, final drive 3.6; very small inertia ~0.06 kg·m². */
   "FSAE I4 RWD 5MT": {
     architecture: "ice", drive: "rwd", splitFront: 0,
     ice: {
       cyl: 4, layout: "I4", dispL: 0.6, idleRpm: 1500, redlineRpm: 13000, fuelCutRpm: 13500,
       map: [[1500, 40], [3000, 55], [5500, 65], [8000, 62], [10500, 55], [13000, 42]],
-      fricA: 4, fricB: 0.0012, fricC: 0,   // 13000rpm 约 20 N·m（小排量高转，占峰值 ~30%）
+      fricA: 4, fricB: 0.0012, fricC: 0,   // 13000rpm 约 20 N·m（小排量高转，占峰值 ~30%） — ~20 N·m at 13000 rpm (small displacement high revs, ~30% of peak)
       inertia: 0.06, throttleTau: 0.04
     },
     motorF: null, motorR: null, battery: null,
@@ -1653,12 +1871,23 @@ const POWERTRAIN_PRESETS = {
          bias        ← 实测 TBR（低速大速差稳态下 T_慢轮 / T_快轮）
          lockNm      ← 实测 breakaway 扭矩（缓加载至输出轴开始相对转动）
          slipRefRadS ← 实测「满锁速差」（预紧被速差完全抵消处的 Δω）
-       三者同时决定出弯牵引力上限与横摆力矩方向，A/B 实测见 test_powertrain 节 12。 */
+       三者同时决定出弯牵引力上限与横摆力矩方向，A/B 实测见 test_powertrain 节 12。
+     — T3 (2026-09) · LSD: the FSAE rear-axle mainstream is a clutch-pack (Salisbury / clutch-type) limited-slip,
+       replacing the original "open / dead axle" label — that label only fits the few teams running a solid rear axle and is not representative.
+       ⚠ **Not calibrated**: TBR 1.6 sits inside the literature range 1.4~2.0 and breakaway (preload) 25 N·m inside
+       20~50 N·m — both are "literature magnitudes", not measurements of this car’s actual hardware. After bench / vehicle calibration, backfill:
+         bias        ← measured TBR (slow-wheel / fast-wheel torque at steady state with low speed and a large speed difference)
+         lockNm      ← measured breakaway torque (slowly load until the output shafts start to rotate relative to each other)
+         slipRefRadS ← measured "full-lock speed difference" (Δω at which the preload is fully cancelled by the speed difference)
+       Together the three set the corner-exit traction ceiling and the yaw-moment direction; the A/B measurement lives in test_powertrain section 12. */
     diff: { type: "lsd", bias: 1.6, lockNm: 25, slipRefRadS: 8 }
   },
 
   /* 3) 纯电双电机扭矩矢量：前后各 250 kW / 350 N·m（量级：高性能双电机 EV），
-     80 kWh 电池、放电 450 kW / 充电 270 kW；单速减速器 ~9.7（典型 EV 减速比）。 */
+     80 kWh 电池、放电 450 kW / 充电 270 kW；单速减速器 ~9.7（典型 EV 减速比）。
+     — 3) Battery-electric twin-motor torque vectoring: front and rear 250 kW / 350 N·m each (magnitude: high-performance twin-motor EV),
+     80 kWh battery, 450 kW discharge / 270 kW charge; single-speed reducer ~9.7 (typical EV ratio). */
+  /* 预设键名保留中文 — preset key kept in Chinese: web/test/test_powertrain.js references it verbatim (EN: "EV twin-motor AWD-TV") */
   "EV 双电机 AWD-TV": {
     architecture: "ev", drive: "tv", splitFront: 0.5,
     ice: null,
@@ -1667,11 +1896,14 @@ const POWERTRAIN_PRESETS = {
     battery: { capacityKwh: 80, soc0: 0.9, maxDischargeKw: 450, maxChargeKw: 270 },
     gearbox: { type: "auto", ratios: [9.73], finalDrive: 1.0, shiftTimeMs: 0, eff: 0.97,
                autoUpFrac: 0.92, autoDownFrac: 0.55 },
-    diff: { type: "open", bias: 1.0, lockNm: 0 }   // TV 逐轮由双电机直接分配，无机械差速需求
+    diff: { type: "open", bias: 1.0, lockNm: 0 }   // TV 逐轮由双电机直接分配，无机械差速需求 — tv allocates per wheel directly from the twin motors; no mechanical differential needed
   },
 
   /* 4) P3 混动前驱：1.5L 直列四缸（阿特金森，~86 kW/165 N·m）+ 箱后电机 100 kW/300 N·m，
-     15 kWh 电池（量级：PHEV/强混），5 速 AT + 主减 4.1（前驱主减速典型 3.9–4.3）。 */
+     15 kWh 电池（量级：PHEV/强混），5 速 AT + 主减 4.1（前驱主减速典型 3.9–4.3）。
+     — 4) P3 hybrid front-drive: 1.5L inline-four (Atkinson, ~86 kW/165 N·m) + motor behind the box 100 kW/300 N·m,
+     15 kWh battery (magnitude: PHEV / strong hybrid), 5-speed AT + final drive 4.1 (typical FWD final drive 3.9–4.3). */
+  /* 预设键名保留中文 — preset key kept in Chinese: web/test/test_powertrain.js references it verbatim (EN: "P3 hybrid FWD") */
   "P3 混动前驱": {
     architecture: "p3", drive: "fwd", splitFront: 1,
     ice: {
@@ -1688,7 +1920,10 @@ const POWERTRAIN_PRESETS = {
   },
 
   /* 5) 串联增程后驱：1.2L 直列三缸只发电（~86 kW@4000rpm），驱动全交给 150 kW/400 N·m 后电机，
-     40 kWh 电池（量级：增程电动 SUV）；单速减速 9.0 + LSD。 */
+     40 kWh 电池（量级：增程电动 SUV）；单速减速 9.0 + LSD。
+     — 5) Series range-extender rear-drive: the 1.2L inline-three only generates (~86 kW@4000rpm); all driving is left to the 150 kW/400 N·m rear motor,
+     40 kWh battery (magnitude: range-extender electric SUV); single-speed reducer 9.0 + LSD. */
+  /* 预设键名保留中文 — preset key kept in Chinese: web/test/test_powertrain.js references it verbatim (EN: "Series range-extender RWD") */
   "串联增程后驱": {
     architecture: "series", drive: "rwd", splitFront: 0,
     ice: {
@@ -1706,7 +1941,11 @@ const POWERTRAIN_PRESETS = {
 
   /* 6) THS 功率分流（行星排）：1.8L 阿特金森 I4（~75 kW/142 N·m，量级：丰田 2ZR-FXE）
      + MG1 前电机 60 kW/150 N·m（发电为主）+ MG2 后电机 80 kW/207 N·m（驱动为主），
-     6.5 kWh 电池（功率型，量级：PHEV 版 THS）；e-CVT 无挡位，主减 3.6。 */
+     6.5 kWh 电池（功率型，量级：PHEV 版 THS）；e-CVT 无挡位，主减 3.6。
+     — 6) THS power split (planetary set): 1.8L Atkinson I4 (~75 kW/142 N·m, magnitude: Toyota 2ZR-FXE)
+     + MG1 front motor 60 kW/150 N·m (generation-led) + MG2 rear motor 80 kW/207 N·m (drive-led),
+     6.5 kWh battery (power-type, magnitude: PHEV-spec THS); e-CVT with no gears, final drive 3.6. */
+  /* 预设键名保留中文 — preset key kept in Chinese: web/test/test_powertrain.js references it verbatim (EN: "THS power split") */
   "THS 功率分流": {
     architecture: "powersplit", drive: "fwd", splitFront: 1,
     ice: {
@@ -1725,14 +1964,18 @@ const POWERTRAIN_PRESETS = {
 
 if (typeof window !== "undefined") {
   window.POWERTRAIN = POWERTRAIN;
-  window.POWERTRAIN_PRESETS = POWERTRAIN_PRESETS;   // F-61：导出与定义同文件
+  window.POWERTRAIN_PRESETS = POWERTRAIN_PRESETS;   // F-61：导出与定义同文件 — F-61: export and definition in the same file
 }
 POWERTRAIN.setSpec(POWERTRAIN.defaultSpec());
 
 /* 段6 启动：读回自定义预设 + 填充预设下拉（同 G29 轮胎工坊）。
    本脚本在 body 底部同步执行，DOM 已就绪；try/catch 防御降级不阻断启动。
    注意：不自动 setSpec 任何自定义条目——默认规格（legacy-equivalent）是圈速基线的守门员，
-   自定义动力只在用户从下拉/弹窗显式选择后生效。 */
+   自定义动力只在用户从下拉/弹窗显式选择后生效。
+   — sec6 startup: read back custom presets + fill the preset dropdown (same as the G29 Tire Lab).
+   This script runs synchronously at the bottom of body; the DOM is ready; try/catch guards degrade without blocking startup.
+   Note: no custom entry is ever auto-setSpec’d — the default spec (legacy-equivalent) is the gatekeeper of the lap-time baseline;
+   a custom powertrain only takes effect after the user explicitly selects it from the dropdown / dialog. */
 try {
   POWERTRAIN.loadCustoms();
   POWERTRAIN.refreshPresetSelect();

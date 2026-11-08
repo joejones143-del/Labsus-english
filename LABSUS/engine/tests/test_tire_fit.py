@@ -2,6 +2,12 @@
 
 合成策略：用已知 MF 参数生成多层级 (Fz, α, Fy) 曲线 + 轻量噪声，
 断言辨识结果回收参数（容差内），且载荷敏感性（LS）仅在多层级时辨识。
+
+English: tire-measured-data -> MF parameter identification guardrail (real development data
+chain, lecture EP08).
+Synthesis strategy: generate multi-level (Fz, alpha, Fy) curves from known MF parameters
+plus light noise, then assert the identification recovers the parameters within tolerance
+and that load sensitivity (LS) is only identifiable in the multi-level case.
 """
 import numpy as np
 from fastapi.testclient import TestClient
@@ -35,7 +41,7 @@ def _curves(fzs=(2000.0, 3500.0, 5000.0), noise=0.0):
 
 
 def test_tire_fit_recovers_params():
-    """多层级无噪声：Fy0/By/Cy/Ey 回收误差 <2%，LS 辨识出非零。"""
+    """多层级无噪声：Fy0/By/Cy/Ey 回收误差 <2%，LS 辨识出非零。"""  # English: multi-level, noise-free: Fy0/By/Cy/Ey recovered with error <2%, LS identified as non-zero.
     r = fit_tire_params(_curves())
     assert r["status"] == "VALID"
     p = r["params"]
@@ -43,13 +49,13 @@ def test_tire_fit_recovers_params():
     assert abs(p["By"] - TRUE["By"]) / TRUE["By"] < 0.02
     assert abs(p["Cy"] - TRUE["Cy"]) / TRUE["Cy"] < 0.02
     assert abs(p["Ey"] - TRUE["Ey"]) < 0.15
-    assert p["LS"] > 0.04                      # 载荷敏感性被辨识出
+    assert p["LS"] > 0.04                      # 载荷敏感性被辨识出 — load sensitivity was identified
     assert r["rms_pct"] is not None and r["rms_pct"] < 2.0
     assert r["n_loads"] == 3 and r["n_points"] == 123
 
 
 def test_tire_fit_noisy_still_bounded():
-    """3% 峰值噪声：参数仍应收敛在 8% 容差内（实测数据鲁棒性）。"""
+    """3% 峰值噪声：参数仍应收敛在 8% 容差内（实测数据鲁棒性）。"""  # English: 3% peak noise: parameters should still converge within an 8% tolerance (robustness to measured data).
     r = fit_tire_params(_curves(noise=0.03))
     assert r["status"] == "VALID"
     p = r["params"]
@@ -59,7 +65,7 @@ def test_tire_fit_noisy_still_bounded():
 
 
 def test_tire_fit_single_load_ls_fixed_zero():
-    """单层级：LS 不可辨识 → 固定 0 + 显式标注（禁止伪造）。"""
+    """单层级：LS 不可辨识 → 固定 0 + 显式标注（禁止伪造）。"""  # English: single load level: LS is not identifiable -> pinned to 0 + explicit flagging (no forging).
     r = fit_tire_params(_curves(fzs=(3500.0,)))
     assert r["status"] == "VALID"
     assert r["params"]["LS"] == 0.0
@@ -67,14 +73,14 @@ def test_tire_fit_single_load_ls_fixed_zero():
 
 
 def test_tire_fit_invalid_inputs():
-    """欠定输入：显式 NOT_APPLICABLE，不给假参数。"""
+    """欠定输入：显式 NOT_APPLICABLE，不给假参数。"""  # English: underdetermined input: explicit NOT_APPLICABLE, no fake parameters.
     assert fit_tire_params([])["status"] == "NOT_APPLICABLE"
     r = fit_tire_params([{"fz": 3500.0, "alpha_deg": [0, 1], "fy": [0, 100]}])
     assert r["status"] == "NOT_APPLICABLE" and r["params"] is None
 
 
 def test_tire_fit_endpoint():
-    """/api/v3/tire/fit：返回 TireParams 完整形态（可直接回传仿真）。"""
+    """/api/v3/tire/fit：返回 TireParams 完整形态（可直接回传仿真）。"""  # English: /api/v3/tire/fit returns a complete TireParams shape (can be sent straight back to the simulation).
     r = client.post("/api/v3/tire/fit", json={"curves": _curves(), "fit_ls": True})
     assert r.status_code == 200
     b = r.json()
@@ -85,7 +91,7 @@ def test_tire_fit_endpoint():
 
 
 def test_tire_fit_endpoint_validation_422():
-    """曲线长度不一致 / 点数不足 → 422。"""
+    """曲线长度不一致 / 点数不足 → 422。"""  # English: inconsistent curve lengths / too few points -> 422.
     bad = {"curves": [{"fz": 3500.0, "alpha_deg": [0, 1, 2], "fy": [0, 100]}]}
     assert client.post("/api/v3/tire/fit", json=bad).status_code == 422
     bad2 = {"curves": [{"fz": 3500.0, "alpha_deg": [0, 1, 2, 3, 4],

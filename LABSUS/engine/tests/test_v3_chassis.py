@@ -2,6 +2,10 @@
 
 覆盖：四角装配 / 单点整车求解（姿态+载荷转移）/ 载荷守恒与对称性 /
 整车 bump·roll·steer 扫掠 / 非法输入。
+
+English: /api/v3 full-vehicle analysis endpoint acceptance tests (S2-5).
+Coverage: corner assembly / single-point full-vehicle solve (pose + load transfer) / load conservation and symmetry /
+full-vehicle bump·roll·steer sweeps / invalid input.
 """
 import numpy as np
 from fastapi.testclient import TestClient
@@ -64,16 +68,16 @@ def test_chassis_solve_baseline():
     for key in ("FL", "FR", "RL", "RR"):
         m = b["pose"][key]
         assert "cam" in m and "toe" in m and "rc_h" in m and "residual" in m
-    # 姿态：静态 zero → heave=0
+    # 姿态：静态 zero → heave=0 — pose: static zero → heave=0
     assert abs(b["attitude"]["heave_mm"]) < 1e-6
-    # 载荷：gy=0 → 左右对称 + 静态前轴总和 ≈ 前轴承载
+    # 载荷：gy=0 → 左右对称 + 静态前轴总和 ≈ 前轴承载 — loads: gy=0 → left/right symmetric + static front-axle sum ≈ front axle load share
     f = b["loads"]["fz"]
     assert abs(f["FL"] - f["FR"]) < 1.0
     assert abs(f["RL"] - f["RR"]) < 1.0
     assert b["loads"]["tlltd_pct"] == 50.0
     assert abs(b["loads"]["roll_deg"]) < 1e-6
     assert b["mr"]["front"] > 0.05 and b["mr"]["rear"] > 0.05
-    # 静态守恒：四轮总和 ≈ 整车总质量 × g（±2%）
+    # 静态守恒：四轮总和 ≈ 整车总质量 × g（±2%） — static conservation: four-wheel total ≈ vehicle total mass × g (±2%)
     total = f["FL"] + f["FR"] + f["RL"] + f["RR"]
     assert abs(total - 1420.0 * 9.81) < 0.02 * 1420.0 * 9.81
 
@@ -85,10 +89,10 @@ def test_chassis_solve_lateral_load_transfer():
     assert r.status_code == 200
     b = r.json()
     L = b["loads"]
-    assert L["roll_deg"] > 0.5            # 1g 侧向 → 明显车身侧倾
+    assert L["roll_deg"] > 0.5            # 1g 侧向 → 明显车身侧倾 — 1g lateral → clearly visible body roll
     assert 0 < L["roll_grad_deg_per_g"] < 10
     assert L["tlltd_pct"] != 50.0
-    # 载荷转移守恒：FL+FR 不变（横向转移只换边；fz 输出舍入 2 位 → 容差 0.05N）
+    # 载荷转移守恒：FL+FR 不变（横向转移只换边；fz 输出舍入 2 位 → 容差 0.05N） — load-transfer conservation: FL+FR unchanged (lateral transfer only swaps sides; fz output rounded to 2 dp → tolerance 0.05N)
     base = client.post("/api/v3/chassis/solve", json=_req()).json()["loads"]["fz"]
     lat = b["loads"]["fz"]
     assert abs((lat["FL"] + lat["FR"]) - (base["FL"] + base["FR"])) < 0.05
@@ -100,7 +104,7 @@ def test_chassis_solve_attitude():
                     json=_req(travel={"fl": 30.0, "fr": 30.0, "rl": -30.0, "rr": -30.0}))
     assert r.status_code == 200
     b = r.json()
-    # heave=0、roll=0、pitch：前压后伸 → 车头下沉（模型约定 pitch 正 = 车头下沉）
+    # heave=0、roll=0、pitch：前压后伸 → 车头下沉（模型约定 pitch 正 = 车头下沉） — heave=0, roll=0, pitch: front compressed / rear extended → nose down (model convention: positive pitch = nose down)
     assert abs(b["attitude"]["heave_mm"]) < 1e-6
     assert abs(b["attitude"]["roll_deg"]) < 0.2
     assert b["attitude"]["pitch_deg"] > 0
@@ -128,6 +132,9 @@ def test_chassis_sweep_roll_symmetry():
     # 左轮 -t / 右轮 +t → 对称不变量（2026-08-22 P0 修复后收紧）：
     # cam_FL[i]（left at -t）== cam_FR[n-1-i]（right at -t）。旧断言比较同
     # 索引（不同行程，物理上不等）；曾通过是因左角轮轴未镜像缺陷的意外抵消。
+    # left wheel -t / right wheel +t → symmetry invariant (tightened after the 2026-08-22 P0 fix):
+    # cam_FL[i] (left at -t) == cam_FR[n-1-i] (right at -t). The old assertion compared same indices (different travels,
+    # physically unequal); its earlier pass was accidental cancellation owing to the unmirrored left-corner wheel-axis defect.
     cf = b["curves"]["cam_FL"]
     cr = b["curves"]["cam_FR"]
     n = len(cf)
@@ -144,12 +151,16 @@ def test_chassis_sweep_steer():
     assert "steer_toe_gain_deg_per_mm" in b["gains"]
     # 方向一致：rack+ → FR toe−（2026-08-22 steer_axis(-1,0,0) 前端对齐，
     # 与单角 steer 一致；幅度 ~0.39°/mm）
+    # direction agreement: rack+ → FR toe− (2026-08-22 steer_axis(-1,0,0) frontend alignment, consistent with the
+    # single-corner steer; magnitude ~0.39°/mm)
     assert b["curves"]["toe_FR"][-1] < b["curves"]["toe_FR"][0]
 
 
 def test_chassis_sweep_steer_camber_decomposition():
     """转向外倾增益分解（讲义 EP04×EP06）：Caster 项为负、KPI 项非负，
-    合成 ≈ caster+kpi+residual，一阶增益为负（外轮转向得负 camber）。"""
+    合成 ≈ caster+kpi+residual，一阶增益为负（外轮转向得负 camber）。
+
+    English: steer-camber gain decomposition (handbook EP04×EP06): the Caster term is negative, the KPI term non-negative; the composite ≈ caster+kpi+residual and the first-order gain is negative (the outer wheel steers to negative camber)."""
     r = client.post("/api/v3/chassis/kandc/steer",
                     json=_req(sweep={"min": -8, "max": 8, "n": 17}))
     g = r.json()["gains"]
@@ -157,14 +168,14 @@ def test_chassis_sweep_steer_camber_decomposition():
               "steer_camber_caster_at_max_deg", "steer_camber_kpi_at_max_deg",
               "steer_camber_residual_at_max_deg"):
         assert k in g, f"missing {k}"
-    assert g["steer_camber_caster_at_max_deg"] < 0.0    # Caster → 外轮负 camber
-    assert g["steer_camber_kpi_at_max_deg"] >= 0.0      # KPI → 夺走负 camber
+    assert g["steer_camber_caster_at_max_deg"] < 0.0    # Caster → 外轮负 camber — Caster → negative camber on the outer wheel
+    assert g["steer_camber_kpi_at_max_deg"] >= 0.0      # KPI → 夺走负 camber — KPI → takes the negative camber away
     total = g["steer_camber_total_at_max_deg"]
     decomp = (g["steer_camber_caster_at_max_deg"]
               + g["steer_camber_kpi_at_max_deg"]
               + g["steer_camber_residual_at_max_deg"])
-    assert abs(total - decomp) < 0.01                   # 分解恒等闭合
-    assert g["steer_camber_gain_deg_per_deg"] < 0.0     # 一阶：转向得负 camber
+    assert abs(total - decomp) < 0.01                   # 分解恒等闭合 — decomposition closes exactly
+    assert g["steer_camber_gain_deg_per_deg"] < 0.0     # 一阶：转向得负 camber — first order: steering yields negative camber
 
 
 def test_chassis_invalid_points_422():
@@ -180,7 +191,7 @@ def test_chassis_unknown_case_404():
 
 
 def test_chassis_solve_with_arb():
-    """带防倾杆：侧倾刚度占比 > 0 且侧倾角减小。"""
+    """带防倾杆：侧倾刚度占比 > 0 且侧倾角减小。"""  # English: with anti-roll bars: roll-stiffness share > 0 and the roll angle decreases.
     body = _req(quasi={"gy": 1.0, "gx": 0.0, "aero_force_n": 0.0, "aero_bias": 0.5})
     r = client.post("/api/v3/chassis/solve", json=body)
     assert r.status_code == 200
@@ -191,21 +202,23 @@ def test_chassis_solve_with_arb():
     r2 = client.post("/api/v3/chassis/solve", json=body2)
     w_arb = r2.json()["loads"]
     assert w_arb["arb_share_f"] > 0 and w_arb["arb_share_r"] > 0
-    assert abs(w_arb["roll_deg"]) < abs(n_arb["roll_deg"])   # ARB 减小侧倾
+    assert abs(w_arb["roll_deg"]) < abs(n_arb["roll_deg"])   # ARB 减小侧倾 — the ARB reduces roll
 
 
-# ── P0 quasi 内核统一：侧倾耦合迭代（2026-08-22） ──────────────────────
+# ── P0 quasi 内核统一：侧倾耦合迭代（2026-08-22） ────────────────────── — ( P0 quasi-kernel unification: roll-coupled iteration (2026-08-22) )
 
 def _kw_curve(kw0: float, quad: float = 8e-5, lin: float = 0.0):
     """前端同源形态的合成 kw 曲线（N/mm，随压缩变软）。线性项经 ±dt 均值抵消，
-    二次项是迁移主效应——与真实机构 mr² 曲率一致。"""
+    二次项是迁移主效应——与真实机构 mr² 曲率一致。
+
+    English: a synthetic kw curve of the same shape as the frontend (N/mm, softening with compression). The linear term cancels through the ±dt mean, and the quadratic term is the migration main effect — consistent with the real-mechanism mr² curvature."""
     xs = [round(-80.0 + 160.0 * k / 44.0, 2) for k in range(45)]
     return {"travel": xs,
             "kw": [round(kw0 * (1.0 - quad * t * t - lin * t), 4) for t in xs]}
 
 
 def test_chassis_tlltd_varies_with_gy():
-    """TLLTD 随 gy 单调变化 + kphi 随行程迁移（修复线性恒定，对齐前端）。"""
+    """TLLTD 随 gy 单调变化 + kphi 随行程迁移（修复线性恒定，对齐前端）。"""  # English: TLLTD varies monotonically with gy + kphi migrates with travel (fixes the constant-linear behavior, aligning with the frontend).
     gys = [0.05, 0.5, 1.0, 1.5, 2.0]
     loads = []
     for gy in gys:
@@ -218,12 +231,12 @@ def test_chassis_tlltd_varies_with_gy():
         assert r.status_code == 200
         loads.append(r.json()["loads"])
     ts = [L["tlltd_pct"] for L in loads]
-    assert abs(ts[-1] - ts[0]) > 0.3            # 不再是常数
-    assert all(a >= b for a, b in zip(ts, ts[1:])), ts   # 随 gy 单调（软前轴 → 前轴占比降）
-    # kphi 随侧倾行程迁移（压缩 → 变软）
+    assert abs(ts[-1] - ts[0]) > 0.3            # 不再是常数 — no longer constant
+    assert all(a >= b for a, b in zip(ts, ts[1:])), ts   # 随 gy 单调（软前轴 → 前轴占比降） — monotonic in gy (soft front axle → front share falls)
+    # kphi 随侧倾行程迁移（压缩 → 变软） — kphi migrates with roll travel (compression → softening)
     assert loads[-1]["kphi_f"] < loads[0]["kphi_f"]
     assert loads[-1]["kphi_r"] < loads[0]["kphi_r"]
-    # 侧倾角随 gy 增长
+    # 侧倾角随 gy 增长 — roll angle grows with gy
     rolls = [L["roll_deg"] for L in loads]
     assert all(a < b for a, b in zip(rolls, rolls[1:]))
 
@@ -238,33 +251,33 @@ def test_chassis_kw_curve_validation_422():
 
 
 def test_load_sensitivity_ls():
-    """LS 载荷敏感性：重载 μ 递减；LS=0 保持线性基线（2026-08-22 修复4）。"""
+    """LS 载荷敏感性：重载 μ 递减；LS=0 保持线性基线（2026-08-22 修复4）。"""  # English: LS load sensitivity: μ decreases under heavy load; LS=0 keeps the linear baseline (2026-08-22 fix 4).
     from src.tire_mf import MagicFormulaSub
     alphas = np.linspace(0, 25, 201)
     base = {"Fy0": 8000.0, "By": 9.0, "Cy": 1.2, "Ey": -0.5, "Sh": 0.0, "Sv": 0.0, "FzNom": 3500.0}
     mf0 = MagicFormulaSub({**base, "LS": 0.0})
     lo = float(mf0.fy(alphas, 1750.0).max()) / 1750.0
     hi = float(mf0.fy(alphas, 5250.0).max()) / 5250.0
-    assert abs(lo - hi) < 1e-6                       # 线性基线：μ 恒定
+    assert abs(lo - hi) < 1e-6                       # 线性基线：μ 恒定 — linear baseline: μ constant
     mf1 = MagicFormulaSub({**base, "LS": 0.15})
     lo1 = float(mf1.fy(alphas, 1750.0).max()) / 1750.0
     hi1 = float(mf1.fy(alphas, 5250.0).max()) / 5250.0
-    assert hi1 < lo1 - 0.05                          # 重载 μ 显著下降（Jensen 效应）
-    assert abs(mf1.mu - 8000.0 / 3500.0) < 1e-12     # μ 与 MF 峰值同源
+    assert hi1 < lo1 - 0.05                          # 重载 μ 显著下降（Jensen 效应） — heavy-load μ drops significantly (Jensen effect)
+    assert abs(mf1.mu - 8000.0 / 3500.0) < 1e-12     # μ 与 MF 峰值同源 — μ shares its origin with the MF peak
 
 
 def test_chassis_hs_hcg_conservation_warning():
-    """hs/hcg 独立输入不自洽时给出守恒警告（2026-08-22 顺手项6）。"""
+    """hs/hcg 独立输入不自洽时给出守恒警告（2026-08-22 顺手项6）。"""  # English: when the independent hs/hcg inputs disagree, a conservation warning is emitted (2026-08-22 side item 6).
     body = _req()
-    body["vehicle"]["hs_mm"] = 500.0                 # 与 hcg=350 严重不自洽
+    body["vehicle"]["hs_mm"] = 500.0                 # 与 hcg=350 严重不自洽 — grossly inconsistent with hcg=350
     r = client.post("/api/v3/chassis/solve", json=body)
     assert r.status_code == 200
     assert any("hs/hcg" in w for w in r.json()["warnings"])
-    r2 = client.post("/api/v3/chassis/solve", json=_req())   # 基线（370 vs 350）不告警
+    r2 = client.post("/api/v3/chassis/solve", json=_req())   # 基线（370 vs 350）不告警 — the baseline (370 vs 350) does not warn
     assert not any("hs/hcg" in w for w in r2.json()["warnings"])
 
 
-# ── 稳态不足转向梯度 + Jacking（真实底盘开发 KPI，镜像前端 solveQuasiStatic）──
+# ── 稳态不足转向梯度 + Jacking（真实底盘开发 KPI，镜像前端 solveQuasiStatic）── — ( steady-state understeer gradient + Jacking — real chassis-development KPIs, mirroring the frontend solveQuasiStatic )
 
 def test_chassis_us_gradient_positive_neutral_bias():
     """默认设计应呈小幅不足转向：0 < K < 2.5 °/g。
@@ -274,6 +287,13 @@ def test_chassis_us_gradient_positive_neutral_bias():
     需求 53.5%"——那个 53.5% 正是当时 a/b 前后对调 bug 的产物；修复后该夹具
     实际变成后重车（前 46.5%），自然不再满足"不足转向"。现按物理正确的方式
     表达同一设计意图：前轴确实更容易失稳（载荷份额大 + 胎窄）。
+
+    English: the default design should show mild understeer: 0 < K < 2.5 °/g.
+    Fixture convention (M5, corrected 2026-09-20): front sprung 380 > rear 330 (front share 53.5%) + front tire 265 / rear 285.
+    The old fixture was written as front 330 / rear 380 (lighter front axle) while asserting a 53.5% front load demand — that 53.5%
+    was exactly the artifact of the then-present a/b front-rear-swapped bug; after the fix the fixture actually became a rear-heavy
+    car (front 46.5%), which naturally no longer satisfied understeer. The same design intent is now expressed in a physically
+    correct way: the front axle really is more prone to destabilizing (larger load share + narrower tires).
     """
     r = client.post("/api/v3/chassis/solve",
                     json=_req(quasi={"gy": 1.0, "gx": 0.0, "aero_force_n": 0.0,
@@ -285,7 +305,7 @@ def test_chassis_us_gradient_positive_neutral_bias():
 
 
 def test_chassis_us_gradient_near_linear_scaling():
-    """准线性区：gy 减半，梯度同量级（载荷转移 + RC 迁移非线性容差 55%）。"""
+    """准线性区：gy 减半，梯度同量级（载荷转移 + RC 迁移非线性容差 55%）。"""  # English: quasi-linear region: gy halved, gradient of the same magnitude (55% tolerance for load-transfer + RC-migration nonlinearity).
     def _grad(gy):
         b = client.post("/api/v3/chassis/solve",
                         json=_req(quasi={"gy": gy, "gx": 0.0, "aero_force_n": 0.0,
@@ -297,7 +317,7 @@ def test_chassis_us_gradient_near_linear_scaling():
 
 
 def test_chassis_us_curve_sweep():
-    """不足转向特性 δ-ay 扫掠：21 点 0→2g；完整版含侧倾转向分量且恒等闭合。"""
+    """不足转向特性 δ-ay 扫掠：21 点 0→2g；完整版含侧倾转向分量且恒等闭合。"""  # English: understeer characteristic δ-ay sweep: 21 points 0→2g; the full version includes the roll-steer component and closes exactly.
     r = client.post("/api/v3/chassis/solve",
                     json=_req(quasi={"gy": 1.0, "gx": 0.0, "aero_force_n": 0.0,
                                      "aero_bias": 0.5}))
@@ -307,28 +327,28 @@ def test_chassis_us_curve_sweep():
               "us_roll_steer_deg", "us_angle_deg", "roll_deg"):
         assert k in uc and len(uc[k]) == 21
     assert uc["gy"][0] == 0.0 and abs(uc["gy"][-1] - 2.0) < 1e-6
-    assert uc["us_angle_deg"][0] == 0.0                   # gy≈0 不计算，置 0
+    assert uc["us_angle_deg"][0] == 0.0                   # gy≈0 不计算，置 0 — gy≈0 is not computed, set to 0
     i1 = uc["gy"].index(1.0)
     ld = b["loads"]
     assert abs(uc["us_tire_deg"][i1]
-               - (ld["alpha_f_deg"] - ld["alpha_r_deg"])) < 1e-3   # 轮胎分量同口径
-    for i in range(21):                                   # 恒等闭合
+               - (ld["alpha_f_deg"] - ld["alpha_r_deg"])) < 1e-3   # 轮胎分量同口径 — tire component, same convention
+    for i in range(21):                                   # 恒等闭合 — exact closure
         assert abs(uc["us_angle_deg"][i]
                    - (uc["us_tire_deg"][i] + uc["us_roll_steer_deg"][i])) < 1e-3
-    assert uc["us_angle_deg"][-1] > uc["us_angle_deg"][5] > 0       # 随 ay 增长
+    assert uc["us_angle_deg"][-1] > uc["us_angle_deg"][5] > 0       # 随 ay 增长 — grows with ay
 
 
 def test_chassis_us_gradient_zero_gy_guard():
-    """|gy|<0.02g：梯度置 0 + 显式警告（线性区除零保护，不伪造数值）。"""
+    """|gy|<0.02g：梯度置 0 + 显式警告（线性区除零保护，不伪造数值）。"""  # English: |gy|<0.02g: gradient set to 0 + an explicit warning (divide-by-zero protection in the linear region; no fabricated numbers).
     r = client.post("/api/v3/chassis/solve", json=_req())
     ld = r.json()["loads"]
     assert ld["us_grad_deg_per_g"] == 0.0
     assert ld["alpha_f_deg"] == 0.0 and ld["alpha_r_deg"] == 0.0
-    assert any("不足转向梯度" in w for w in r.json()["warnings"])
+    assert any("understeer gradient" in w for w in r.json()["warnings"])
 
 
 def test_chassis_jacking_lifts_sprung_mass():
-    """正 RC + 正 gy → Jacking 垂向力为正（抬升簧载），量级合理。"""
+    """正 RC + 正 gy → Jacking 垂向力为正（抬升簧载），量级合理。"""  # English: positive RC + positive gy → positive jacking vertical force (lifting the sprung mass), with a sensible magnitude.
     r = client.post("/api/v3/chassis/solve",
                     json=_req(quasi={"gy": 1.0, "gx": 0.0, "aero_force_n": 0.0,
                                      "aero_bias": 0.5}))
@@ -338,7 +358,7 @@ def test_chassis_jacking_lifts_sprung_mass():
 
 
 def test_kinematics_jacking_formula():
-    """kinematics.jacking：F_jack = Fy·2·z_RC/T；负 RC 下拉；退化输入状态机。"""
+    """kinematics.jacking：F_jack = Fy·2·z_RC/T；负 RC 下拉；退化输入状态机。"""  # English: kinematics.jacking: F_jack = Fy·2·z_RC/T; a negative RC pulls down; degenerate inputs go through the state machine.
     from src.legacy.kinematics import jacking
     r = jacking(fy_sprung_n=5000.0, rc_h_mm=50.0, track_mm=1600.0)
     assert r.status == "VALID" and abs(r.value - 5000.0 * 100.0 / 1600.0) < 1e-9

@@ -3,6 +3,12 @@
 这些断言的意义不在于"函数能跑"，而在于**把 FSAE 清单的物理可信度钉住**：
 总和与声明口径一致、质心位置符合真车量级、惯量半径落在行业带内、左右对称性成立、
 以及"清单 vs 声明"的一致性校验本身是有效的（构造偏差时必须报出来）。
+
+English: mass and inertia property system tests (M14 / G44).
+The point of these assertions is not that the functions run, but pinning the physical credibility of the FSAE inventory:
+totals agree with the declared budget, the CG position has real-car magnitudes, inertia radii land inside industry bands,
+left/right symmetry holds, and the inventory-vs-declared consistency check itself is effective (a constructed deviation
+must be reported).
 """
 
 from __future__ import annotations
@@ -23,9 +29,9 @@ def _fsae():
     return compute_mass_properties(fsae_mass_items(), WB)
 
 
-# ── 清单与声明口径 ──────────────────────────────────────────────────────────
+# ── 清单与声明口径 ────────────────────────────────────────────────────────── — ( inventory and declared budget )
 def test_mass_totals_match_declared_budget():
-    """总质量/簧载/非簧载必须精确闭合到预设口径（235 / 183 / 52）。"""
+    """总质量/簧载/非簧载必须精确闭合到预设口径（235 / 183 / 52）。"""  # English: total/sprung/unsprung mass must close exactly onto the preset budget (235 / 183 / 52).
     p = _fsae()
     assert p.mass_kg == 235.0, f"总质量 {p.mass_kg}"
     assert p.sprung_mass_kg == 183.0, f"簧载 {p.sprung_mass_kg}"
@@ -46,6 +52,10 @@ def test_consistency_check_detects_deliberate_error():
 
     只断言"当前数据通过"等于没验证校验器——这类"守卫本身是否有效"的对照，
     在本项目已有先例（测试 gate 曾长期假绿）。
+
+    English: the check itself must be effective: deliberately add a 20 kg ballast item to the inventory and the mass overrun must be reported.
+    Asserting only that the current data passes verifies nothing about the checker — this project already has precedent for this
+    kind of is-the-guard-itself-valid control (a test gate once stayed falsely green for a long time).
     """
     heavy = fsae_mass_items() + [
         MassItem("test_ballast", "测试配重", 20.0, 0.0, 800.0, 250.0, "sprung")
@@ -57,7 +67,7 @@ def test_consistency_check_detects_deliberate_error():
     assert abs(mass_row["delta"] - 20.0) < 1e-6
 
 
-# ── 质心 ────────────────────────────────────────────────────────────────────
+# ── 质心 ──────────────────────────────────────────────────────────────────── — ( center of gravity )
 def test_cg_height_and_sprung_cg_match_declared_within_tolerance():
     p = _fsae()
     assert abs(p.cg_mm[2] - DECLARED["hcg_mm"]) <= 2.0, f"整车质心高 {p.cg_mm[2]:.2f}"
@@ -69,6 +79,9 @@ def test_cg_is_laterally_symmetric():
     """左右对称车：x 质心与两个横-纵/横-垂惯性积必须≈0。
 
     首版把散热器只放在 +X 侧 ⇒ x 质心偏 4.3mm、Ixy 达 Izz 的 0.6%。这条断言就是为它加的。
+
+    English: left/right symmetric car: the x CG and both lateral-transverse/lateral-vertical inertia products must be ≈0.
+    The first version placed the radiator only on the +X side ⇒ x CG off by 4.3mm and Ixy at 0.6% of Izz — this assertion was added precisely for that.
     """
     p = _fsae()
     assert abs(p.cg_mm[0]) < 1.0, f"x 质心应≈0（实际 {p.cg_mm[0]:.2f}mm）"
@@ -82,17 +95,26 @@ def test_static_axle_split_from_cg():
 
     声明口径是两轴簧载质量相等（91.5/91.5 = 50.0%）；清单算出 51.4% —— 两者差 1.4%，
     属于"声明值 vs 部件清单"的口径差，登记为待查项，此处只钉住量级（不假装它是 50.0）。
+
+    English: the static load split computed from the CG longitudinal coordinate should be near 50/50 (CG near the wheelbase midpoint).
+    The declared convention is equal sprung mass per axle (91.5/91.5 = 50.0%) while the inventory computes 51.4% — a 1.4%
+    convention difference between declared values and the component inventory, logged as an open item; here only the magnitude
+    is pinned (without pretending it is 50.0).
     """
     p = _fsae()
     assert 48.0 < p.static_front_pct < 53.0, f"前轴静载占比 {p.static_front_pct:.1f}%"
 
 
-# ── 惯量张量 ────────────────────────────────────────────────────────────────
+# ── 惯量张量 ──────────────────────────────────────────────────────────────── — ( inertia tensor )
 def test_inertia_axis_mapping_and_magnitudes():
     """轴映射必须与文档一致：X=外→俯仰、Y=前→侧倾、Z=上→横摆。
 
     横摆惯量最大（质量沿车长铺开）、侧倾惯量最小（车宽窄、且低于重心），
     这是所有汽车的共同特征；若映射写反，这个不等式立刻不成立。
+
+    English: the axis mapping must match the documentation: X=outboard→pitch, Y=forward→roll, Z=up→yaw.
+    Yaw inertia is the largest (mass spread along the car length) and roll inertia the smallest (narrow width, below the CG) —
+    a common trait of all cars; if the mapping were flipped, this inequality would break immediately.
     """
     p = _fsae()
     assert p.i_yaw > p.i_pitch > p.i_roll, (
@@ -105,6 +127,11 @@ def test_yaw_radius_of_gyration_in_industry_band():
 
     这是比 Izz 绝对值更可靠的体量判据。首版把车架/车身各只写一件（质量全堆在质心
     附近）时 k_z/L 偏低；按前后分段后才落进带内——这条断言的作用就是守住它。
+
+    English: yaw radius of gyration k_z/L ≈ 0.30–0.36 (sedans 0.30–0.35, race cars 0.33–0.36).
+    This is a more reliable bulk indicator than the absolute Izz. With the first version listing only one chassis and one body item
+    (mass piled up near the CG), k_z/L came out low; only after splitting front/rear segments did it fall inside the band — this
+    assertion exists to guard that.
     """
     p = _fsae()
     ratio = p.radius_of_gyration_mm("yaw") / WB
@@ -115,6 +142,10 @@ def test_roll_yaw_coupling_is_present_and_small():
     """侧倾-横摆耦合 Iyz 应存在（前后质量高度不对称）但远小于 Izz。
 
     Iyz 恒为 0 说明清单把前后高度差抹平了（例如所有件同高）；过大则说明位置写错。
+
+    English: the roll-yaw coupling Iyz should exist (front/rear mass-height asymmetry) yet stay far below Izz.
+    Iyz being identically 0 means the inventory erased the front/rear height differences (e.g. everything at the same height);
+    being too large means a position is wrong.
     """
     p = _fsae()
     rel = abs(p.inertia["Iyz"]) / p.inertia["Izz"]
@@ -123,7 +154,7 @@ def test_roll_yaw_coupling_is_present_and_small():
 
 
 def test_inertia_scales_with_mass_position():
-    """把一件质量从质心附近挪到车尾，Izz 必须增大——验证平行轴项算对了。"""
+    """把一件质量从质心附近挪到车尾，Izz 必须增大——验证平行轴项算对了。"""  # English: move one mass item from near the CG to the car tail and Izz must increase — this verifies the parallel-axis term.
     base = [MassItem("a", "A", 10.0, 0.0, 775.0, 0.0, "sprung"),
             MassItem("b", "B", 10.0, 0.0, 775.0, 0.0, "sprung")]
     moved = [MassItem("a", "A", 10.0, 0.0, 775.0, 0.0, "sprung"),
@@ -134,17 +165,17 @@ def test_inertia_scales_with_mass_position():
 
 
 def test_inventory_is_auditable():
-    """清单必须可审计：id 唯一、非簧载成对（左右各一）、余项显式且带说明。"""
+    """清单必须可审计：id 唯一、非簧载成对（左右各一）、余项显式且带说明。"""  # English: the inventory must be auditable: unique ids, unsprung items in left/right pairs, leftover items explicit with a note.
     ids = [i.id for i in FSAE_MASS_ITEMS]
     assert len(ids) == len(set(ids)), "id 必须唯一"
     for i in FSAE_MASS_ITEMS:
         if i.kind.startswith("unsprung") and abs(i.x) > 1e-9:
-            # 需要镜像的件：镜像后左右各一件
+            # 需要镜像的件：镜像后左右各一件 — items needing mirroring: one each on left and right after mirroring
             pass
     ballast = [i for i in FSAE_MASS_ITEMS if "ballast" in i.id]
     assert len(ballast) == 1 and ballast[0].note, "余项必须显式且写明用途"
     items = fsae_mass_items()
     n_un = sum(1 for i in items if i.kind != "sprung")
     assert n_un % 2 == 0, "非簧载件必须成对（左右各一）"
-    # 镜像后 x 方向质量矩应为 0
+    # 镜像后 x 方向质量矩应为 0 — after mirroring, the x-direction mass moment should be 0
     assert abs(sum(i.mass_kg * i.x for i in items)) < 1e-9, "左右质量矩应精确抵消"

@@ -10,6 +10,21 @@ M5 死代码清理（2026-09-20）：删除从未被任何模块导入的 9 个�
 保留 `closest_point_on_line` —— 它是 `distance_point_to_line` 的内部依赖。
 `rotate_around_x` 的历史讨论见 `src/solver/mechanism/solver.py::solve_rocker`
 docstring（说明 STRUT_OUT OpenItem 的物理根因），本清理不影响该记载。
+
+M5 dead-code cleanup (2026-09-20): removed 9 functions that no module ever
+imported:
+    dist / closest_point_on_circle / enforce_distance / enforce_distance_fixed_q /
+    rotate_around_x / rotate_around_z / normalize_or_default / deg / rad
+(criterion: a repo-wide AST scan of `from ... import` statements found zero
+imports of these names; the "reference counts" of `deg`/`rad` all came from
+same-named local variables in other modules, not from this module's
+functions.)
+`closest_point_on_line` is kept — it is an internal dependency of
+`distance_point_to_line`.
+For the historical discussion of `rotate_around_x`, see the
+`src/solver/mechanism/solver.py::solve_rocker` docstring (which explains the
+physical root cause of the STRUT_OUT OpenItem); this cleanup does not affect
+that record.
 """
 
 import math
@@ -57,6 +72,9 @@ def rotate_around_axis(pt, pivot, axis, theta):
     """Rotate point around arbitrary axis line through pivot (Rodrigues).
 
     axis 须为单位向量或非零向量（内部归一化）。θ=0 恒等。
+
+    `axis` must be a unit vector or a non-zero vector (normalized
+    internally). θ=0 is the identity.
     """
     pt = np.asarray(pt, float)
     pivot = np.asarray(pivot, float)

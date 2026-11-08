@@ -7,6 +7,17 @@
 
 本文件以不变量断言堵住该类盲区：镜像几何输入下，六项定位角逐角相等。
 另以黄金值钉住右侧输出，防止修复引入右侧漂移。
+
+English: P0 mirror-fix regression: left/right alignment-angle symmetry invariants (guard for the
+B finding from the r2 research pass).
+Background (2026-08-22): pose_metrics once reused the right-frame formulas for the left corner —
+1) the design wheel axis was not mirrored -> FL scrub deviated from FR by
+   2-tireR-sin(|camber|) (13.61mm at baseline geometry), with an rc_h offset ~0.51mm from
+   the same source;
+2) kpi/scrub were not sign-flipped per convention.py's "identical on both sides" rule.
+This file blocks that blind-spot class with invariant assertions: under mirrored-geometry
+input, all six alignment angles must be equal corner by corner. A golden-value pin also
+protects the right-side output from drift introduced by the fix.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -65,7 +76,7 @@ def _solve(front=None, rear=None, travel=None):
 
 
 def test_mirror_symmetry_all_angles_design_pose():
-    """设计位：镜像几何 → FL==FR、RL==RR 六项定位角逐项相等（不变量）。"""
+    """设计位：镜像几何 → FL==FR、RL==RR 六项定位角逐项相等（不变量）。"""  # English: design position: mirrored geometry -> FL==FR, RL==RR — all six alignment angles equal item by item (invariant).
     pose = _solve()
     for left, right in (("FL", "FR"), ("RL", "RR")):
         for k in _ANGLE_KEYS:
@@ -75,7 +86,7 @@ def test_mirror_symmetry_all_angles_design_pose():
 
 
 def test_scrub_mirror_gap_regression_13mm():
-    """回归钉：修复前 FL/FR scrub 差恰为 13.61mm；现在必须 < 1e-6。"""
+    """回归钉：修复前 FL/FR scrub 差恰为 13.61mm；现在必须 < 1e-6。"""  # English: regression pin: before the fix FL/FR scrub differed by exactly 13.61mm; now it must be < 1e-6.
     pose = _solve()
     gap_front = abs(pose["FL"]["scrub"] - pose["FR"]["scrub"])
     gap_rear = abs(pose["RL"]["scrub"] - pose["RR"]["scrub"])
@@ -84,7 +95,7 @@ def test_scrub_mirror_gap_regression_13mm():
 
 @pytest.mark.parametrize("trav", [-30.0, 30.0])
 def test_mirror_symmetry_under_travel(trav):
-    """轮跳下对称性保持（左右同行程）。"""
+    """轮跳下对称性保持（左右同行程）。"""  # English: symmetry preserved under wheel travel (same travel both sides).
     pose = _solve(travel={"fl": trav, "fr": trav, "rl": trav, "rr": trav})
     for left, right in (("FL", "FR"), ("RL", "RR")):
         for k in ("cam", "toe", "kpi", "cast"):
@@ -97,7 +108,13 @@ def test_right_side_golden_unchanged():
     注：2026-08-22 并发修复（主销-地面交点 t0 符号）将 kg 自 UBJ 上方移回
     地面段：scrub 229.034→54.5784、trail −54.65→24.64，均更贴物理且与
     镜像对称一致；此处同步钉住新值。
-    """
+
+    English: golden values: the fix must not touch right-side numbers.
+    Note: the simultaneous 2026-08-22 fix (kingpin-ground intersection t0 sign) moved kg back
+    into the ground segment from above UBJ: scrub 229.034 -> 54.5784, trail -54.65 -> 24.64,
+    all closer to physics and consistent with mirror symmetry; the new values are pinned here
+    in sync.
+        """
     m = _solve()["FR"]
     assert abs(m["cam"] - (-1.2)) < 1e-3
     assert abs(m["scrub"] - 54.5784) < 0.01
@@ -106,6 +123,6 @@ def test_right_side_golden_unchanged():
 
 
 def test_left_kpi_positive_by_convention():
-    """convention.py：KPI 正 = 上端向内，两侧相同（左角曾错误输出负值）。"""
+    """convention.py：KPI 正 = 上端向内，两侧相同（左角曾错误输出负值）。"""  # English: convention.py: positive KPI = top leaning inward, identical on both sides (the left corner previously wrongly output a negative value).
     pose = _solve()
     assert pose["FL"]["kpi"] > 0 and pose["FR"]["kpi"] > 0

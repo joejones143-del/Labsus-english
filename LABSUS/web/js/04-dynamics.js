@@ -21,20 +21,37 @@
    2. **后轴按轮距/车速延迟**：z_rear(t) = z_front(t − L/v)。同一条路后轴后到，
       这是"前后轴输入不相关"这一常见说法在单轨直行下的正确形态；不延迟就等于
       四轮同步抖动，会低估俯仰并高估一致性。
+      (English: the earlier `rand` was a hand-made 5-harmonic placeholder whose amplitude
+      decayed as 1/k with frequency, unrelated to measured road statistics. ISO 8608 defines
+      the road DISPLACEMENT power spectral density decaying as a power law in spatial
+      frequency: Gd(n) = Gd(n0)·(n/n0)^(−w) with n0 = 0.1 cycle/m and w = 2 (standard value);
+      classes A-H are graded by Gd(n0). The engineering band is n ∈ [0.011, 2.83] cycle/m
+      (wavelengths 0.35-91 m). Synthesis (band-limited random road): split the band
+      log-uniformly into N bins with center frequency n_i and bandwidth Δn_i, amplitude
+      a_i = sqrt(2·Gd(n_i)·Δn_i) and random phase φ_i, giving z(s) = Σ a_i·cos(2π·n_i·s + φ_i);
+      its mean square matches ∫Gd(n)dn (spectrally consistent); class A lands at RMS ≈ 3.8 mm
+      on the standard band. Two engineering details: (1) phases come from a fixed seed
+      (mulberry32) => every open sees the same reproducible road, so two screenshots show the
+      same readouts (a basic workbench requirement and the precondition for assertable tests).
+      (2) the rear axle is delayed by track width / speed: z_rear(t) = z_front(t − L/v) - the
+      same road reaches the rear axle later, the correct single-track straight-line form of
+      uncorrelated front/rear axle inputs; without the delay all four wheels shake in sync,
+      underestimating pitch and overestimating consistency.)
    ═══════════════════════════════════════════════════════════════════════════ */
-const ROAD_ISO_N0 = 0.1;                  /* cycle/m：ISO 8608 参考空间频率 */
-const ROAD_ISO_W  = 2.0;                  /* 位移 PSD 幂律指数（ISO 8608 标准值） */
+const ROAD_ISO_N0 = 0.1;                  /* cycle/m：ISO 8608 参考空间频率 — cycle/m: ISO 8608 reference spatial frequency */
+const ROAD_ISO_W  = 2.0;                  /* 位移 PSD 幂律指数（ISO 8608 标准值） — displacement-PSD power-law exponent (ISO 8608 standard value) */
 const ROAD_ISO_NMIN = 0.011, ROAD_ISO_NMAX = 2.83;
-const ROAD_ISO_NH = 160;                  /* 谐波数（对数分箱） */
-const ROAD_ISO_SEED = 20260920;           /* 固定种子 ⇒ 同一条路可复现 */
+const ROAD_ISO_NH = 160;                  /* 谐波数（对数分箱） — number of harmonics (log-spaced bins) */
+const ROAD_ISO_SEED = 20260920;           /* 固定种子 ⇒ 同一条路可复现 — fixed seed => the same reproducible road every time */
 const ROAD_ISO = {
-  A:{gd:16,     zh:"A 级 很好"},   B:{gd:64,     zh:"B 级 好"},
-  C:{gd:256,    zh:"C 级 一般"},   D:{gd:1024,   zh:"D 级 差"},
-  E:{gd:4096,   zh:"E 级 很差"},   F:{gd:16384,  zh:"F 级 极差"},
-  G:{gd:65536,  zh:"G 级 试验场"}, H:{gd:262144, zh:"H 级 极恶劣"},
+  A:{gd:16,     zh:"Class A - very good"},      B:{gd:64,     zh:"Class B - good"},
+  C:{gd:256,    zh:"Class C - fair"},           D:{gd:1024,   zh:"Class D - poor"},
+  E:{gd:4096,   zh:"Class E - very poor"},      F:{gd:16384,  zh:"Class F - extremely poor"},
+  G:{gd:65536,  zh:"Class G - proving ground"}, H:{gd:262144, zh:"Class H - extremely harsh"},
 };
+/* ROAD_ISO[cls].zh holds display-only class labels (no logic reads .zh); translated to English. */
 
-/* mulberry32：小而快的确定性 PRNG（相位用，不用于安全用途） */
+/* mulberry32：小而快的确定性 PRNG（相位用，不用于安全用途） — mulberry32: a small fast deterministic PRNG (used for phases only, not for security) */
 function isoRand(seed){
   let a = seed >>> 0;
   return function(){
@@ -45,7 +62,7 @@ function isoRand(seed){
   };
 }
 
-/* 目标谱的解析 RMS（mm）：RMS² = ∫Gd dn，用于自检与面板显示 */
+/* 目标谱的解析 RMS（mm）：RMS² = ∫Gd dn，用于自检与面板显示 — analytic RMS of the target spectrum in mm: RMS² = ∫Gd dn; used for self-checks and panel display */
 function isoRmsMm(cls){
   const c = ROAD_ISO[cls] || ROAD_ISO.A;
   const g0 = c.gd * 1e-6;                                    /* m³ */
@@ -78,9 +95,16 @@ function isoHarmonics(cls){
    S3（M20，2026-10-17）：把台架原本"时间驱动"的实现拆出空间域版本，供整车内核用。
    为什么必须拆：整车车速是**变化的**，而台架 isoProfileMm(t) 用固定参考车速
    S.roadV 把 t 折成距离（s = v·t）——同一条路在不同车速下会被拉伸/压缩，
-   对整车不成立。空间域版本让"路面固定在地上"，车速只影响经过它的快慢。 */
+   对整车不成立。空间域版本让"路面固定在地上"，车速只影响经过它的快慢。
+   (z(s): SPATIAL domain - s is travelled distance in m; returns road elevation in mm
+   (positive = bump). S3 (M20, 2026-10-17): split the rig time-driven implementation into
+   this spatial-domain version for the full-vehicle kernel. Why it must be split: vehicle
+   speed VARIES, while the rig isoProfileMm(t) folds t into distance with the fixed
+   reference speed S.roadV (s = v·t) - the same road would be stretched/compressed at
+   different speeds, which does not hold for the full vehicle. The spatial version pins
+   the road to the ground; speed only changes how fast it is passed.) */
 function isoProfileAtMm(sMeters, cls){
-  if(!(sMeters > 0)) return 0;               /* 驶入前路面为零（避免开局瞬态） */
+  if(!(sMeters > 0)) return 0;               /* 驶入前路面为零（避免开局瞬态） — road is zero before entry (avoids a start-up transient) */
   const harm = isoHarmonics(cls || S.roadCls || "A");
   let z = 0;
   for(let i=0;i<harm.length;i++){
@@ -91,15 +115,18 @@ function isoProfileAtMm(sMeters, cls){
 }
 
 /* z(t)：t 为时间 s，返回路面高程 mm（正 = 上凸）。
-   台架入口（固定参考车速折算距离）——改为调用空间域版本，**行为逐位不变**。 */
+   台架入口（固定参考车速折算距离）——改为调用空间域版本，**行为逐位不变**。
+   (z(t): t in seconds; returns road elevation in mm (positive = bump). Rig entry point
+   (distance folded with the fixed reference speed) - now delegates to the spatial-domain
+   version, behavior bit-for-bit unchanged.) */
 function isoProfileMm(t){
-  if(t <= 0) return 0;                       /* 车辆驶入前路面为零（避免开局瞬态） */
+  if(t <= 0) return 0;                       /* 车辆驶入前路面为零（避免开局瞬态） — road is zero before the vehicle enters (avoids a start-up transient) */
   const cls = S.roadCls || "A";
   const v = Math.max(1, S.roadV || 20);      /* m/s */
   return isoProfileAtMm(v * t, cls);
 }
 
-/* 后轴延迟：同一条路，后轴后到 L/v 秒（单轨直行下的严格关系） */
+/* 后轴延迟：同一条路，后轴后到 L/v 秒（单轨直行下的严格关系） — rear-axle delay: same road, the rear axle arrives L/v seconds later (exact for single-track straight driving) */
 function isoLag(axis){
   if(S.road !== "iso" || axis !== "rear") return 0;
   return (S.wb/1000) / Math.max(1, S.roadV || 20);
@@ -113,7 +140,7 @@ function roadSignal(t, axis){
     case "pulse": {const x=(t-0.5)/0.06;return A*Math.exp(-x*x);}
     case "chirp": {const f=0.4+ (S.rF)*Math.min(1,t/8);return A*sin(2*PI*f*t);}
     case "rand":  {let v=0;for(let k=1;k<=5;k++)v+=sin(2*PI*(1.1*k*S.rF*0.55)*t+k*2.399)/k;return A*v*0.45;}
-    /* ISO 8608：幅值由等级谱决定，不用 ROAD AMP（那是给确定性信号用的） */
+    /* ISO 8608：幅值由等级谱决定，不用 ROAD AMP（那是给确定性信号用的） — ISO 8608: amplitude is set by the class spectrum, not ROAD AMP (that one is for the deterministic signals) */
     case "iso":   return isoProfileMm(t - isoLag(axis));
     default: return 0;
   }
@@ -175,7 +202,7 @@ function stepDyn(M,dt,rack,tSim,axis){
   return{load:Ft/FS,fs:Fs/FS,fd:Fd/FS,pen:pen,acc:accz/1000,road:roadSignal(tSim)};
 }
 
-/* ================================ 7. 全车多体仿真管理体系 ================================ */
+/* ================================ 7. 全车多体仿真管理体系 — 7. Full-vehicle multi-body simulation management ================================ */
 const SIM={
   FR:null, FL:null, RR:null, RL:null,
   mFR:null, mFL:null, mRR:null, mRL:null,
@@ -233,7 +260,12 @@ function simulate(dt){
   if(TRK.active){trackStep(dt);return;}
   /* G32 修复：原此处对 STAGE.open/SLOPE/SKIDPAD 分支各注册一次 rAF(loop)，
      而主循环自身每帧自注册（08-interact.js）→ 舞台打开期间 rAF 实例每帧翻倍，
-     关台后大量并行 loop 永久残留（卡顿源）。直接 return 即可，主循环自续。 */
+     关台后大量并行 loop 永久残留（卡顿源）。直接 return 即可，主循环自续。
+     (G32 fix: this spot used to register one rAF(loop) per branch (STAGE.open / SLOPE /
+     SKIDPAD) while the main loop re-registers itself every frame (08-interact.js) => rAF
+     instances doubled every frame while a stage was open, and after closing the stage many
+     parallel loops survived forever (a stutter source). Simply returning lets the main
+     loop continue by itself.) */
   if(STAGE.open){return;}
   if((typeof SLOPE_STAGE !== 'undefined' && SLOPE_STAGE.active) || (typeof SKIDPAD_STAGE !== 'undefined' && SKIDPAD_STAGE.active)){return;}
   const MF=SIM.FR, NF=SIM.FL, MR=SIM.RR, NR=SIM.RL;
@@ -261,7 +293,12 @@ function simulate(dt){
     /* G32 修复（用户报告"有bug"）：RIG 模式点一次「运行/暂停」即永久冻死。
        根因：暂停帧 simulate(0)（08-interact.js F-20）进入 stepDyn 后
        h=dt/NS=0 → 速度差分 (p-pp)/0=NaN 毒化全部节点，复位前不可自愈。
-       dt=0（暂停）时跳过积分，仅刷新读数快照。 */
+       dt=0（暂停）时跳过积分，仅刷新读数快照。
+       (G32 fix (user-reported bug): in RIG mode one click of Run/Pause froze the sim
+       permanently. Root cause: on the paused frame simulate(0) (see 08-interact.js F-20)
+       reaches stepDyn with h=dt/NS=0 => velocity differencing (p-pp)/0=NaN poisons every
+       node and cannot self-heal before a reset. With dt=0 (paused) the integration is
+       skipped and only the readout snapshot is refreshed.) */
     if(dt>0){
       const rF=stepDyn(MF, dt, S.rack, S.simT, 'front');
       SIM.mFR=metrics(MF, 'front');
@@ -301,20 +338,25 @@ function takeBaselineSnapshot(){
     qsRes: deepClone(SIM.qsRes)
   };
   S.hasBaseline = true;
-  document.getElementById("tbBase").textContent = "已锁定 (双线比对)";
+  document.getElementById("tbBase").textContent = "Locked (dual-curve comparison)";
   document.getElementById("tbBase").className = "a";
 }
 function clearBaselineSnapshot(){
   S.baseline = null;
   S.hasBaseline = false;
-  document.getElementById("tbBase").textContent = "未锁定 (无比对)";
+  document.getElementById("tbBase").textContent = "Unlocked (no baseline)";
   document.getElementById("tbBase").className = "";
 }
 
-/* ================================ 8. 渲染色彩与全局装配 ================================ */
+/* ================================ 8. 渲染色彩与全局装配 — 8. Render colors and global assembly ================================ */
 /* 双主题画布调色板：浅色（奶杏米白基底）/ 深色（深普鲁士蓝灰基底），
    数据分类专属映射：普鲁士蓝=主操作/速比 · 陶土棕=外倾/转向节 · 鼠尾灰绿=前束/拉杆 ·
-   蜜橘赭=摇臂/弹性 · 灰薰紫=轨迹 · 雾蓝灰=稳定杆 · 暗铜金=瞬心 · 酒红=固定点/力 */
+   蜜橘赭=摇臂/弹性 · 灰薰紫=轨迹 · 雾蓝灰=稳定杆 · 暗铜金=瞬心 · 酒红=固定点/力
+   (Dual-theme canvas palette: light (cream base) / dark (deep Prussian blue-gray base).
+   Category mapping: Prussian blue = primary ops / motion ratio, terracotta = camber /
+   knuckle, sage = toe / pullrod, amber ochre = rocker / elastic, muted purple = traces,
+   misty blue-gray = anti-roll bar, dark copper-gold = instant center, wine red = fixed
+   points / forces.) */
 const PAL={
 light:{bg:"#F5EFE4",grid:"#E9DFCE",grid2:"#DCD0BA",axis:"#C6B89F",
  rig:"#8C96A2",rigArm:"#6E7883",arm:"rgba(64,90,120,0.05)",
@@ -351,7 +393,10 @@ const TX=(sc,p,s,c,dx,dy,sz)=>sc.push({k:"t",p:p,s:s,c:c,dx:dx||0,dy:dy||0,sz:sz
 const ND=(sc,p,fix,id,zh,sx,axis)=>sc.push({k:"n",p:p,fix:fix,id:id,zh:zh,sx:sx||1,axis:axis});
 
 /* F-41（2026-08-30）：circPts/cylinder/springPts 曾有前后两份定义（后者覆盖
-   前者，改错份即白改）。保留后一组（cylinder 带 fillCol 超集），此处仅注释。 */
+   前者，改错份即白改）。保留后一组（cylinder 带 fillCol 超集），此处仅注释。
+   (F-41, 2026-08-30: circPts/cylinder/springPts once had two definitions, the later one
+   shadowing the former (editing the wrong copy did nothing). The later set is kept
+   (cylinder with the fillCol superset); comment only.) */
 
 const SYSTEM_COLORS={
   bg:"#05070a",grid:"#12161c",grid2:"#1a212a",axis:"#242d38",
@@ -371,7 +416,10 @@ const SYSTEM_COLORS={
 
 /* ================================ 实体着色（按零件/实体分色） ================================
    开关 S.show.entityColor=1 时，用 ENTITY_COLORS 覆盖 SYSTEM_COLORS 逐实体分色；
-   关闭时完全回退系统分色。EC(key, fallback) 为统一入口。 */
+   关闭时完全回退系统分色。EC(key, fallback) 为统一入口。
+   (Entity coloring, per part / entity: when S.show.entityColor=1, ENTITY_COLORS overrides
+   SYSTEM_COLORS per entity; when off, the system colors fully take over. EC(key, fallback)
+   is the single entry point.) */
 const ENTITY_COLORS={
   frameMain:"#9fb0c0", frameSec:"#5d6f81", frameDiag:"#42536a", frameNode:"#e8b84b",
   lca:"#e0704f", lcaFill:"rgba(224,112,79,0.14)",

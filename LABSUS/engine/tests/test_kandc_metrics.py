@@ -17,4 +17,4 @@ def test_compliance_toe():
     toe = [0.05, 0.10, 0.15]
     fx = [0, 500, 1000]
     c = compliance_toe_deg(toe, fx, at=500)
-    assert abs(c - 0.10) < 1e-9             # °/kN 斜率
+    assert abs(c - 0.10) < 1e-9             # °/kN 斜率 — deg/kN slope

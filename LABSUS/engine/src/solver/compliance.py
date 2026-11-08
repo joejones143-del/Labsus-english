@@ -17,6 +17,39 @@ S1 载荷模型：单锚点直承外载（简化）。
 T5 将对接 T2 静力层（接地点外载 → 二力杆 → 锚点合力）替换 load。
 
 返回后 mech 处于最终一致姿态；result.anchors 为最终锚点位置。
+
+K&C two-layer iterative solver (S1 engine core · watershed).
+
+Inner layer: bushing displacement δ written into anchors (small-angle
+rigid-body transform) → solve_pose (the existing least_squares TRF
+mechanism projection).
+Outer layer: force balance over δ, r(δ) = f_ext − bush_force(δ)
+(TRF + numeric Jacobian + Anderson fallback).
+State machine: VALID / APPROXIMATE (minimum-norm indeterminate) /
+COMPLIANCE_DIVERGED / SOLVER_FAILED.
+
+Sign conventions (the relation between load and δ):
+    load: the external load vector applied at the bushing anchors
+    (N, 3 components in global coordinates).
+    δ: the bushing 6DOF displacement [dx, dy, dz, rx, ry, rz]
+    (mm / rad).
+    Equilibrium: r(δ) = f_ext − bush_force(δ) = 0
+    bush_force(δ)[i] = k[i] * δ[i] (linear stiffness; S1 has no
+    coupling/preload yet — simplification).
+    Upward force load_z = +500 → δz = +500/k_z (positive bushing
+    displacement; the member moves up relative to the anchor).
+    Downward force load_z = −500 → δz = −500/k_z (negative bushing
+    displacement; the member moves down / compresses relative to the
+    anchor).
+    If a test assertion needs to verify the displacement magnitude, use
+    abs(δ) to avoid sign ambiguity.
+
+S1 load model: a single anchor directly carrying the external load
+(simplified). T5 will swap in the T2 static layer (contact-patch load →
+two-force members → anchor resultants) to replace `load`.
+
+On return, mech is in a final consistent posture; result.anchors holds
+the final anchor positions.
 """
 from __future__ import annotations
 
@@ -35,18 +68,23 @@ if TYPE_CHECKING:
     # 仅用于 solve_compliance_full 的 `case` 形参标注；运行时由函数内
     # 惰性 import 保持"compliance 不依赖 forces"的边界（ruff F821 曾在此报警：
     # `case: "QSLoad"` 引用了从未导入的名字，注解不可解析）。
+    # Only used for the `case` parameter annotation of solve_compliance_full;
+    # at runtime a lazy import inside the function preserves the boundary
+    # that "compliance does not depend on forces" (ruff F821 once flagged
+    # here: `case: "QSLoad"` referenced a name that was never imported, so
+    # the annotation was unresolvable).
     from src.solver.forces import QSLoad
 
-# ── 状态判定阈值（模块常量） ──
-COST_VALID = 1e-6         # 外层代价函数低于此值 → VALID
-COST_DIVERGED = 1e-3      # 外层代价函数高于此值且未收敛 → COMPLIANCE_DIVERGED
-KIN_TOL = 1e-10           # 内层运动学求解器公差
-KIN_MAX_NFEV = 200        # 内层最大函数评估次数
-ANDERSON_BETA = 0.5       # Anderson 混合系数（简单不动点步长）
-ANDERSON_MEM = 3          # Anderson 历史深度
-ANDERSON_MAX_ITER = 40    # Anderson 最大迭代
-ANDERSON_TOL = 1e-6       # Anderson 收敛阈值
-ANDERSON_MAX_STEP = 5.0   # Anderson 单步最大位移（mm）
+# ── 状态判定阈值（模块常量） — status-decision thresholds (module constants) ──
+COST_VALID = 1e-6         # 外层代价函数低于此值 → VALID — the outer cost function below this → VALID
+COST_DIVERGED = 1e-3      # 外层代价函数高于此值且未收敛 → COMPLIANCE_DIVERGED — outer cost above this and not converged → COMPLIANCE_DIVERGED
+KIN_TOL = 1e-10           # 内层运动学求解器公差 — inner kinematic solver tolerance
+KIN_MAX_NFEV = 200        # 内层最大函数评估次数 — inner max function evaluations
+ANDERSON_BETA = 0.5       # Anderson 混合系数（简单不动点步长） — Anderson blending coefficient (simple fixed-point step size)
+ANDERSON_MEM = 3          # Anderson 历史深度 — Anderson history depth
+ANDERSON_MAX_ITER = 40    # Anderson 最大迭代 — Anderson max iterations
+ANDERSON_TOL = 1e-6       # Anderson 收敛阈值 — Anderson convergence threshold
+ANDERSON_MAX_STEP = 5.0   # Anderson 单步最大位移（mm） — Anderson max per-step displacement (mm)
 
 
 @dataclass
@@ -54,15 +92,20 @@ class ComplianceSolverResult:
     """K&C 求解结果。
 
     返回后 mech 处于最终一致姿态；anchors 为最终锚点位置。
+
+    The K&C solve result.
+
+    On return, mech is in a final consistent posture; `anchors` holds the
+    final anchor positions.
     """
     status: str                               # VALID | APPROXIMATE | COMPLIANCE_DIVERGED | SOLVER_FAILED
-    delta: dict[str, np.ndarray] = field(default_factory=dict)   # {衬套名: 6-DOF 位移}
-    kin_residual: float = 0.0                 # 内层运动学最大残差（mm）
-    force_balance_residual: float = 0.0       # 外层力平衡残差范数（N）
-    iterations: int = 0                       # 外层函数评估次数
-    ms: float = 0.0                           # 总耗时（ms）
-    anchors: dict[str, np.ndarray] = field(default_factory=dict)  # 变换后的锚点位置
-    bush_loads: dict[str, np.ndarray] = field(default_factory=dict)  # {衬套名: 6-抗力}
+    delta: dict[str, np.ndarray] = field(default_factory=dict)   # {衬套名: 6-DOF 位移} — {bushing name: 6-DOF displacement}
+    kin_residual: float = 0.0                 # 内层运动学最大残差（mm） — inner-layer kinematic max residual (mm)
+    force_balance_residual: float = 0.0       # 外层力平衡残差范数（N） — outer-layer force-balance residual norm (N)
+    iterations: int = 0                       # 外层函数评估次数 — outer-layer function evaluations
+    ms: float = 0.0                           # 总耗时（ms） — total wall time (ms)
+    anchors: dict[str, np.ndarray] = field(default_factory=dict)  # 变换后的锚点位置 — transformed anchor positions
+    bush_loads: dict[str, np.ndarray] = field(default_factory=dict)  # {衬套名: 6-抗力} — {bushing name: 6-component reaction}
 
 
 # ── Anderson 加速不动点迭代（C1: TRF 失败后的兜底） ──
@@ -73,6 +116,12 @@ def _anderson(residual_fun, x0, *, beta: float = ANDERSON_BETA,
 
     无雅可比，仅使用历史差商做最小二乘外推。
     返回 (x, residual_norm, converged)。
+
+    Anderson-accelerated fixed-point iteration δ_{k+1} = δ_k + r(δ_k).
+
+    No Jacobian; only historical difference quotients are used for the
+    least-squares extrapolation.
+    Returns (x, residual_norm, converged).
     """
     x = np.asarray(x0, float).copy()
     xs: list[np.ndarray] = []
@@ -92,6 +141,7 @@ def _anderson(residual_fun, x0, *, beta: float = ANDERSON_BETA,
 
         if len(xs) > 1:
             # 最小化 ||F(x)+F'(x)dx|| 的最小二乘外推（无雅可比，使用历史差商）
+            # Least-squares extrapolation minimizing ||F(x)+F'(x)dx|| (no Jacobian; historical difference quotients)
             DX = np.column_stack([xs[k] - xs[k - 1] for k in range(1, len(xs))])
             DF = np.column_stack([fs[k] - fs[k - 1] for k in range(1, len(fs))])
             g, *_ = np.linalg.lstsq(DF, -fs[-1], rcond=None)
@@ -100,12 +150,14 @@ def _anderson(residual_fun, x0, *, beta: float = ANDERSON_BETA,
             x_new = x + beta * r
 
         # 限制步长
+        # Limit the step size
         step = np.linalg.norm(x_new - xs[-1])
         if step > ANDERSON_MAX_STEP:
             x_new = xs[-1] + (x_new - xs[-1]) * (ANDERSON_MAX_STEP / step)
         x = x_new
 
     # 最终评估
+    # Final evaluation
     r = np.asarray(residual_fun(x), float)
     rnorm = float(np.linalg.norm(r))
     return x, rnorm, rnorm < tol
@@ -148,12 +200,45 @@ def solve_compliance(
     -------
     ComplianceSolverResult
         返回后 mech 处于最终一致姿态；anchors 为最终锚点位置。
+
+    Single-point K&C solve.
+
+    Parameters
+    ----------
+    mech : Mechanism
+        The mechanism model (built by build_mechanism).
+    bushings : dict
+        {bushing name: Bushing6DOF} bushing set. An empty dict → pure
+        kinematics fallback.
+    load : np.ndarray, shape (3,)
+        Default external load vector (N, global coordinates), broadcast
+        to all bushings.
+    loads : dict, optional
+        {bushing name: np.ndarray(3,)} per-bushing external loads. When
+        given, overrides the broadcast of `load`.
+    travel, rack : float
+        Wheel travel / rack displacement (mm), passed to the inner
+        solve_pose.
+    applied_at : dict, optional
+        {bushing name: node name} load application-point mapping
+        (reserved parameter, for the T5 extension).
+    max_disp_step : float
+        Outer TRF variable scaling (mm); controls the maximum step.
+    max_nfev : int
+        Outer maximum function evaluations.
+
+    Returns
+    -------
+    ComplianceSolverResult
+        On return, mech is in a final consistent posture; `anchors` holds
+        the final anchor positions.
     """
     t0 = time.perf_counter()
     names = list(bushings.keys())
     nd = len(names)
 
     # ── 无衬套回退：纯运动学 ──
+    # No-bushing fallback: pure kinematics
     if nd == 0:
         rep = solve_pose(mech, travel, rack)
         return ComplianceSolverResult(
@@ -165,6 +250,7 @@ def solve_compliance(
         )
 
     # 载荷映射：per-bushing loads 优先，否则广播 load
+    # Load mapping: per-bushing loads take priority, otherwise broadcast `load`
     load_broadcast = np.asarray(load, float)
     bush_ext: dict[str, np.ndarray] = {}
     for n in names:
@@ -178,12 +264,14 @@ def solve_compliance(
 
     # ── 外层残差：力平衡 r(δ) = f_ext − bush_force(δ) ──
     # kin_last 通过结果赋值回传（M2: 避免 mutable closure）
+    # kin_last is returned by assignment through the result (M2: avoids a mutable closure)
     _kin_last = 0.0
 
     def _residual(x: np.ndarray) -> np.ndarray:
         nonlocal _kin_last
         d = _unpack(x)
         # 1) 内层：衬套位移 → 锚点变换 → 机构重解
+        # 1) Inner: bushing displacement → anchor transform → re-solve the mechanism
         anchors = apply_bushing_to_anchors(bushings, d)
         for node, pos in anchors.items():
             mech.nodes[node].pos = pos.copy()
@@ -193,10 +281,15 @@ def solve_compliance(
         # 2) 外层：力平衡残差
         # S1: 外载仅作用于平移 DOF（3分量）；旋转 DOF 无外部力矩（M5 注释），
         # 因为 K&C 测试中衬套仅传递平移力，旋转约束由机构铰链承担。
+        # S1: the external load acts only on the translational DOFs (3
+        # components); the rotational DOFs have no external torques (the M5
+        # note), because in the K&C tests the bushings transmit only
+        # translational forces and the rotational constraints are carried
+        # by the mechanism hinges.
         r = np.zeros(6 * nd)
         for k, n in enumerate(names):
             f_ext = np.zeros(6)
-            f_ext[:3] = bush_ext[n]   # S1: 仅平移外载；旋转 DOF 无外部力矩
+            f_ext[:3] = bush_ext[n]   # S1: 仅平移外载；旋转 DOF 无外部力矩 — S1: translational external load only; rotational DOFs have no external torque
             r[6 * k: 6 * k + 6] = f_ext - bush_force(bushings[n], d[n])
         return r
 
@@ -204,6 +297,14 @@ def solve_compliance(
     # 无人调用，外层 TRF 全程数值差分（每迭代 (6·nd+1) 次残差评估 × 每次
     # 内层 200-nfev 机构重解，多衬套时 O(nd) 恶化）。解析雅可比为块对角：
     #   ∂r_k/∂δ_k = -J_bush,k（衬套独立；耦合矩阵在 bush_force_jac 内生效）
+    # F-65 (2026-08-30): analytic Jacobian wiring — bush_force_jac was fully
+    # implemented but never called, so the outer TRF did numeric
+    # differencing the whole way (per iteration (6·nd+1) residual
+    # evaluations × each requiring a 200-nfev mechanism re-solve,
+    # degrading as O(nd) with multiple bushings). The analytic Jacobian is
+    # block-diagonal:
+    #   ∂r_k/∂δ_k = -J_bush,k (bushings independent; the coupling matrix
+    #   takes effect inside bush_force_jac)
     def _residual_jac(x: np.ndarray) -> np.ndarray:
         d = _unpack(x)
         J = np.zeros((6 * nd, 6 * nd))
@@ -212,6 +313,7 @@ def solve_compliance(
         return J
 
     # ── 外层求解：scipy TRF（解析雅可比）──
+    # Outer solve: scipy TRF (analytic Jacobian)
     x0 = np.zeros(6 * nd)
     trf_nfev = 0
     try:
@@ -224,20 +326,24 @@ def solve_compliance(
         trf_nfev = int(res.nfev)
     except Exception:
         # TRF 异常 → 尝试 Anderson 兜底
+        # TRF raised → try the Anderson fallback
         res = None
 
     # ── C1: Anderson 固定点回退 ──
+    # C1: Anderson fixed-point fallback
     anderson_ok = False
     anderson_rnorm = float("inf")
     if res is None or (not res.success and res.cost > COST_DIVERGED):
         anderson_x, anderson_rnorm, anderson_ok = _anderson(_residual, x0)
-        anderson_nfev = ANDERSON_MAX_ITER  # 估算
+        anderson_nfev = ANDERSON_MAX_ITER  # 估算 — estimate
         if res is None:
             # TRF 完全失败 → 用 Anderson 结果
+            # TRF failed completely → use the Anderson result
             res_x = anderson_x
             final_nfev = anderson_nfev
         else:
             # TRF 和 Anderson 都跑了 → 选更好的
+            # Both TRF and Anderson ran → pick the better one
             trf_rnorm = float(np.sqrt(2 * res.cost))
             if anderson_rnorm < trf_rnorm:
                 res_x = anderson_x
@@ -252,7 +358,9 @@ def solve_compliance(
     d = _unpack(res_x)
 
     # ── 状态判定 ──
+    # Status decision
     # 重新评估最终残差以获取精确代价
+    # Re-evaluate the final residual to obtain the exact cost
     final_r = np.asarray(_residual(res_x), float)
     final_rnorm = float(np.linalg.norm(final_r))
     final_cost = 0.5 * final_rnorm ** 2
@@ -261,6 +369,7 @@ def solve_compliance(
         status = "VALID"
     elif anderson_ok:
         # Anderson 收敛（即使 TRF 没收敛）→ VALID
+        # Anderson converged (even though TRF did not) → VALID
         status = "VALID"
     elif final_cost > COST_DIVERGED:
         status = "COMPLIANCE_DIVERGED"
@@ -269,6 +378,8 @@ def solve_compliance(
 
     # ── C2: 最终一致性写回 ──
     # 将最优 δ 的锚点位置写入 mech.nodes，并运行最终 solve_pose 确保机构一致
+    # Write the optimal δ's anchor positions into mech.nodes and run a final
+    # solve_pose to ensure the mechanism is consistent
     final_anchors = apply_bushing_to_anchors(bushings, d)
     for node, pos in final_anchors.items():
         mech.nodes[node].pos = pos.copy()
@@ -287,6 +398,7 @@ def solve_compliance(
 
 
 # ── T8: K&C 全链路求解 ──────────────────────────────────────────────
+# T8: full-chain K&C solve
 
 def solve_compliance_full(
     mech,
@@ -313,15 +425,42 @@ def solve_compliance_full(
       是近似仲裁，非精确刚度分配）；
     - 外力矩折算到轮心后的残余 moment_residual 非零 → APPROXIMATE（球铰
       模型无法平衡力矩），并在返回值上携带说明（warnings 合并入 status）。
+
+    Full-chain K&C: contact-patch external load → (two-force-member
+    statics) → anchor resultants → solve_compliance.
+
+    mk_links: a (mech) -> list[LinkForce] callback; by default builds
+              PUSH (UP4→CH5) + LCA front/rear links (CH3/CH4→UP2) + UCA
+              front/rear links (CH1/CH2→UP1).
+    cp_rel: contact patch relative to the wheel center (default
+            [0,0,-tire_radius]; tire_radius defaults to 325, consistent
+            with the API v3models.CaseLoad/KandcRequest.tire_radius
+            default — F-64: the old default [0,0,-320] contradicted the
+            API default 325).
+    tire_radius: tire radius in mm; only used to derive the default
+            cp_rel.
+
+    F-64 (2026-08-30): the state machine now honors the docstring's
+    promise —
+    - a non-zero statically-indeterminate force residual
+      (corner.residual) → APPROXIMATE (root cause: the minimum-norm
+      solution is an approximate arbitration, not an exact stiffness
+      allocation);
+    - a non-zero moment_residual after translating the external moments
+      to the wheel center → APPROXIMATE (the ball-joint model cannot
+      balance moments), and the return value carries an explanation
+      (warnings merged into the status).
     """
     from src.solver.forces import LinkForce, _chassis_end, corner_to_anchor_loads
 
     # 1) 运动学求解（确认机构可达当前姿态）
+    # 1) Kinematic solve (confirm the mechanism can reach the current posture)
     rep = solve_pose(mech, travel, rack)
     if not rep.ok:
         return ComplianceSolverResult(status="SOLVER_FAILED", kin_residual=rep.residual)
 
     # 2) 构造二力杆列表
+    # 2) Build the two-force-member list
     if mk_links is not None:
         links = mk_links(mech)
     else:
@@ -334,6 +473,7 @@ def solve_compliance_full(
         ]
 
     # 3) 接地点外载 → 各杆轴向力 → 车身锚点合力
+    # 3) Contact-patch load → member axial forces → chassis anchor resultants
     hub_point = mech.node(mech.wheel).pos.copy()
     if cp_rel is None:
         cp_rel = np.array([0.0, 0.0, -(tire_radius if tire_radius is not None else 325.0)])
@@ -343,19 +483,26 @@ def solve_compliance_full(
     #    做唯一性校验；匹配失败抛异常——宁可显式 422/500，不可静默零载荷。
     #    旧实现 allclose(atol=1.0) 失败时返回 "" → per_node 缺键 → 衬套载荷 0，
     #    compliance toe 恒 0 而表面"正常"）
+    # 4) Member chassis end → node name (F-63 fix, 2026-08-30: atol
+    #    tightened from 1.0 to 1e-6 with a uniqueness check; a failed match
+    #    raises — prefer an explicit 422/500 over silently zero loads.
+    #    The old implementation returned "" when allclose(atol=1.0) failed
+    #    → per_node missing keys → bushing loads 0 → compliance toe stuck
+    #    at 0 while looking "normal")
     def _node_name(pos: np.ndarray) -> str:
         hits = [nm for nm, nd in mech.nodes.items()
                 if float(np.linalg.norm(np.asarray(nd.pos, float) - pos)) < 1e-6]
         if len(hits) > 1:
             raise ValueError(
-                f"compliance: 锚点位置与多个节点重合 {hits}（间距<1e-6mm），无法唯一映射")
+                f"compliance: anchor position coincides with multiple nodes {hits} (spacing <1e-6mm); cannot map uniquely")
         if not hits:
             raise ValueError(
-                f"compliance: 杆车身端锚点 {np.round(np.asarray(pos, float), 2).tolist()} "
-                "无法映射到机构节点（位置不重合）——载荷映射失败必须显式报错")
+                f"compliance: member chassis-end anchor {np.round(np.asarray(pos, float), 2).tolist()} "
+                "does not map to any mechanism node (positions do not coincide) — load mapping failures must raise explicitly")
         return hits[0]
 
     # 5) 按节点聚合力（anchor_loads 值已是车身端力，直接累加）
+    # 5) Aggregate forces per node (the anchor_loads values are already chassis-end forces; accumulate directly)
     per_node: dict[str, np.ndarray] = {}
     for lk in links:
         end = _chassis_end(lk, hub_point)
@@ -363,17 +510,23 @@ def solve_compliance_full(
         per_node[nm] = per_node.get(nm, np.zeros(3)) + corner.anchor_loads.get(lk.id, np.zeros(3))
 
     # 6) 衬套载荷映射：{衬套名: 对应成员节点合力}
+    # 6) Bushing load mapping: {bushing name: the resultant at the corresponding member node}
     loads: dict[str, np.ndarray] = {}
     for name, b in bushings.items():
         node = next(iter(b.member_nodes))
         loads[name] = per_node.get(node, np.zeros(3))
 
     # 7) 调用 T4 求解器
+    # 7) Call the T4 solver
     res = solve_compliance(mech, bushings=bushings, loads=loads,
                            load=np.zeros(3), travel=travel, rack=rack)
 
     # F-64（2026-08-30）：状态机兑现 docstring 承诺——超静定最小范数残差与
     # 力矩折算残余无法由二力杆/球铰模型精确闭合，条件满足时降级 APPROXIMATE。
+    # F-64 (2026-08-30): the state machine honors the docstring promise — the
+    # indeterminate minimum-norm residual and the translated-moment residual
+    # cannot be closed exactly by the two-force-member/ball-joint model;
+    # downgrade to APPROXIMATE when the conditions are met.
     if res.status in ("VALID", "APPROXIMATE"):
         if corner.residual > 1e-6:
             res.status = "APPROXIMATE"
