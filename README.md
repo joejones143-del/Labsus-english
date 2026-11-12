@@ -1,237 +1,79 @@
-# 🏎️ LABSUS · 悬架实验室 (Suspension Lab)
-
-**全车底盘高性能悬架分析工作台 —— Kinematics & Compliance / 15-DOF 动力学 / 准静态操稳 / 赛道瞬态仿真**
-
-<p align="left">
-  <a href="README.md"><b>简体中文</b></a> | <a href="README.en.md"><b>English</b></a>
-</p>
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-v3%20REST%20API-009688.svg)](https://fastapi.tiangolo.com/)
-[![Tests: 100% Passed](https://img.shields.io/badge/pytest-189%20passed-success.svg)]()
-[![Platform: Web & Desktop](https://img.shields.io/badge/Platform-Web%20%7C%20Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)]()
-
-> 面向 **FSAE 方程式赛车、GT3 房车赛车及全地形越野车** 的现代化全车底盘悬架工程分析平台。
-> 从双叉臂/推拉杆空间硬点编辑、多体运动学与 K&C 扫掠，到 4-Post 台架动力学、准静态载荷转移与 **15-DOF 全赛道自动驾驶瞬态仿真**，全部在一个精美现代的交互式仪器台中完成。轻量级自研实现，深度对标 OptimumKinematics 与 ADAMS/Car。
->
-> 📁 **工程代码位于 [`LABSUS/`](LABSUS/) 子目录**，本文所有相对路径均以其为根。
-
----
-
-## 📸 界面预览 (Screenshots)
-
-### 1. V4 新版工作台 —— Formula SAE 方程式（浅色主题 · 四视口联动）
-![LABSUS V4 工作台 · 方程式](LABSUS/assets/labsus_v4_formula_light.png)
-*正视/俯视/侧视/等轴测四视口实时联动，右侧「核心结论」实时输出 Camber/Toe/侧倾中心/侧倾梯度/US Gradient/TLLTD 与操稳偏向判定；直接拖拽 3D 空间硬点即时收敛（残差 $10^{-10}$ 量级、毫秒级求解）。*
-
-### 2. SAE Baja 越野车 —— 直连双叉臂大行程架构（暖色主题）
-![LABSUS V4 工作台 · Baja](LABSUS/assets/labsus_v4_baja_offroad.png)
-*外置直立直连减振柱（DIRECT COILOVER）越野架构，$R=396\,\text{mm}$ 全地形大轮胎、$[-90, 100]\,\text{mm}$ 超长轮跳行程；推拉杆 / 直连多悬架拓扑一键切换。*
-
-### 3. FIA GT3 赛道模式 —— 深色驾驶舱主题
-![LABSUS V4 工作台 · GT3](LABSUS/assets/labsus_v4_gt3_dark.png)
-*GT3 空间桁架车壳 + 副车架挂载大口径 ARB，赛道/日常双模悬架一键切换；几何 / K&C / 整车 / 赛道多页签工程工作流。*
-
-### 4. 上海国际赛车场 (SIC) 15-DOF 实时瞬态赛道仿真舞台
-![LABSUS 赛道瞬态仿真舞台](LABSUS/assets/labsus_circuit_sim.png)
-*整车多体动力学（`VehicleDynamics15DOF`，命名口径见 §4）、Pacejka 复合滑移轮胎摩擦圆、外-内-外赛车线走线与逐圈刹车点自适应试探学习、冲出罚时与圈数统计、多机位跟踪与实时工程遥测 HUD。*
-
----
-
-## 🌟 核心功能特性
-
-### 1. 底盘建模与三维可视化
-- **双叉臂与推拉杆摇臂 3D 几何建模**：前后不等长双横臂（上下 A 臂）、转向节、摇臂/推杆/拉杆、弹簧减振器、半轴与 CV 防尘套、通风制动盘与卡钳、EDU 电驱总成、齿轮齿条中置转向、空间桁架管架车架（吸能防撞区 + 自适应悬架舱）。
-- **四视口联动交互**：正视 (X-Z)、俯视 (X-Y)、侧视 (Y-Z)、等轴测 (3D) 实时投影，支持在视图中直接拖拽硬点微调。
-- **纯悬架透视与图层过滤**：一键切换「纯悬架透视模式」，可独立隐藏/显示车架、动力总成、转向柱与制动主缸，专注悬架杆系拓扑。
-- **四大车型出厂预设（多悬架拓扑架构）**：
-  - 🏎️ **Formula SAE (大学生方程式赛车)**：前后推杆架构，无防倾杆极简高刚度底盘 ($f_n \approx 3.4\,\text{Hz}$)；
-  - 🏎️ **FIA GT3 赛道模式 / 🚗 GT3 日常模式**：外置直立直连减振柱 (DIRECT) 双叉臂 + 副车架刚性衬套挂载大口径横向稳定杆 (ARB)；
-  - 🚜 **Baja SAE (巴哈全地形越野车)**：直连大行程越野减振柱，$R=396\,\text{mm}$ 全地形轮胎、$[-90, 100]\,\text{mm}$ 超长轮跳行程。
-
-### 2. 机构运动学与 K&C 弹性解算 (Kinematics & Compliance)
-- **高精度多体闭式投影内核**：纯几何向量闭式迭代与非线性最小二乘联合收敛（残差达 $10^{-13}\,\text{mm}$ 级）。
-- **全套悬架定位参数实时解算**：
-  - 车轮外倾角 (Camber) & 外倾增益 (Camber Gain)；
-  - 车轮前束角 (Toe) & 颠簸转向 (Bump Steer)；
-  - 主销内倾角 (KPI / SAI)、主销后倾角 (Caster)、主销接地偏置距 (Scrub Radius)、主销后拖距 (Caster Trail)；
-  - 瞬时中心 (IC)、侧倾中心高度 (Roll Center Height) 动态迁移轨迹；
-  - 减振器运动比 (Motion Ratio)、弹簧/轮端刚度 ($K_s / K_w$)、簧载固有频率 ($f_n$)。
-- **K&C 衬套弹性求解（两层架构）**：支持 6-DOF 橡胶衬套力平衡方程与机构二次重解耦合，衬套刚度可实测标定后直接回注仿真。
-
-### 3. 准静态操稳与载荷转移 (Quasi-Static Handling)
-- **TLLTD 三路径载荷转移分解**：
-  - 弹性侧倾力矩分量（主弹簧 + 横向稳定杆 ARB 刚度分配）；
-  - 几何侧倾中心力臂分量（侧倾中心高度与轴荷传递）；
-  - 非簧载质量侧向惯性力分量。
-- **准静态闭环耦合迭代**：准确计算侧倾角 ($\phi$)、整车侧倾梯度 ($d\phi/dg_y$)、四轮接地动载荷分布 ($F_z$) 与操稳偏向判定 (Understeer / Oversteer / Neutral)。
-- **底盘开发核心 KPI 全覆盖**：
-  - **US Gradient 不足转向梯度**（目标窗口 $0.2\sim2.0\,^\circ/g$；四款出厂预设实测 $0.21\sim0.27\,^\circ/g$ @1g）与前后轴侧偏角 $\alpha_f/\alpha_r$ 分解；
-  > 配平口径：轴侧偏刚度按**胎宽**配平（$k_\text{axle}=W_\text{axle}/\overline{W}$，只放大刚度因子、不动峰值 μ），叠加两轴簧载份额 —— 这是本模型里两条真实的平衡杠杆（ARB 对 US 几乎无效：实测前 ARB $0\to40$ 让 TLLTD 走 $45\%\to83\%$，US 只动 $+0.01\,^\circ/g$）。
-  - **Jacking 抬升量**、TLLTD 前轴占比、侧倾梯度等多 KPI 在「核心结论」卡实时呈现并附目标窗口；
-  - **不足转向特性 $\delta$-$a_y$ 扫掠曲线**：轮胎项与侧倾转向分量双线分解，$0\to2g$ 均匀扫掠。
-
-### 4. 15-DOF 全赛道瞬态动力学与 AutoPilot 巡航舞台
-- **整车多体动力学（`VehicleDynamics15DOF`，历史命名）**：
-  - 车身 6-DOF：位置 $X,Y,Z$ + 姿态 $\phi,\theta,\psi$ + 体速 $u,v,w$ + 体角速度 $p,q,r$；
-  - 四轮独立自转角速度 4-DOF（$\omega_{FL,FR,RL,RR}$）；
-  - **车轮垂向为运动学从动**（$tr = -(z_\text{corner}-z_\text{road})$，droop/缓冲块钳位），
-    轮荷 $F_z$ 由弹簧 + 阻尼 + ARB + 缓冲块**代数**求出后作用到车身 —— 即**无
-    非簧载质量垂向惯性与轮胎垂向柔度 DOF**；
-  - 1000Hz 高频子步积分器（`MAX_SUB_DT = 1ms`），精确捕捉车身点头（Pitch）、
-    侧倾（Roll）与轮荷动态转移。
-  > ⚠️ 口径说明：上述实现是「6 车身 DOF + 4 轮自转 + 4 个运动学从动轮」，
-  > 不是教科书的「6 车身 + 4 非簧载垂向 + 4 轮自转」形式。后果与升级路径
-  > 登记于 `INTENTIONAL_DIFFERENCES.md`「15-DOF 口径」与
-  > `web/js/11-stages.js` 类声明上方的口径注释。引擎侧
-  > `/api/v3/chassis/simulate_track` 则是平面 3-DOF + 准静态侧倾/俯仰代数解，
-  > 与前端舞台**不是同一个模型**（跨语言对拍针对的是内置 TPHYS 闭包，非本内核）。
-- **Pacejka Magic Formula 复合滑移轮胎模型**：
-  - 精确计算非线性纯侧滑偏角力 ($F_y$)、纯纵向滑移率驱动/制动力 ($F_x$) 以及摩擦圆复合滑移附着极限。
-- **上海国际赛车场 (SIC 5.45km) 全赛道瞬态仿真**：
-  - 7 点平滑窗口提取弯道曲率，60 轮收敛的正反向循迹制动/加速极限速度剖面规划；
-  - **真实车手风格驾驶系统**：外-内-外赛车线走线（弯心骑路肩）、逐圈刹车点自适应试探学习、冲出弯道罚时 +5s 与纯物理砾石接管（永不瞬移重置）、圈数/冲出/罚时统计；
-  - AutoPilot 自动驾驶巡航控制（曲率阿克曼前馈 + 速度自适应 Stanley 转向 + G-G 摩擦圆纵向协调），防止大马力后驱打转；
-  - 6 个专业视口跟随机位（追尾跟踪、驾驶舱第一人称视角、悬架鼻锥、车轮特写、尾翼后视、直升机航拍、沙盘俯瞰）；
-  - 实时遥测 HUD（当前直道/弯道、车速、侧向 G 值、推荐档位、油门/制动百分比、横摆角速度）。
-
-### 5. 综合评价报告与工程工具
-- **一键生成综合工程评价报告**：12 项核心指标按赛事基准自动给出评级徽章（S/A/B/C/D）、雷达图及调校建议。
-- **工程数据持久化**：支持硬点参数本地自动暂存 (localStorage)、一键导入/导出 JSON 配置文件、出厂默认重置。
-- **基线快照双线对比 (Baseline Snapshot)**：支持保存当前底盘状态为基线，在修改硬点或参数时进行实时虚线 Diff 对比。
-
-### 6. 实测数据标定闭环 (Correlation Loop)
-- **轮胎实测标定 (Tire Fit)**：导入 JSON/CSV 实测轮胎特性曲线，多层级最小二乘辨识 Pacejka 参数 ($B_y/C_y/E_y/F_{y0}/LS$)，归一化残差与分层 RMS 报告，一键应用回仿真链路；
-- **K&C 台架对拍 (Rig Correlation)**：导入台架实测 CSV，与仿真轮跳曲线（Camber/Toe）叠画对比并量化重叠行程区间 RMS 偏差；
-- **转向外倾增益分解**：合成曲线 = Caster 项 + KPI 项 + 几何残差定量分解（对标调校讲义 EP04×EP06 方法论）；
-- **衬套刚度标定 (Bushing Calibration)**：按节点覆盖衬套平移/旋转刚度，直接驱动 K&C 力偏移 (COMPLIANCE) 工况验证。
-
----
-
-## 🚀 快速开始
-
-### 方式 A：零依赖极速启动
-1. 本项目网页端为纯原生技术栈开发，**无需任何 npm 构建或环境配置**。
-2. 浏览器直接打开主入口 **`LABSUS/web/dwb-pro-v4.html`**（V4 新版工作台），或模块化版 `LABSUS/web/dwb-pro-fullchassis.html` / 零依赖单文件 `LABSUS/web/dwb-pro-allinone.html`，也可通过本地 HTTP 服务器运行：
-   ```bash
-   python -m http.server 8000 --directory LABSUS/web
-   ```
-3. 浏览器访问 `http://127.0.0.1:8000/dwb-pro-v4.html` 即可开始使用。
-
-### 方式 B：双击脚本启动（Windows 一键运行）
-双击 `LABSUS/start.bat`：
-- 自动拉起 Python FastAPI 计算引擎（端口 8001，已在运行则自动复用）；
-- 自动启动无缓存前端服务器并打开浏览器进入工作台。
-
-### 方式 C：启动 Python FastAPI 计算引擎（可选增强）
-如果你需要运行完整的 Python 高性能数值求解后端：
-```bash
-# 1. 安装 Python 依赖
+🏎️ LABSUS · Suspension LabFull-Vehicle Chassis High-Performance Suspension Analysis Workbench —— Kinematics & Compliance / 15-DOF Dynamics / Quasi-Static Handling / Track Transient SimulationA modern full-vehicle chassis suspension engineering analysis platform designed for Formula SAE, GT3 touring cars, and all-terrain off-road vehicles.From double wishbone/pushrod-pullrod spatial hardpoint editing, multibody kinematics, and K&C sweeps to 4-post rig dynamics, quasi-static load transfer, and 15-DOF full-circuit autopilot transient simulation, everything is accomplished within a sleek, modern interactive instrument bench. A lightweight self-developed implementation, deeply benchmarked against OptimumKinematics and ADAMS/Car.📁 Engineering source code is located in the LABSUS/ subdirectory, and all relative paths in this document use it as their root.📸 Interface Preview (Screenshots)1. V4 New Workbench —— Formula SAE (Light Theme · Four-Viewport Linkage)Real-time linkage across front, top, side, and isometric viewports. The right-hand "Core Conclusions" card outputs real-time Camber, Toe, Roll Center, Roll Gradient, US Gradient, TLLTD, and handling balance determinations; direct drag-and-drop 3D spatial hardpoints for instant convergence ($10^{-10}$ order residual, millisecond-level solver).2. SAE Baja Off-Road Vehicle —— Direct Double Wishbone Long-Travel Architecture (Warm Theme)External upright direct-connected coilover off-road architecture, $R=396\,\text{mm}$ all-terrain large tires, $[-90, 100]\,\text{mm}$ ultra-long wheel travel; one-click switching between pushrod/pullrod and direct suspension topologies.3. FIA GT3 Track Mode —— Dark Cockpit ThemeGT3 space frame chassis shell + subframe-mounted large-diameter ARB, one-click switching between track and daily suspension dual modes; multi-tab engineering workflow covering Geometry / K&C / Full-Vehicle / Track.4. Shanghai International Circuit (SIC) 15-DOF Real-Time Transient Track Simulation StageFull-vehicle multibody dynamics (VehicleDynamics15DOF, naming convention detailed in §4), Pacejka combined slip tire friction circle, outside-inside-outside racing line tracing with lap-by-lap braking point adaptive trial learning, run-off penalties and lap statistics, multi-camera tracking, and real-time engineering telemetry HUD.🌟 Core Features & Characteristics1. Chassis Modeling & 3D VisualizationDouble Wishbone and Pushrod/Pullrod Rocker 3D Geometric Modeling: Front and rear unequal-length double wishbones (upper/lower A-arms), steering knuckle, rocker/pushrod/pullrod, spring-damper, driveshaft and CV boots, ventilated brake rotor and caliper, EDU electric drive assembly, center rack-and-pinion steering, space truss tubular frame (crush zone + adaptive suspension bay).Four-Viewport Linkage Interaction: Real-time projection in front (X-Z), top (X-Y), side (Y-Z), and isometric (3D) views, supporting direct hardpoint dragging and fine-tuning within the views.Pure Suspension X-Ray & Layer Filtering: One-click switch to "Pure Suspension X-Ray Mode," allowing independent hiding/showing of the chassis frame, powertrain, steering column, and master brake cylinder to focus strictly on the suspension linkage topology.Four Factory Vehicle Presets (Multi-Suspension Topology Architectures):🏎️ Formula SAE (Formula Student Racing): Front and rear pushrod architecture, minimal high-rigidity chassis without anti-roll bars ($f_n \approx 3.4\,\text{Hz}$);🏎️ FIA GT3 Track Mode / 🚗 GT3 Daily Mode: External upright direct-connected coilover (DIRECT) double wishbone + rigid subframe bushing-mounted large-diameter anti-roll bar (ARB);🚜 Baja SAE (Baja All-Terrain Off-Road Vehicle): Direct-connected long-travel off-road coilover, $R=396\,\text{mm}$ all-terrain tires, $[-90, 100]\,\text{mm}$ ultra-long wheel travel.2. Mechanism Kinematics & Compliance (K&C) SolverHigh-Precision Multibody Closed-Form Projection Kernel: Pure geometric vector closed-form iteration combined with nonlinear least-squares joint convergence (residuals reaching the $10^{-13}\,\text{mm}$ level).Comprehensive Real-Time Suspension Alignment Parameter Solver:Wheel Camber & Camber Gain;Wheel Toe & Bump Steer;Kingpin Inclination (KPI / SAI), Caster, Scrub Radius, Caster Trail;Instantaneous Center (IC), Roll Center Height dynamic migration trajectory;Damper Motion Ratio, Spring-to-Wheel Rate ($K_s / K_w$), Sprung Natural Frequency ($f_n$).K&C Bushing Compliance Solver (Two-Layer Architecture): Supports 6-DOF rubber bushing force balance equations and mechanism re-solution decoupling; bushing stiffness can be physically calibrated and directly injected back into the simulation loop.3. Quasi-Static Handling & Load TransferTLLTD Three-Path Load Transfer Decomposition:Elastic roll moment component (main spring + anti-roll bar ARB stiffness distribution);Geometric roll center moment arm component (roll center height and axle load transfer);Unsprung mass lateral inertial force component.Quasi-Static Closed-Loop Coupled Iteration: Accurately calculates roll angle ($\phi$), vehicle roll gradient ($d\phi/dg_y$), four-wheel vertical dynamic load distribution ($F_z$), and handling balance determinations (Understeer / Oversteer / Neutral).Full Coverage of Chassis Development Core KPIs:US Gradient (Understeer Gradient) (target window $0.2\sim2.0\,^\circ/g$; measured $0.21\sim0.27\,^\circ/g$ @1g across the four factory presets) and front/rear axle slip angle ($\alpha_f/\alpha_r$) decomposition;Trimming convention: Axle cornering stiffness is trimmed by tire width ($k_\text{axle}=W_\text{axle}/\overline{W}$, scaling only the stiffness factor while keeping peak μ unchanged), superimposed with the two-axle sprung mass share —— these are the two real balance levers in this model (ARBs are virtually ineffective for US: measured front ARB $0\to40$ shifts TLLTD from $45\%\to83\%$, while US moves by only $+0.01\,^\circ/g$).Jacking rise, front axle TLLTD share, roll gradient, and other core KPIs are presented in real-time on the "Core Conclusions" card with target windows;Understeer Characteristics $\delta$-$a_y$ Sweep Curve: Dual-line decomposition of tire term and roll steer component, uniform $0\to2g$ sweep.4. 15-DOF Full-Circuit Transient Dynamics & AutoPilot Cruising StageFull-Vehicle Multibody Dynamics (VehicleDynamics15DOF, historical naming):Body 6-DOF: Position $X,Y,Z$ + Attitude $\phi,\theta,\psi$ + Body velocity $u,v,w$ + Body angular velocity $p,q,r$;Four independent wheel rotational angular velocities 4-DOF ($\omega_{FL,FR,RL,RR}$);Wheel vertical kinematics are follower-driven ($tr = -(z_\text{corner}-z_\text{road})$, droop/bump stop clamping),
+and wheel loads $F_z$ are calculated algebraically via spring + damper + ARB + bump stops before acting on the body —— meaning no
+unsprung mass vertical inertia and tire vertical compliance DOFs;1000Hz high-frequency sub-step integrator (MAX_SUB_DT = 1ms), accurately capturing body pitch,
+roll, and dynamic wheel load transfer.⚠️ Convention Note: The above implementation is "6 body DOFs + 4 wheel rotations + 4 kinematic follower wheels,"rather than the textbook "6 body + 4 unsprung verticals + 4 wheel rotations" form. Consequences and upgrade pathsare registered in INTENTIONAL_DIFFERENCES.md under "15-DOF Convention" andin the class declaration comments above web/js/11-stages.js. On the engine side,/api/v3/chassis/simulate_track utilizes a planar 3-DOF + quasi-static roll/pitch algebraic solution,which is not the same model as the frontend stage (cross-language parity targeting applies to the built-in TPHYS closure, not this kernel).Pacejka Magic Formula Combined Slip Tire Model:Accurately calculates nonlinear pure slip angle forces ($F_y$), pure longitudinal slip drive/braking forces ($F_x$), and friction circle combined slip adhesion limits.Shanghai International Circuit (SIC 5.45km) Full-Circuit Transient Simulation:7-point smoothing window extraction of corner curvature, with 60-iteration convergent forward/reverse tracking braking/acceleration limit speed profile planning;Realistic Driver Style Driving System: Outside-inside-outside racing line driving (riding the apex curbs), lap-by-lap braking point adaptive trial learning, +5s run-off penalty with pure physics gravel takeover (never teleport-resets), lap count/run-off/penalty statistics;AutoPilot autonomous cruise control (curvature Ackermann feedforward + speed-adaptive Stanley steering + G-G friction circle longitudinal coordination) to prevent high-horsepower rear-wheel spinouts;6 professional viewport tracking cameras (chase tracking, cockpit first-person view, suspension nose cone, wheel close-up, rear wing view, helicopter aerial, sandbox overhead);Real-time telemetry HUD (current straight/corner, vehicle speed, lateral G-value, recommended gear, throttle/brake percentage, yaw rate).5. Comprehensive Evaluation Report & Engineering ToolsOne-Click Comprehensive Engineering Evaluation Report Generation: 12 core metrics automatically assigned rating badges (S/A/B/C/D) based on racing benchmarks, along with radar charts and tuning recommendations.Engineering Data Persistence: Supports local automatic temporary storage of hardpoint parameters (localStorage), one-click import/export of JSON configuration files, and factory default reset.Baseline Snapshot Dual-Line Comparison: Supports saving the current chassis state as a baseline for real-time dashed-line Diff comparisons when modifying hardpoints or parameters.6. Correlation Loop for Measured Data CalibrationTire Measured Calibration (Tire Fit): Import measured JSON/CSV tire characteristic curves, multi-level least-squares identification of Pacejka parameters ($B_y/C_y/E_y/F_{y0}/LS$), normalized residuals and layered RMS reports, and one-click application back into the simulation pipeline;Rig Correlation: Import rig-measured CSVs, overlay and compare them with simulated wheel travel curves (Camber/Toe), and quantify RMS deviation across overlapping travel intervals;Steering Camber Gain Decomposition: Synthetic curve = Caster term + KPI term + geometric residual quantitative decomposition (benchmarked against tuning lecture EP04×EP06 methodology);Bushing Stiffness Calibration: Covers translational/rotational stiffness per node, directly driving K&C force compliance (COMPLIANCE) condition verification.🚀 Quick StartMethod A: Zero-Dependency Instant StartThe web frontend of this project is developed using a pure native technology stack, requiring no npm build steps or environment configuration.Open the main entry point directly in your browser: LABSUS/web/dwb-pro-v4.html (V4 New Workbench), or the modular version LABSUS/web/dwb-pro-fullchassis.html, or the zero-dependency single-file delivery LABSUS/web/dwb-pro-allinone.html. Alternatively, run it via a local HTTP server:Bashpython -m http.server 8000 --directory LABSUS/web
+Visit [http://127.0.0.1:8000/dwb-pro-v4.html](http://127.0.0.1:8000/dwb-pro-v4.html) in your browser to start using it.Method B: Double-Click Script Startup (Windows One-Click Run)Double-click LABSUS/start.bat:Automatically launches the Python FastAPI calculation engine (port 8001; reuses it if already running);Automatically starts a non-cached frontend server and opens the browser to the workbench.Method C: Start the Python FastAPI Calculation Engine (Optional Enhancement)If you need to run the full Python high-performance numerical solving backend:Bash# 1. Install Python dependencies
 pip install -r LABSUS/requirements.txt
 
-# 2. 启动 FastAPI 引擎服务
+# 2. Start the FastAPI engine service
 python LABSUS/engine/server.py
-# 服务启动于 http://127.0.0.1:8001 (API 文档: http://127.0.0.1:8001/docs)
-```
+# Service starts at http://127.0.0.1:8001 (API Docs: http://127.0.0.1:8001/docs)
+🧪 Testing & Quality AssuranceThe project includes a rigorous automated test suite (run within the LABSUS/ directory). The entire suite uses zero npm, zero browser Node vm headless sandboxes (with built-in DOM/Canvas stubs). The only cross-language component is TPHYS parity:Bashcd LABSUS
 
----
+# ── Python Engine: Physical assertions / Gates / Contract guards / TPHYS dual-end parity / Stress tests ──
+pytest engine/tests -q                # 189 passed / 1 skipped (skip = OptimumK not entered, explicit)
+                                      #   · test_api_contract          Frontend-backend keyset contract
+                                      #   · test_static_split_invariant Static load distribution invariant
+                                      #   · test_tire_width_balance      Tire width -> cornering stiffness trimming
+                                      #   · test_legacy_isolation        V1 freeze-line isolation guard
+ruff check engine                     # All checks passed (config in pyproject.toml, rules E/F/W/I)
+python scripts/sync_root_docs.py --check   # Byte-for-byte consistency check for root ↔ LABSUS README/LICENSE
 
-## 🧪 测试与质量保证
+# ── Frontend Defense Lines (Per Suite) ──────────────────────────────
+node web/test/test_dom.js              # 274 assertions: Thin shell structure / Dual-end isomorphism / Known bug regression
+node web/test/stage_boot_check.js      # 45 assertions: Module load order / TDZ / Three stages 20 frames error-free
+node web/test/test_lap_15dof.js        # 23 assertions: 2 laps 5.45km full closed-loop + 6 powertrain parities
+node web/test/test_15dof_steady.js     # 14 assertions: 15-DOF kernel analytical steady-state anchor (freefall / static load / bicycle model / left-right symmetry)
+node web/test/test_powertrain.js       # 587 assertions: Seven powertrain architectures
+node web/test/test_tire_lab.js         # 65 assertions: Tire laboratory
+node web/test/test_tire_wiring.js      # 36 assertions · proving_ground_test.js 36 assertions (incl. RIG regression)
+node web/test/test_racingline.js       # 30 assertions · test_engine_sound.js 26 assertions
+node web/test/test_kc_wiring.js        # 25 assertions · undulating_road_test.js 21 assertions
+node web/test/test_mpc.js              # 19 assertions · test_p2b_damper.js 18 assertions
+node web/test/test_p2a_aero.js         # 14 assertions · test_circuit_ui.js 100% (64 id + 22 class)
 
-项目包含严苛的自动化测试套件（在 `LABSUS/` 目录下运行）。全部套件为 **零 npm、零浏览器** 的
-node `vm` 无头沙箱（自带 DOM/Canvas stub），唯一跨语言的是 TPHYS 对拍：
+# ── Cross-Language Physics Parity (JS TPHYS ↔ Python transient, threshold 5%) ──
+node web/test/tphys_parity.cjs         # Measured worst 0.51%
 
-```bash
-cd LABSUS
-
-# ── Python 引擎：物理断言 / 门禁 / 契约守卫 / TPHYS 双端对拍 / 对抗应力 ──
-pytest engine/tests -q                 # 189 passed / 1 skipped（skip = OptimumK 未录入，显式）
-                                       #   · test_api_contract          前后端键集契约
-                                       #   · test_static_split_invariant 静态载荷分配不变量
-                                       #   · test_tire_width_balance      胎宽→侧偏刚度配平
-                                       #   · test_legacy_isolation        V1 冻结线隔离守卫
-ruff check engine                      # All checks passed（配置见 pyproject.toml，规则 E/F/W/I）
-python scripts/sync_root_docs.py --check   # 根 ↔ LABSUS 的 README/LICENSE 逐字节一致
-
-# ── 前端防线（逐套件）──────────────────────────────────────────────
-node web/test/test_dom.js              # 274 断言：薄壳结构 / 双端同构 / 已知 bug 回访
-node web/test/stage_boot_check.js      # 45 断言：模块加载顺序 / TDZ / 三舞台 20 帧无抛错
-node web/test/test_lap_15dof.js        # 23 断言：2 圈 5.45km 全闭环 + 6 项 powertrain parity
-node web/test/test_15dof_steady.js     # 14 断言：15-DOF 内核解析稳态锚（自由落体/静载/自行车模型/左右对称）
-node web/test/test_powertrain.js       # 587 断言：七架构动力总成
-node web/test/test_tire_lab.js         # 65 断言：轮胎工坊
-node web/test/test_tire_wiring.js      # 36 断言 · proving_ground_test.js 36 断言（含 RIG 回归）
-node web/test/test_racingline.js       # 30 断言 · test_engine_sound.js 26 断言
-node web/test/test_kc_wiring.js        # 25 断言 · undulating_road_test.js 21 断言
-node web/test/test_mpc.js              # 19 断言 · test_p2b_damper.js 18 断言
-node web/test/test_p2a_aero.js         # 14 断言 · test_circuit_ui.js 100%（64 id + 22 class）
-
-# ── 跨语言物理对拍（JS TPHYS ↔ Python transient，门限 5%）────────────
-node web/test/tphys_parity.cjs         # 实测 worst 0.51%
-
-# ── 诊断工具（不参与回归）─────────────────────────────────────────
-node web/test/preset_balance_sweep.cjs # 预设配平扫描（US / TLLTD ← 簧载份额 / ARB / 胎宽）
-node web/test/mpc_diag_g30.cjs         # MPC 整定诊断 · mpc_calib_g30.cjs 校准网格
-```
-
-> 测试数字以本仓库当前工作区实测为准（2026-09-20 基线）。改前端后至少跑
-> `test_dom` + `stage_boot_check`；改引擎后跑 `pytest engine/tests` + `ruff check engine`；
-> 改 TPHYS/内联物理后跑 `tphys_parity.cjs`。
->
-> **自动门禁**：`.github/workflows/ci.yml`（lint / pytest / node 三 job，PR 自动跑）；
-> 提交前钩子 `.pre-commit-config.yaml`（秒级检查 + 2 MB 大文件防护 + README 一致性检查，不含 pytest）。
-
----
-
-## 📂 项目结构说明
-
-```
-LABSUS/                           # 工程代码根（下同）
-├── assets/                       # 项目预览截图与工程图表资源
-├── web/                          # 现代 Web 前端工程目录
-│   ├── index.html                # 根目录自动重定向引导页
-│   ├── dwb-pro-v4.html           # V4 主工作台入口（主用）
-│   ├── dwb-pro-fullchassis.html  # 模块化全车工作台（薄壳 + css/ + js/）
-│   ├── dwb-pro-allinone.html     # 零依赖综合交付单文件
+# ── Diagnostic Tools (Non-regression) ─────────────────────────────
+node web/test/preset_balance_sweep.cjs # Preset balance sweep (US / TLLTD <- Sprung mass share / ARB / Tire width)
+node web/test/mpc_diag_g30.cjs         # MPC tuning diagnostics · mpc_calib_g30.cjs calibration grid
+Test numbers reflect actual measurements in the current workspace of this repository (2026-09-20 baseline). After modifying the frontend, run at least test_dom + stage_boot_check; after modifying the engine, run pytest engine/tests + ruff check engine; after modifying TPHYS/inline physics, run tphys_parity.cjs.Automatic Gates: .github/workflows/ci.yml (lint / pytest / node three-job pipeline, runs automatically on PRs);pre-commit hook .pre-commit-config.yaml (sub-second checks + 2 MB large file protection + README consistency check, excludes pytest).📂 Project Directory StructureLABSUS/                               # Engineering code root (same below)
+├── assets/                           # Project preview screenshots and engineering chart resources
+├── web/                              # Modern Web frontend engineering directory
+│   ├── index.html                    # Root automatic redirection guide page
+│   ├── dwb-pro-v4.html               # V4 main workbench entry (primary)
+│   ├── dwb-pro-fullchassis.html      # Modular full-vehicle workbench (thin shell + css/ + js/)
+│   ├── dwb-pro-allinone.html         # Zero-dependency comprehensive delivery single file
 │   ├── css/
-│   │   └── fullchassis.css       # 模块化现代工程仪器台 CSS 设计系统
-│   ├── js/                       # 前端核心功能域模块 (按文件名序加载)
-│   │   ├── 01-core.js            # 数学库 / 状态管理 / 矩阵运算
-│   │   ├── 02-presets.js         # 车型预设 (Formula/GT3/Baja)
-│   │   ├── 03-mechanism.js       # 多体闭式几何投影内核与 K&C 扫掠
-│   │   ├── 04-dynamics.js        # 准静态载荷转移与 4-Post 台架解算
-│   │   ├── 05-scene3d.js         # 四视口 3D Canvas 线框渲染引擎
-│   │   ├── 06-ui-panels.js       # 交互面板 / 实测数据标定
-│   │   ├── 07-plots.js           # 运动学特性交互式曲线图
-│   │   ├── 08-interact.js        # 持久化与视图交互
-│   │   ├── 09-track.js           # TPHYS 离线物理闭包与赛道回放
-│   │   ├── 10-eval.js            # 综合评价报告与赛车线路径规划
-│   │   ├── 11-stages.js          # 15-DOF 爬坡/定圆/上海赛道瞬态仿真舞台
-│   │   ├── 12-v4-arrange.js      # V4 布局编排 / 结论卡 / 诊断建议
-│   │   ├── 13-engine-sound.js    # WebAudio 动态转速与排气声浪合成器
-│   │   ├── 14-tire-lab.js        # 轮胎实验室 (MF5.2 刷子/Magic Formula 拟合)
-│   │   ├── 15-mpc.js             # 赛道自适应模型预测控制 (MPC)
-│   │   └── 16-powertrain.js      # 动力总成与扭矩矢量分配解算
-│   └── test/                     # 前端 16 套自动化测试套件
-├── engine/                       # Python 高性能数值计算引擎
-│   ├── server.py                 # FastAPI 入口服务 (:8001)
-│   ├── src/                      # 求解器核心源码 (K&C/衬套/Pacejka/轮胎标定/瞬态)
-│   └── tests/                    # pytest 单元测试套件 (164 项全部通过)
-├── scripts/                      # 开发与运维工具脚本
-├── requirements.txt              # Python 依赖清单
-├── start.bat                     # Windows 一键启动脚本
-├── INTENTIONAL_DIFFERENCES.md    # 双端故意差异登记真源
-├── AUDIT_AND_REFACTOR_LOG.md     # 全系统代码审计与重构归档报告
-├── LICENSE                       # MIT 开源许可证
-└── README.md                     # 项目中文文档
-```
-
-> 注：`LICENSE` 与英文版 `README.en.md` 位于仓库根；`AUDIT_AND_REFACTOR_LOG.md` 详述系统审计、接口对齐与修复细节。
-
----
-
-## 📄 开源许可证
-
-本项目基于 [MIT License](LICENSE) 开源发布。
-欢迎提交 Issue 与 Pull Request 共同完善！
+│   │   └── fullchassis.css           # Modular modern engineering instrument bench CSS design system
+│   ├── js/                           # Frontend core functional domain modules (loaded in filename order)
+│   │   ├── 01-core.js                # Math library / State management / Matrix operations
+│   │   ├── 02-presets.js             # Vehicle presets (Formula/GT3/Baja)
+│   │   ├── 03-mechanism.js           # Multibody closed-form geometric projection kernel & K&C sweep
+│   │   ├── 04-dynamics.js            # Quasi-static load transfer & 4-post rig solver
+│   │   ├── 05-scene3d.js             # Four-viewport 3D canvas wireframe rendering engine
+│   │   ├── 06-ui-panels.js           # Interaction panels / Measured data calibration
+│   │   ├── 07-plots.js               # Kinematic characteristics interactive curve charts
+│   │   ├── 08-interact.js            # Persistence and view interaction
+│   │   ├── 09-track.js               # TPHYS offline physical closure and track playback
+│   │   ├── 10-eval.js                # Comprehensive evaluation report and racing line path planning
+│   │   ├── 11-stages.js              # 15-DOF hill-climb/skidpad/Shanghai circuit transient simulation stage
+│   │   ├── 12-v4-arrange.js          # V4 layout arrangement / Conclusion cards / Diagnostic recommendations
+│   │   ├── 13-engine-sound.js        # WebAudio dynamic RPM and exhaust sound synthesizer
+│   │   ├── 14-tire-lab.js            # Tire laboratory (MF5.2 brush / Magic Formula fitting)
+│   │   ├── 15-mpc.js                 # Track adaptive Model Predictive Control (MPC)
+│   │   └── 16-powertrain.js          # Powertrain and torque vectoring distribution solver
+│   └── test/                         # Frontend 16 automated test suites
+├── engine/                           # Python high-performance numerical calculation engine
+│   ├── server.py                     # FastAPI entry service (:8001)
+│   ├── src/                          # Solver core source code (K&C/Bushing/Pacejka/Tire calibration/Transient)
+│   └── tests/                        # pytest unit test suite (all 164 passed)
+├── scripts/                          # Development and operations tool scripts
+├── requirements.txt                  # Python dependency manifest
+├── start.bat                         # Windows one-click startup script
+├── INTENTIONAL_DIFFERENCES.md        # Source of truth for intentional dual-end differences
+├── AUDIT_AND_REFACTOR_LOG.md         # Full system code audit and refactoring archival report
+├── LICENSE                           # MIT Open Source License
+└── README.md                         # Project Chinese documentation
+Note: LICENSE and the English version README.en.md are located at the repository root; AUDIT_AND_REFACTOR_LOG.md details system audits, interface alignments, and repair specifics.📄 Open Source License
