@@ -986,8 +986,17 @@ const POWERTRAIN = {
 
   /* ── 右栏：内置预设载入 + gearbox（逐行挡位可增删）+ diff + 中央差速 ── */
   rightColumnHTML() {
-    const presetNames = Object.keys(POWERTRAIN_PRESETS);
-    const presetBody = this._selRow("ptPresetPick", "Built-in preset", presetNames.map(n => [n, n])) +
+    /* 内置预设下拉的显示名：键保持原中文键（内部查找/测试引用），下拉文本用英文。
+     Dropdown display labels for the built-in presets: the object keys stay as-is (internal lookup),
+     the visible <option> text uses these English labels. */
+  const PT_PRESET_LABELS = {
+    "EV 双电机 AWD-TV": "EV Dual-Motor AWD (Torque Vectoring)",
+    "P3 混动前驱": "P3 Hybrid FWD",
+    "串联增程后驱": "Series Range-Extender RWD",
+    "THS 功率分流": "THS Power-Split (Planetary)",
+  };
+  const presetNames = Object.keys(POWERTRAIN_PRESETS);
+    const presetBody = this._selRow("ptPresetPick", "Built-in preset", presetNames.map(n => [n, (PT_PRESET_LABELS && PT_PRESET_LABELS[n]) || n])) +
       `<button id="ptPresetLoad" style="width:100%;background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:5px;padding:3px 9px;cursor:pointer;font:600 10px var(--font-ui);margin-top:2px;">Load into draft (not applied immediately)</button>`;
     const gbBody = this._selRow("pt_gb_type", "Gearbox type", this.GB_TYPES) +
       `<div style="font:10px var(--font-ui);color:#8b949e;margin:5px 0 2px;">Gear ratios (edit row by row)</div>

@@ -248,8 +248,8 @@ function v4InitThemePicker(){
    snapshot-baseline / neutral-bias matchers test Chinese panel and button labels; that
    Chinese is kept as a comparison key (this bilingual note documents it), with the panels
    English title alternatives appended so classification keeps working after translation.) */
-const V4_ANA_T=/引擎连接|整车底盘分析|动态驾驶测试|赛道动态遥测|4-Post|Baseline|轮胎实测标定|台架对拍|衬套刚度标定|灵敏度扫描|双参数交互|方案库|ENGINE \/api\/v3|FULL-CHASSIS ENGINE|TIRE CALIBRATION|RIG CORRELATION|BUSHING CALIBRATION|SENSITIVITY SWEEP|2-PARAMETER INTERACTION|SETUP LIBRARY|DYNAMIC TESTS|TRACK TELEMETRY|[Ee]ngine [Cc]onnect|[Ff]ull-?[Cc]hassis|[Ff]ull [Vv]ehicle|[Tt]ire [Cc]alibr|[Rr]ig [Cc]orrelat|[Bb]ushing [Cc]alibr|[Ss]ensitivity [Ss]weep|2-?[Pp]arameter [Ii]nteraction|[Ss]etup [Ll]ibrary|[Dd]ynamic [Dd]riving|[Dd]ynamic [Tt]ests|[Tt]rack [Tt]elemetry|[Cc]ircuit [Dd]ynamic/;
-const V4_SET_T=/硬点永久保存|系统显示|实体着色|3D 空间硬点表|显示图层控制|HARDPOINT PERSISTENCE|SYSTEM LAYERS|ENTITY COLOR|HARDPOINTS \[mm\]|DISPLAY LAYERS|[Hh]ardpoint [Pp]ersist|[Ss]ystem [Dd]isp|[Ss]ystem [Ll]ayers|[Ee]ntity [Cc]olor|[Hh]ardpoints \[mm\]|[Dd]isplay [Ll]ayers/;
+const V4_ANA_T=/引擎连接|整车底盘分析|动态驾驶测试|赛道动态遥测|4-Post|Baseline|轮胎实测标定|台架对拍|衬套刚度标定|灵敏度扫描|双参数交互|方案库|ENGINE \/api\/v3|FULL-CHASSIS ENGINE|TIRE CALIBRATION|RIG CORRELATION|BUSHING CALIBRATION|SENSITIVITY SWEEP|2-PARAMETER INTERACTION|SETUP LIBRARY|DYNAMIC TESTS|TRACK TELEMETRY|[Ee]ngine [Cc]onnect|[Ff]ull-?[Cc]hassis|[Ff]ull [Vv]ehicle|[Tt]ire [Cc]alibr|[Rr]ig [Cc]orrelat|[Bb]ushing [Cc]alibr|[Ss]ensitivity [Ss]weep|2-?[Pp]arameter [Ii]nteraction|[Ss]etup [Ll]ibrary|[Dd]ynamic [Dd]riving|[Dd]ynamic [Tt]ests|[Tt]rack [Tt]elemetry|[Cc]ircuit [Dd]ynamic|[Ee]ngine & K&C/;
+const V4_SET_T=/硬点永久保存|系统显示|实体着色|3D 空间硬点表|显示图层控制|HARDPOINT PERSISTENCE|SYSTEM LAYERS|ENTITY COLOR|HARDPOINTS \[mm\]|DISPLAY LAYERS|[Hh]ardpoint [Pp]ersist|[Ss]ystem [Dd]isp|[Ss]ystem [Ll]ayers|[Ee]ntity [Cc]olor|[Hh]ardpoints \[mm\]|[Dd]isplay [Ll]ayers|3D [Hh]ardpoint [Tt]able/;
 function v4ArrangeLeft(){
   const lp=document.getElementById("lp");if(!lp||lp.dataset.v4)return;lp.dataset.v4="1";
   const kids=[...lp.children];

@@ -163,8 +163,8 @@ function buildLeft(){
   rowSlider(b,"Total sprung mass","","kg",700,2000,10,()=>S.mSprung,v=>{S.mSprung=v;refreshDerived(false);},0);
 
   b=sec(host,"Baseline Snapshot","",true,"amb");
-  rowBtns(b,[["快照基准线 SAVE",()=>{takeBaselineSnapshot();buildRight();},null,"hl"],   /* R6: 「快照基准线」must stay — 12-v4-arrange.js:286 matches this button by /快照基准线/ to refresh readouts */
-             ["清除基准线 CLEAR",()=>{clearBaselineSnapshot();buildRight();},null,"danger"]]);
+  rowBtns(b,[["Baseline Snapshot",()=>{takeBaselineSnapshot();buildRight();},null,"hl"],   /* 12-v4-arrange.js:286 matches this button by /Baseline Snapshot/ to refresh readouts */
+             ["Clear Baseline",()=>{clearBaselineSnapshot();buildRight();},null,"danger"]]);
 
   /* ═══════════════ GROUP 3: ADVANCED — 引擎 · 台架 · 硬点 · 图层 · EN: engine · rig · hardpoints · layers ═══════════════ */
   groupDiv(host,"ADVANCED");
@@ -209,7 +209,7 @@ function buildLeft(){
       el.textContent=`ISO 8608 ${S.roadCls||"A"}: target spectrum RMS ${r.toFixed(2)} mm (standard band 0.011~2.83 cycle/m, w=2) · `
         + `speed ${(S.roadV||20).toFixed(0)} m/s · rear-axle delay ${(lag*1000).toFixed(0)} ms`; } });
 
-  b=sec(host,"3D Hardpoint Table (3D 空间硬点表)","",true);   /* R6: Chinese kept — 12-v4-arrange.js V4_SET_T routes dock panels by the title */
+  b=sec(host,"3D Hardpoint Table","",true);   /* dock routing: 12-v4-arrange.js V4_SET_T matches this English title via the `3D [Hh]ardpoint [Tt]able` token */
   const tb=E("table","hp");
   tb.innerHTML="<thead><tr><th>Hardpoint ID</th><th>X lateral</th><th>Y longitudinal</th><th>Z vertical</th></tr></thead>";
   const tbody=E("tbody");
@@ -238,7 +238,7 @@ function buildLeft(){
   });
   tb.appendChild(tbody);b.appendChild(tb);
 
-  b=sec(host,"Display Layers (显示图层控制)","",true);   /* R6: Chinese kept — 12-v4-arrange.js V4_SET_T routes by the title */
+  b=sec(host,"Display Layers","",true);   /* dock routing: V4_SET_T matches "Display Layers" */
   /* F-43（2026-08-30）：死开关替换——rigid/steer/disc 无任何绘制逻辑读取
      （真消费键为 halfshaft/steer_rack/disc_vent），旧项点开关无效。
      EN: F-43 (2026-08-30): dead switches replaced — rigid/steer/disc were read by no drawing logic at all (the real consumed keys are halfshaft/steer_rack/disc_vent), so the old toggles did nothing. */
@@ -336,7 +336,7 @@ function buildRight(){
   ro(b,"ARB share","","%","roArbSh","hl");
 
   if(S.hasBaseline){
-    b=sec(host,"Baseline Delta Diff","",false,"purp");
+    b=sec(host,"Delta Diff","",false,"purp");
     const db=E("div",null);
     db.innerHTML='<div class="diffbox head"><span>Parameter PARAM</span><b>ACTIVE</b><b>BASE</b><b>DELTA</b></div>';
     const items=[["Camber gain CG","cg","°/25mm"],["Bump steer BS","bs","°/25mm"],["Motion ratio MR","mr","-"],["Roll center RC","rcH","mm"],["Wheel rate WR","kw","N/mm"]];
@@ -498,7 +498,7 @@ function bushCalibReset(){
   if(st)st.textContent="Restored the vehicle-preset bushing stiffness.",st.style.color="";
 }
 function buildBushingCalibPanel(host){
-  const b=sec(host,"Bushing Calibration (衬套刚度标定)","",true);   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b=sec(host,"Bushing Calibration","",true);   /* dock routing: V4_ANA_T matches "Bushing Calibration" */
   const hint=E("div","eng-status");
   hint.textContent="Supplier-measured bushing stiffness (translational kT N/mm×3, optional rotational kR N·mm/°×3) → overrides the vehicle preset, used by the engine K&C force-offset (COMPLIANCE) case — the real suspension-compliance data chain (current axle follows the left-dock axis selection).";
   b.appendChild(hint);
@@ -517,7 +517,7 @@ function buildBushingCalibPanel(host){
   b.appendChild(st);
 }
 function buildEnginePanel(host){
-  let b=sec(host,"Engine & K&C Connection (引擎连接与 K&C 分析)","");   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  let b=sec(host,"Engine & K&C Connection","");   /* dock routing: V4_ANA_T matches via the `[Ee]ngine & K&C` token */
   const urlInp=E("input");urlInp.type="text";urlInp.value=ENG.url;
   urlInp.className="eng-input";urlInp.style.cssText="flex:1;min-width:0";
   urlInp.onchange=()=>{ENG.url=urlInp.value.replace(/\/+$/,"");};
@@ -581,7 +581,7 @@ function buildEngineResults(host){
 /* ── 整车底盘分析（S2-5：四角+整车参数 → /api/v3/chassis/*，双模） — EN: full-chassis analysis (S2-5: four corners + vehicle parameters → /api/v3/chassis/*, dual-mode) ── */
 const CH={busy:false,kcCase:"solve",sweep:{min:-50,max:50,n:21},result:null};
 function buildChassisPanel(host){
-  let b=sec(host,"Full-Chassis Analysis (整车底盘分析)","");   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  let b=sec(host,"Full-Chassis Analysis","");   /* dock routing: V4_ANA_T matches "Full-Chassis" */
   const ck=E("div");ck.style.cssText="display:flex;gap:3px;padding:3px 8px;flex-wrap:wrap";
   [["solve","Single-point SOLVE"],["bump","Full-chassis BUMP"],["roll","Full-chassis ROLL"],["steer","Full-chassis STEER"]].forEach(([v,lb])=>{
     const k=E("button","eng-btn");k.textContent=lb;k.dataset.c=v;k.style.flex="1";k.style.minWidth="58px";
@@ -677,7 +677,7 @@ async function tireCalibRun(){
   finally{if(btn)btn.textContent="Fit MF Parameters FIT";}
 }
 function buildTireCalibPanel(host){
-  const b=sec(host,"Measured Tire Calibration (轮胎实测标定)","",true);   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b=sec(host,"Measured Tire Calibration","",true);   /* dock routing: V4_ANA_T matches "Tire Calibration" */
   const hint=E("div","eng-status");
   hint.textContent="Measured Fy-α curves (≥2 load levels enable fitting the load-sensitivity LS) → the engine fits the Pacejka MF parameters and applies them instantly to the quasi-static handling metrics (US Gradient) and track simulation (Lecture EP08).";
   b.appendChild(hint);
@@ -744,7 +744,7 @@ function kcMeasuredClear(){
   if(typeof drawPlots==="function")drawPlots();
 }
 function buildKcMeasuredPanel(host){
-  const b=sec(host,"K&C Rig Correlation (台架对拍)","",true);   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b=sec(host,"K&C Rig Correlation","",true);   /* dock routing: V4_ANA_T matches "Rig Correlation" */
   const hint=E("div","eng-status");
   hint.textContent="Import rig-measured travel curves (travel, camber, toe); they overlay the simulated curves as dash-dot lines on the same plot, with the RMS deviation over the overlapping range — the prediction↔rig-validation loop (current axle follows the left-dock axis selection).";
   b.appendChild(hint);
@@ -969,7 +969,7 @@ function sensParamByKey(k){ return sensParamList().find(p=>p.key===k) || null; }
 
 /* —— 面板 —— EN: the panel —— */
 function buildSensitivityPanel(host){
-  const b = sec(host,"Sensitivity Sweep (灵敏度扫描)","",false,"pur");   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b = sec(host,"Sensitivity Sweep","",false,"pur");   /* dock routing: V4_ANA_T matches "Sensitivity Sweep" */
   const wrap = E("div"); wrap.style.cssText = "padding:4px 10px 8px";
   b.appendChild(wrap);
 
@@ -1270,7 +1270,7 @@ function setupCompareRows(){
 
 /* —— 面板 —— EN: the panel —— */
 function buildSetupPanel(host){
-  const b = sec(host,"Setup Library & Compare (方案库与对比)","",false,"pur");   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b = sec(host,"Setup Library & Compare","",false,"pur");   /* dock routing: V4_ANA_T matches "Setup Library" */
   const wrap = E("div"); wrap.style.cssText = "padding:4px 10px 8px";
   b.appendChild(wrap);
   const hint = E("div","eng-status");
@@ -1435,7 +1435,7 @@ window.exportSetupCompareCsv = exportSetupCompareCsv;
 const SENS2 = { xKey:"arb.front", yKey:"kS.front", dx:10, dy:20, n:5, objKey:"us", res:null };
 
 function buildSens2Panel(host){
-  const b = sec(host,"2-Parameter Interaction (双参数交互扫描)","",true,"pur");   /* R6: Chinese kept — 12-v4-arrange.js V4_ANA_T routes by the title */
+  const b = sec(host,"2-Parameter Interaction","",true,"pur");   /* dock routing: V4_ANA_T matches "2-Parameter Interaction" */
   const wrap = E("div"); wrap.style.cssText = "padding:4px 10px 8px";
   b.appendChild(wrap);
   const hint = E("div","eng-status");
